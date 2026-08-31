@@ -43,7 +43,9 @@ jobs:
           flutter pub get
           flutter analyze
           flutter test
-          flutter build web --release --pwa-strategy=none
+          bash build-web.sh
+      - name: Verify frontend cache contract
+        run: bash tools/test-frontend-cache.sh
       - name: Build containers
         run: |
           docker build -t pvdd-backend:verify backend

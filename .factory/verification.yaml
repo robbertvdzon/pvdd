@@ -26,6 +26,11 @@ commands:
     timeoutSeconds: 900
   - id: frontend-flutter-build
     pathPrefixes: [frontend/, .factory/verification.yaml, .github/workflows/verify.yml]
-    argv: [flutter, build, web, --release, --pwa-strategy=none]
+    argv: [bash, build-web.sh]
     workingDirectory: frontend
+    timeoutSeconds: 1800
+  - id: frontend-cache-contract
+    pathPrefixes: [frontend/, tools/test-frontend-cache.sh, .factory/verification.yaml, .github/workflows/verify.yml]
+    argv: [bash, tools/test-frontend-cache.sh]
+    workingDirectory: .
     timeoutSeconds: 1800

@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.modulith.core.ApplicationModules
 
 class ModulithArchitectureTest {
-    private val modules = setOf("persistence", "system")
+    private val modules = setOf("auth", "persistence", "system")
     private val sourceRoot = Path.of("src/main/kotlin/nl/vdzon/pvdd")
 
     @Test

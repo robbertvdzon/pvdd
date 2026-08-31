@@ -13,12 +13,12 @@ ARG GIT_REVISION=0000000000000000000000000000000000000000
 ARG BUILD_TIME=1970-01-01T00:00:00Z
 ARG ENVIRONMENT=local
 ARG GOOGLE_CLIENT_ID=
-RUN flutter build web --release --pwa-strategy=none \
-    --dart-define=APP_VERSION="${APP_VERSION}" \
-    --dart-define=GIT_REVISION="${GIT_REVISION}" \
-    --dart-define=BUILD_TIME="${BUILD_TIME}" \
-    --dart-define=ENVIRONMENT="${ENVIRONMENT}" \
-    --dart-define=GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}"
+RUN PVDD_APP_VERSION="${APP_VERSION}" \
+    PVDD_GIT_REVISION="${GIT_REVISION}" \
+    PVDD_BUILD_TIME="${BUILD_TIME}" \
+    PVDD_ENVIRONMENT="${ENVIRONMENT}" \
+    PVDD_GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
+    ./build-web.sh
 FROM nginxinc/nginx-unprivileged:1.27-alpine
 USER 0
 RUN chgrp -R 0 /etc/nginx /usr/share/nginx/html /var/cache/nginx \
