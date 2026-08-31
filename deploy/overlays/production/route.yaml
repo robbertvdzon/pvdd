@@ -6,4 +6,5 @@ spec:
   host: pvdd.vdzonsoftware.nl
   to: {kind: Service, name: frontend}
   port: {targetPort: http}
-  tls: {termination: edge, insecureEdgeTerminationPolicy: Redirect}
+  # Cloudflare houdt de externe verbinding HTTPS en benadert de interne Route via HTTP.
+  tls: {termination: edge, insecureEdgeTerminationPolicy: Allow}
