@@ -23,6 +23,11 @@ services:
       PVDD_DATABASE_PASSWORD: local-development-only
       PVDD_ENVIRONMENT: local
       PVDD_GOOGLE_CLIENT_ID: local-development-client-id
+      PVDD_AGENT_RUNTIME_BASE_URL: http://host.docker.internal:18089
+      PVDD_AGENT_RUNTIME_TOKEN: local-pvdd-token
+      PVDD_AGENT_RUNTIME_PROVIDER: MOCKED
+      PVDD_AGENT_RUNTIME_MODEL: mock-model
+      PVDD_MEETING_SOURCE_BASE_URL: http://meeting-source-mock:8080
     depends_on:
       database:
         condition: service_healthy
@@ -33,6 +38,16 @@ services:
       retries: 20
     ports:
       - "${PVDD_BACKEND_PORT:-18080}:8080"
+
+  meeting-source-mock:
+    build: ./meeting-source-mock
+    healthcheck:
+      test: [CMD, wget, -qO-, http://localhost:8080/health/ready]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+    ports:
+      - "${PVDD_MEETING_SOURCE_MOCK_PORT:-18091}:8080"
 
   frontend:
     build:

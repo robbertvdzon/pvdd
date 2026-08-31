@@ -13,3 +13,11 @@ geblokkeerd totdat de technische acceptatiepoort T14 uit het stappenplan groen i
 - [Technische fundering](docs/stappenplannen/01-technische-fundering.md)
 - [Factory-overzicht](docs/factory/README.md)
 - [Architectuurbesluiten](docs/adr/README.md)
+- [Technische integraties](docs/technical-integrations.md)
+
+## Lokaal starten
+
+`docker compose up --build` start PostgreSQL, backend, frontend en de uitsluitend lokale statische
+vergaderbronmock. De frontend staat dan op `http://localhost:18088`, backendhealth op
+`http://localhost:18080/actuator/health/readiness` en de mockfixture op
+`http://localhost:18091/fixtures/commissie-ruimte.html`.
