@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'authentication.dart';
 import 'build_identity.dart';
 import 'configuration.dart';
+import 'dashboard_api.dart';
 import 'frontend_version_monitor.dart';
 import 'google_login_button.dart';
+import 'meeting_overview.dart';
 import 'page_reload.dart';
 import 'pvdd_theme.dart';
 import 'token_store.dart';
@@ -21,6 +23,7 @@ class PvddApp extends StatelessWidget {
     this.loginBuilder,
     this.versionGateway,
     this.frontendVersionSource,
+    this.dashboardGateway,
   });
 
   final AuthenticationGateway? authenticationGateway;
@@ -28,6 +31,7 @@ class PvddApp extends StatelessWidget {
   final Widget Function(ValueChanged<String>)? loginBuilder;
   final VersionGateway? versionGateway;
   final FrontendVersionSource? frontendVersionSource;
+  final DashboardGateway? dashboardGateway;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -40,6 +44,7 @@ class PvddApp extends StatelessWidget {
       loginBuilder: loginBuilder,
       versionGateway: versionGateway ?? HttpVersionGateway(),
       frontendVersionSource: frontendVersionSource,
+      dashboardGateway: dashboardGateway,
     ),
   );
 }
@@ -53,6 +58,7 @@ class AuthenticationGate extends StatefulWidget {
     required this.versionGateway,
     this.loginBuilder,
     this.frontendVersionSource,
+    this.dashboardGateway,
     super.key,
   });
   final AuthenticationGateway gateway;
@@ -60,6 +66,7 @@ class AuthenticationGate extends StatefulWidget {
   final Widget Function(ValueChanged<String>)? loginBuilder;
   final VersionGateway versionGateway;
   final FrontendVersionSource? frontendVersionSource;
+  final DashboardGateway? dashboardGateway;
 
   @override
   State<AuthenticationGate> createState() => _AuthenticationGateState();
@@ -155,6 +162,9 @@ class _AuthenticationGateState extends State<AuthenticationGate> {
       versionGateway: widget.versionGateway,
       frontendVersionSource:
           widget.frontendVersionSource ?? HttpFrontendVersionSource(),
+      dashboardGateway:
+          widget.dashboardGateway ??
+          HttpDashboardGateway(widget.tokenStore.read),
     ),
   };
 }
@@ -244,12 +254,14 @@ class TechnicalApplicationShell extends StatefulWidget {
     required this.onLogout,
     required this.versionGateway,
     required this.frontendVersionSource,
+    required this.dashboardGateway,
     super.key,
   });
   final String email;
   final VoidCallback onLogout;
   final VersionGateway versionGateway;
   final FrontendVersionSource frontendVersionSource;
+  final DashboardGateway dashboardGateway;
   @override
   State<TechnicalApplicationShell> createState() =>
       _TechnicalApplicationShellState();
@@ -294,7 +306,7 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
     builder: (context, constraints) {
       final desktop = constraints.maxWidth >= 800;
       final content = _selected == 0
-          ? const _OverviewPage()
+          ? MeetingOverviewPage(gateway: widget.dashboardGateway)
           : _VersionPage(frontend: _current, gateway: widget.versionGateway);
       return Scaffold(
         drawer: desktop
@@ -394,49 +406,6 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
           },
         ),
       );
-}
-
-class _OverviewPage extends StatelessWidget {
-  const _OverviewPage();
-  @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    padding: const EdgeInsets.all(24),
-    child: Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 850),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Technische basis gereed',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 16),
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.construction_outlined,
-                      color: PvddColors.primary,
-                    ),
-                    SizedBox(width: 16),
-                    Expanded(
-                      child: Text(
-                        'De functionele module is nog niet geïnstalleerd. Vergaderingen en analyses worden pas in fase 2 toegevoegd.',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
 }
 
 class _VersionPage extends StatelessWidget {
