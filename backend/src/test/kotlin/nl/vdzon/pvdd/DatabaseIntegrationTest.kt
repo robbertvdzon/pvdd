@@ -99,6 +99,20 @@ class DatabaseIntegrationTest(
         assertTrue(documentRepository.insertVersion(document(itemId, "d".repeat(64), now.plusSeconds(1))))
         assertEquals(2, documentRepository.countVersions(itemId, "doc-a"))
 
+        val failedDocument = document(itemId, "e".repeat(64), now).copy(
+            id = UUID.randomUUID(),
+            sourceId = "doc-failed",
+            sha256 = null,
+            sizeBytes = null,
+            fetchedAt = null,
+            extractionStatus = ExtractionStatus.DOWNLOAD_FAILED,
+            errorCode = "TIMEOUT",
+            sections = emptyList(),
+        )
+        assertTrue(documentRepository.save(failedDocument))
+        assertTrue(documentRepository.save(failedDocument.copy(id = UUID.randomUUID(), errorCode = "HTTP_ERROR")))
+        assertEquals(1, documentRepository.countVersions(itemId, "doc-failed"))
+
         val run = AnalysisRun(
             id = UUID.randomUUID(),
             agendaItemId = itemId,
