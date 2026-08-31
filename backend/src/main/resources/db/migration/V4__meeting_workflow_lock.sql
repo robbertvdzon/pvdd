@@ -1,0 +1,6 @@
+CREATE TABLE workflow_lock (
+    lock_name VARCHAR(120) PRIMARY KEY,
+    owner_id UUID,
+    locked_until TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

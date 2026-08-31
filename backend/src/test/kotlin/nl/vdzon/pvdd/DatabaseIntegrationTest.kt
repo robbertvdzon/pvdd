@@ -19,6 +19,7 @@ import nl.vdzon.pvdd.meetings.ImportStatus
 import nl.vdzon.pvdd.meetings.Meeting
 import nl.vdzon.pvdd.meetings.MeetingRepository
 import nl.vdzon.pvdd.meetings.MeetingStatus
+import nl.vdzon.pvdd.meetings.WorkflowLockRepository
 import nl.vdzon.pvdd.persistence.ApplicationMetadataRepository
 import nl.vdzon.pvdd.policy.PolicyChunk
 import nl.vdzon.pvdd.policy.PolicySourceRepository
@@ -40,6 +41,7 @@ class DatabaseIntegrationTest(
     @param:Autowired private val documentRepository: DocumentRepository,
     @param:Autowired private val analysisRepository: AnalysisRepository,
     @param:Autowired private val policySourceRepository: PolicySourceRepository,
+    @param:Autowired private val workflowLockRepository: WorkflowLockRepository,
     @param:Autowired private val healthEndpoint: HealthEndpoint,
 ) {
     @Test
@@ -152,6 +154,17 @@ class DatabaseIntegrationTest(
         meetingRepository.upsert(meeting.copy(id = failedId, sourceId = "meeting-failed", status = MeetingStatus.IMPORTING))
         meetingRepository.markFailed(failedId, "DOCUMENT_INVALID")
         assertEquals(meeting.sourceId, meetingRepository.lastSuccessfulSourceId())
+    }
+
+    @Test
+    fun `workflow lock permits at most one owner and is recoverable`() {
+        val first = UUID.randomUUID()
+        val second = UUID.randomUUID()
+        assertTrue(workflowLockRepository.tryAcquire("integration-lock", first))
+        assertFalse(workflowLockRepository.tryAcquire("integration-lock", second))
+        workflowLockRepository.release("integration-lock", first)
+        assertTrue(workflowLockRepository.tryAcquire("integration-lock", second))
+        workflowLockRepository.release("integration-lock", second)
     }
 
     private fun document(itemId: UUID, hash: String, fetchedAt: Instant) = SourceDocument(

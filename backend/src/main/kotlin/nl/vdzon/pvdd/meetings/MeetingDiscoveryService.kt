@@ -22,8 +22,10 @@ class MeetingDiscoveryService(
     private val properties: MeetingSourceProperties,
     private val parser: AgendaParser,
     private val clock: Clock,
-) {
-    fun discover(now: Instant = clock.instant()): DiscoveryOutcome {
+) : MeetingDiscoveryGateway {
+    fun discover(): DiscoveryOutcome = discover(clock.instant())
+
+    override fun discover(now: Instant): DiscoveryOutcome {
         return try {
             val today = LocalDate.ofInstant(now, AMSTERDAM)
             val candidates = (today.year..today.year + 1)
@@ -46,7 +48,7 @@ class MeetingDiscoveryService(
         }
     }
 
-    fun fetchAgenda(sourceUrl: URI, enrichReports: Boolean = true): ParsedMeetingAgenda {
+    override fun fetchAgenda(sourceUrl: URI, enrichReports: Boolean): ParsedMeetingAgenda {
         val agenda = parser.parse(source.fetch(sourceUrl).body, sourceUrl)
         if (!enrichReports) return agenda
         val enrichedItems = agenda.items.map { item ->
@@ -99,4 +101,9 @@ class MeetingDiscoveryService(
         private val DATE_PATTERN = Regex("(?:maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag) \\d{1,2} [a-z]+ \\d{4}")
         private val WHITESPACE = Regex("\\s+")
     }
+}
+
+interface MeetingDiscoveryGateway {
+    fun discover(now: Instant): DiscoveryOutcome
+    fun fetchAgenda(sourceUrl: URI, enrichReports: Boolean = true): ParsedMeetingAgenda
 }

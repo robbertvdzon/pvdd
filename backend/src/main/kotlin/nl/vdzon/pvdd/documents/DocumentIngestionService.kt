@@ -9,6 +9,10 @@ data class DocumentIngestionSummary(
     val fullyRead: Boolean,
 )
 
+fun interface DocumentIngestor {
+    fun ingest(agendaItemId: UUID, references: List<DocumentReference>): DocumentIngestionSummary
+}
+
 @Service
 class DocumentIngestionService(
     private val downloader: DocumentDownloader,
@@ -16,8 +20,8 @@ class DocumentIngestionService(
     private val repository: DocumentRepository,
     private val properties: DocumentDownloadProperties,
     private val clock: Clock,
-) {
-    fun ingest(agendaItemId: UUID, references: List<DocumentReference>): DocumentIngestionSummary {
+) : DocumentIngestor {
+    override fun ingest(agendaItemId: UUID, references: List<DocumentReference>): DocumentIngestionSummary {
         val budget = DownloadBudget(properties)
         val documents = references.map { reference ->
             try {

@@ -7,8 +7,8 @@ import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 
 @Repository
-class MeetingRepository(private val jdbc: JdbcTemplate) {
-    fun upsert(meeting: Meeting): UUID = jdbc.query(
+class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
+    override fun upsert(meeting: Meeting): UUID = jdbc.query(
         """
         INSERT INTO meeting(
             id, source_id, committee, starts_at, ends_at, location, title, source_url,
@@ -43,7 +43,7 @@ class MeetingRepository(private val jdbc: JdbcTemplate) {
         meeting.importedAt?.let(Timestamp::from),
     ).single()
 
-    fun upsert(item: AgendaItem): UUID = jdbc.query(
+    override fun upsert(item: AgendaItem): UUID = jdbc.query(
         """
         INSERT INTO agenda_item(
             id, meeting_id, source_id, parent_source_id, sequence_number, display_number,
@@ -94,13 +94,13 @@ class MeetingRepository(private val jdbc: JdbcTemplate) {
         meetingId,
     ) ?: 0
 
-    fun lastSuccessfulSourceId(): String? = jdbc.queryForList(
+    override fun lastSuccessfulSourceId(): String? = jdbc.queryForList(
         "SELECT metadata_value FROM application_metadata WHERE metadata_key = 'last-successful-meeting-source-id'",
         String::class.java,
     ).firstOrNull()
 
     @Transactional
-    fun markSuccessful(meetingId: UUID) {
+    override fun markSuccessful(meetingId: UUID) {
         val sourceId = jdbc.queryForObject("SELECT source_id FROM meeting WHERE id = ?", String::class.java, meetingId)
             ?: error("Meeting $meetingId does not exist")
         check(
@@ -125,7 +125,7 @@ class MeetingRepository(private val jdbc: JdbcTemplate) {
         )
     }
 
-    fun markFailed(meetingId: UUID, errorCode: String) {
+    override fun markFailed(meetingId: UUID, errorCode: String) {
         jdbc.update(
             """
             UPDATE meeting SET status = 'FAILED', error_code = ?, updated_at = CURRENT_TIMESTAMP
@@ -135,4 +135,36 @@ class MeetingRepository(private val jdbc: JdbcTemplate) {
             meetingId,
         )
     }
+
+    override fun markAnalysing(meetingId: UUID) {
+        updateStatus(meetingId, MeetingStatus.ANALYSING, null)
+    }
+
+    override fun markPartial(meetingId: UUID, errorCode: String) {
+        updateStatus(meetingId, MeetingStatus.PARTIAL, errorCode)
+    }
+
+    private fun updateStatus(meetingId: UUID, status: MeetingStatus, errorCode: String?) {
+        check(
+            jdbc.update(
+                """
+                UPDATE meeting SET status = ?, error_code = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """.trimIndent(),
+                status.name,
+                errorCode,
+                meetingId,
+            ) == 1,
+        )
+    }
+}
+
+interface MeetingStore {
+    fun upsert(meeting: Meeting): UUID
+    fun upsert(item: AgendaItem): UUID
+    fun lastSuccessfulSourceId(): String?
+    fun markSuccessful(meetingId: UUID)
+    fun markFailed(meetingId: UUID, errorCode: String)
+    fun markAnalysing(meetingId: UUID)
+    fun markPartial(meetingId: UUID, errorCode: String)
 }
