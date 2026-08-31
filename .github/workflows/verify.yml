@@ -1,0 +1,19 @@
+name: Repository verification
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  repository-verification:
+    name: Repository verification
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Verify documentation and repository hygiene
+        run: bash tools/verify-documentation.sh

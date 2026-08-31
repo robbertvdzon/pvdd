@@ -1,0 +1,11 @@
+version: 1
+commands:
+  - id: documentation-hygiene
+    pathPrefixes:
+      - docs/
+      - README.md
+      - .factory/verification.yaml
+      - .github/workflows/verify.yml
+    argv: [bash, tools/verify-documentation.sh]
+    workingDirectory: .
+    timeoutSeconds: 120
