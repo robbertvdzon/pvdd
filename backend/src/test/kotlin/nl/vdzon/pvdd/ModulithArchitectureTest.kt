@@ -13,6 +13,7 @@ class ModulithArchitectureTest {
         "auth",
         "documents",
         "meetings",
+        "policy",
         "persistence",
         "runtime",
         "source",

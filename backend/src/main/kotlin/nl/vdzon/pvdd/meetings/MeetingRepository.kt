@@ -1,0 +1,138 @@
+package nl.vdzon.pvdd.meetings
+
+import java.sql.Timestamp
+import java.util.UUID
+import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.stereotype.Repository
+import org.springframework.transaction.annotation.Transactional
+
+@Repository
+class MeetingRepository(private val jdbc: JdbcTemplate) {
+    fun upsert(meeting: Meeting): UUID = jdbc.query(
+        """
+        INSERT INTO meeting(
+            id, source_id, committee, starts_at, ends_at, location, title, source_url,
+            source_hash, status, checked_at, imported_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (source_id) DO UPDATE SET
+            committee = EXCLUDED.committee,
+            starts_at = EXCLUDED.starts_at,
+            ends_at = EXCLUDED.ends_at,
+            location = EXCLUDED.location,
+            title = EXCLUDED.title,
+            source_url = EXCLUDED.source_url,
+            source_hash = EXCLUDED.source_hash,
+            status = EXCLUDED.status,
+            checked_at = EXCLUDED.checked_at,
+            imported_at = EXCLUDED.imported_at,
+            updated_at = CURRENT_TIMESTAMP
+        RETURNING id
+        """.trimIndent(),
+        { rs, _ -> rs.getObject("id", UUID::class.java) },
+        meeting.id,
+        meeting.sourceId,
+        meeting.committee,
+        Timestamp.from(meeting.startsAt),
+        meeting.endsAt?.let(Timestamp::from),
+        meeting.location,
+        meeting.title,
+        meeting.sourceUrl.toString(),
+        meeting.sourceHash,
+        meeting.status.name,
+        Timestamp.from(meeting.checkedAt),
+        meeting.importedAt?.let(Timestamp::from),
+    ).single()
+
+    fun upsert(item: AgendaItem): UUID = jdbc.query(
+        """
+        INSERT INTO agenda_item(
+            id, meeting_id, source_id, parent_source_id, sequence_number, display_number,
+            category, title, explanation, treatment_proposal, source_url, source_hash,
+            substantive, import_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (meeting_id, source_id) DO UPDATE SET
+            parent_source_id = EXCLUDED.parent_source_id,
+            sequence_number = EXCLUDED.sequence_number,
+            display_number = EXCLUDED.display_number,
+            category = EXCLUDED.category,
+            title = EXCLUDED.title,
+            explanation = EXCLUDED.explanation,
+            treatment_proposal = EXCLUDED.treatment_proposal,
+            source_url = EXCLUDED.source_url,
+            source_hash = EXCLUDED.source_hash,
+            substantive = EXCLUDED.substantive,
+            import_status = EXCLUDED.import_status,
+            updated_at = CURRENT_TIMESTAMP
+        RETURNING id
+        """.trimIndent(),
+        { rs, _ -> rs.getObject("id", UUID::class.java) },
+        item.id,
+        item.meetingId,
+        item.sourceId,
+        item.parentSourceId,
+        item.sequence,
+        item.displayNumber,
+        item.category.name,
+        item.title,
+        item.explanation,
+        item.treatmentProposal,
+        item.sourceUrl.toString(),
+        item.sourceHash,
+        item.substantive,
+        item.importStatus.name,
+    ).single()
+
+    fun countMeetingsBySourceId(sourceId: String): Int = jdbc.queryForObject(
+        "SELECT COUNT(*) FROM meeting WHERE source_id = ?",
+        Int::class.java,
+        sourceId,
+    ) ?: 0
+
+    fun countAgendaItems(meetingId: UUID): Int = jdbc.queryForObject(
+        "SELECT COUNT(*) FROM agenda_item WHERE meeting_id = ?",
+        Int::class.java,
+        meetingId,
+    ) ?: 0
+
+    fun lastSuccessfulSourceId(): String? = jdbc.queryForList(
+        "SELECT metadata_value FROM application_metadata WHERE metadata_key = 'last-successful-meeting-source-id'",
+        String::class.java,
+    ).firstOrNull()
+
+    @Transactional
+    fun markSuccessful(meetingId: UUID) {
+        val sourceId = jdbc.queryForObject("SELECT source_id FROM meeting WHERE id = ?", String::class.java, meetingId)
+            ?: error("Meeting $meetingId does not exist")
+        check(
+            jdbc.update(
+                """
+                UPDATE meeting
+                SET status = 'COMPLETE', completed_at = CURRENT_TIMESTAMP, error_code = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """.trimIndent(),
+                meetingId,
+            ) == 1,
+        )
+        jdbc.update(
+            """
+            INSERT INTO application_metadata(metadata_key, metadata_value, updated_at)
+            VALUES ('last-successful-meeting-source-id', ?, CURRENT_TIMESTAMP)
+            ON CONFLICT (metadata_key) DO UPDATE
+            SET metadata_value = EXCLUDED.metadata_value, updated_at = CURRENT_TIMESTAMP
+            """.trimIndent(),
+            sourceId,
+        )
+    }
+
+    fun markFailed(meetingId: UUID, errorCode: String) {
+        jdbc.update(
+            """
+            UPDATE meeting SET status = 'FAILED', error_code = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """.trimIndent(),
+            errorCode,
+            meetingId,
+        )
+    }
+}
