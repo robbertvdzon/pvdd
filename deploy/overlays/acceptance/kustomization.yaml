@@ -2,18 +2,18 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: pvdd-acceptance
 resources:
-  - ../../base
-  - configmap.yaml
-  - mock.yaml
-  - route.yaml
-  - sealed-secret.yaml
+- ../../base
+- configmap.yaml
+- mock.yaml
+- route.yaml
+- sealed-secret.yaml
 images:
-  - name: ghcr.io/robbertvdzon/pvdd-backend
-    newName: ghcr.io/robbertvdzon/pvdd-backend
-    newTag: unreleased
-  - name: ghcr.io/robbertvdzon/pvdd-frontend
-    newName: ghcr.io/robbertvdzon/pvdd-frontend
-    newTag: unreleased
-  - name: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
-    newName: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
-    newTag: unreleased
+- digest: sha256:2dc4d0000542d1b7db2272b39804bb295495e45d26671fd8aac4ac98ee0d5d97
+  name: ghcr.io/robbertvdzon/pvdd-backend
+  newName: ghcr.io/robbertvdzon/pvdd-backend
+- digest: sha256:8f0e5ecb509c3f2c88a7dd0c7e2bb0d15b89c873a43d8dcbdfa96436fa15d84a
+  name: ghcr.io/robbertvdzon/pvdd-frontend
+  newName: ghcr.io/robbertvdzon/pvdd-frontend
+- digest: sha256:c1c4999f53373d14e9506046cf42c79af9bf2b127453a379278ffc55f00885db
+  name: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
+  newName: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
