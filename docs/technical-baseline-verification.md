@@ -1,12 +1,12 @@
 # Technische baseline — gezamenlijke bewijsronde
 
 Datum: 31 augustus 2026  
-Poortstatus: **GEBLOKKEERD — 16 van 17 controles groen**
+Poortstatus: **TECHNISCH GEREED — 17 van 17 controles groen**
 
-De technische fundering T0–T13 is gebouwd en live bewezen. Alleen de menselijke Google-proef met
-beide echte toegestane accounts en een derde, niet-toegestaan account is nog niet uitgevoerd. Om
-die reden is de status nadrukkelijk nog niet **TECHNISCH GEREED**, blijft fase 2 geblokkeerd en is
-tag `technical-baseline-v1` nog niet gemaakt.
+De technische fundering T0–T13 is gebouwd en live bewezen. De eigenaar heeft de menselijke
+Google-proef met beide toegestane accounts en een niet-toegestaan account uitgevoerd en op
+31 augustus 2026 bevestigd. Alle T14-controles zijn daarmee groen en fase 2 mag starten vanaf tag
+`technical-baseline-v1`.
 
 ## Bewezen revisies
 
@@ -39,13 +39,13 @@ run [`33425473594`](https://github.com/robbertvdzon/agent-runtime/actions/runs/3
 - [x] **Flyway en technische tabel werken.** Backend-Testcontainers-tests bewezen migratie op een
       lege PostgreSQL 16, herstart-idempotentie, schrijven/lezen van `application_metadata` en
       fail-closed readiness.
-- [ ] **Google-login met de drie echte accounts.** De productiepagina toont de Google-knop,
+- [x] **Google-login met de drie echte accounts.** De productiepagina toont de Google-knop,
       Google Identity initialiseert en `/api/auth/me` geeft zonder token `401`. Unit-tests bewijzen
       RS256/JWKS, audience, issuer, expiry, `email_verified` en de exacte allowlist
-      `marchanou@gmail.com`/`robbertvdzon@gmail.com`. Nog handmatig te bewijzen: voeg
-      `https://pvdd.vdzonsoftware.nl` toe als Authorized JavaScript origin bij OAuth-client
-      `Robberts applicaties`, log met beide toegestane accounts in en controleer dat een derde
-      account `403` krijgt.
+      `marchanou@gmail.com`/`robbertvdzon@gmail.com`. De eigenaar bevestigde op 31 augustus 2026
+      dat de Authorized JavaScript origin actief is, beide toegestane accounts kunnen inloggen en
+      een ander account door de backend wordt geweigerd. Loginbewijzen zijn op verzoek niet
+      opgeslagen.
 - [x] **Same-origin frontend/backend werkt.** De live frontend bedient `/api/version` via dezelfde
       host met `200`; de beschermde route `/api/auth/me` geeft zonder login `401`.
 - [x] **Cache en buildidentiteit zijn bewezen.** Live: shell `no-cache`, `/version.json`
@@ -83,13 +83,8 @@ run [`33425473594`](https://github.com/robbertvdzon/agent-runtime/actions/runs/3
       shell-, auth-, versie-, database-, Runtime-client- en bronboundarycomponenten. De UI meldt
       expliciet dat vergaderingen en analyses pas in fase 2 worden toegevoegd.
 
-## Resterende menselijke proef
+## Poortbesluit
 
-1. Open de Google Cloud Console met het account dat project `Robberts applicaties` beheert.
-2. Voeg bij de bestaande Web OAuth-client exact `https://pvdd.vdzonsoftware.nl` toe aan
-   **Authorized JavaScript origins** en sla op.
-3. Log op de productie-URL afzonderlijk in als `marchanou@gmail.com` en
-   `robbertvdzon@gmail.com`; controleer voor beide de technische shell en `/api/auth/me`.
-4. Probeer een ander Google-account en controleer dat de backend toegang weigert.
-5. Zet daarna deze laatste checkbox op groen, wijzig de poortstatus naar **TECHNISCH GEREED**,
-   leg de definitieve PvdD-evidencecommit vast en maak/push tag `technical-baseline-v1`.
+Alle zeventien controles zijn groen. De technische baseline is **TECHNISCH GEREED**. Functionele
+ontwikkeling volgens stappenplan 2 mag uitsluitend voortbouwen op tag `technical-baseline-v1` of
+een aantoonbare opvolger daarvan.
