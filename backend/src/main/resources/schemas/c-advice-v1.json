@@ -15,12 +15,12 @@
   "properties": {
     "agendaItemSourceId": {"type": "string", "minLength": 1, "maxLength": 160},
     "besprekenEnNaarB": {"type": "boolean"},
-    "motivering": {"$ref": "ab-advice-v1.json#/$defs/section"},
+    "motivering": {"$ref": "#/$defs/section"},
     "urgentie": {"enum": ["LAAG", "MIDDEL", "HOOG"]},
-    "commissieDoel": {"$ref": "ab-advice-v1.json#/$defs/section"},
+    "commissieDoel": {"$ref": "#/$defs/section"},
     "kernvraag": {
       "oneOf": [
-        {"$ref": "ab-advice-v1.json#/$defs/section"},
+        {"$ref": "#/$defs/section"},
         {"type": "null"}
       ]
     }
@@ -28,7 +28,35 @@
   "allOf": [
     {
       "if": {"properties": {"besprekenEnNaarB": {"const": true}}},
-      "then": {"properties": {"kernvraag": {"$ref": "ab-advice-v1.json#/$defs/section"}}}
+      "then": {"properties": {"kernvraag": {"$ref": "#/$defs/section"}}}
     }
-  ]
+  ],
+  "$defs": {
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "citations"],
+      "properties": {
+        "text": {"type": "string", "minLength": 1, "maxLength": 6000},
+        "citations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {"$ref": "#/$defs/citation"}
+        }
+      }
+    },
+    "citation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "sourceType", "quote"],
+      "properties": {
+        "sourceId": {"type": "string", "minLength": 1, "maxLength": 160},
+        "sourceType": {"enum": ["MEETING_DOCUMENT", "POLICY_PROGRAMME"]},
+        "pageNumber": {"type": ["integer", "null"], "minimum": 1},
+        "section": {"type": ["string", "null"], "maxLength": 200},
+        "quote": {"type": "string", "minLength": 1, "maxLength": 500}
+      }
+    }
+  }
 }

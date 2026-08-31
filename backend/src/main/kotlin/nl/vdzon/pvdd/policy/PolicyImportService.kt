@@ -2,7 +2,7 @@ package nl.vdzon.pvdd.policy
 
 import java.time.Clock
 import java.util.UUID
-import nl.vdzon.pvdd.documents.DocumentExtractor
+import java.security.MessageDigest
 import org.apache.pdfbox.Loader
 import org.apache.pdfbox.text.PDFTextStripper
 import org.springframework.stereotype.Service
@@ -23,7 +23,7 @@ class PolicyImportService(
 
     fun import(pdf: PolicyPdf): ImportedPolicy {
         if (!pdf.bytes.beginsWith(PDF_MAGIC) || !pdf.contentType.isNullOrPdf()) throw PolicySourceException("INVALID_PDF")
-        val hash = DocumentExtractor.sha256(pdf.bytes)
+        val hash = sha256(pdf.bytes)
         if (repository.countByHash(hash) > 0) return ImportedPolicy(hash, repository.countByHash(hash))
         val fetchedAt = clock.instant()
         val chunks = parsePages(pdf.bytes).flatMap { (page, text) -> chunk(page, text) }
@@ -92,6 +92,9 @@ class PolicyImportService(
     }
 
     private fun ByteArray.beginsWith(prefix: ByteArray) = size >= prefix.size && prefix.indices.all { this[it] == prefix[it] }
+    private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
+        .digest(bytes)
+        .joinToString("") { "%02x".format(it) }
     private fun String?.isNullOrPdf(): Boolean = this == null || substringBefore(';').trim().equals("application/pdf", true)
 
     private data class ParsedPolicyChunk(val page: Int, val sequence: Int, val heading: String?, val text: String)
