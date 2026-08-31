@@ -14,6 +14,7 @@ geblokkeerd totdat de technische acceptatiepoort T14 uit het stappenplan groen i
 - [Factory-overzicht](docs/factory/README.md)
 - [Architectuurbesluiten](docs/adr/README.md)
 - [Technische integraties](docs/technical-integrations.md)
+- [OpenShift en GitOps](deploy/README.md)
 
 ## Lokaal starten
 

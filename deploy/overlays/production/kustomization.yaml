@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: pvdd
+resources:
+  - ../../base
+  - configmap.yaml
+  - route.yaml
+  - sealed-secret.yaml
+images:
+  - name: ghcr.io/robbertvdzon/pvdd-backend
+    newName: ghcr.io/robbertvdzon/pvdd-backend
+    newTag: unreleased
+  - name: ghcr.io/robbertvdzon/pvdd-frontend
+    newName: ghcr.io/robbertvdzon/pvdd-frontend
+    newTag: unreleased

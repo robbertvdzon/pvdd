@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pvdd-meeting-source-mock
+  labels: {app.kubernetes.io/name: pvdd, app.kubernetes.io/component: meeting-source-mock}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: pvdd, app.kubernetes.io/component: meeting-source-mock}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: pvdd, app.kubernetes.io/component: meeting-source-mock}
+    spec:
+      serviceAccountName: pvdd
+      securityContext:
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: mock
+          image: ghcr.io/robbertvdzon/pvdd-meeting-source-mock:unreleased
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: http, containerPort: 8080}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 96Mi}
+          startupProbe:
+            httpGet: {path: /health/ready, port: http}
+            periodSeconds: 3
+            failureThreshold: 20
+          readinessProbe:
+            httpGet: {path: /health/ready, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health/live, port: http}
+            periodSeconds: 30
+          volumeMounts:
+            - {name: temporary-files, mountPath: /tmp}
+            - {name: nginx-cache, mountPath: /var/cache/nginx}
+      volumes:
+        - name: temporary-files
+          emptyDir: {sizeLimit: 16Mi}
+        - name: nginx-cache
+          emptyDir: {sizeLimit: 16Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pvdd-meeting-source-mock
+spec:
+  selector: {app.kubernetes.io/name: pvdd, app.kubernetes.io/component: meeting-source-mock}
+  ports:
+    - {name: http, port: 8080, targetPort: http}

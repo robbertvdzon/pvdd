@@ -7,6 +7,12 @@ COPY src ./src
 RUN mvn -B --no-transfer-progress clean package -DskipTests
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
+ARG APP_VERSION=0.1.0
+ARG GIT_REVISION=0000000000000000000000000000000000000000
+ARG BUILD_TIME=1970-01-01T00:00:00Z
+ENV PVDD_APP_VERSION=$APP_VERSION \
+    PVDD_GIT_REVISION=$GIT_REVISION \
+    PVDD_BUILD_TIME=$BUILD_TIME
 RUN addgroup -S -g 1001 pvdd && adduser -S -u 1001 -G pvdd pvdd \
  && chgrp -R 0 /app /tmp && chmod -R g=u /app /tmp
 COPY --from=build --chown=1001:0 /src/target/pvdd-backend-*.jar /app/app.jar

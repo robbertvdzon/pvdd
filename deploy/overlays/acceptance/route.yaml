@@ -1,0 +1,9 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: pvdd
+spec:
+  host: pvdd-acceptance.vdzonsoftware.nl
+  to: {kind: Service, name: frontend}
+  port: {targetPort: http}
+  tls: {termination: edge, insecureEdgeTerminationPolicy: Redirect}

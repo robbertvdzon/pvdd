@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pvdd-config
+data:
+  PVDD_ENVIRONMENT: acceptance
+  PVDD_DATABASE_URL: jdbc:postgresql://database:5432/pvdd
+  PVDD_AGENT_RUNTIME_BASE_URL: http://agent-runtime-server.agent-runtime-acceptance.svc.cluster.local
+  PVDD_AGENT_RUNTIME_PROVIDER: MOCKED
+  PVDD_AGENT_RUNTIME_MODEL: mock-model
+  PVDD_MEETING_SOURCE_BASE_URL: http://pvdd-meeting-source-mock:8080

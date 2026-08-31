@@ -50,7 +50,9 @@ jobs:
         run: |
           docker build -t pvdd-backend:verify backend
           docker build -t pvdd-frontend:verify frontend
+          docker build -t pvdd-meeting-source-mock:verify meeting-source-mock
       - name: Render Kustomize overlays when present
         run: |
           if [[ -d deploy/overlays/acceptance ]]; then kubectl kustomize deploy/overlays/acceptance >/dev/null; fi
           if [[ -d deploy/overlays/production ]]; then kubectl kustomize deploy/overlays/production >/dev/null; fi
+          bash tools/verify-deployment.sh
