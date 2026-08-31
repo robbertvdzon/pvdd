@@ -7,12 +7,69 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
+import tools.jackson.core.type.TypeReference
+
+data class PreparedAnalysisRun(
+    val run: AnalysisRun,
+    val meetingId: UUID,
+    val category: String,
+    val agendaItemSourceId: String,
+    val prompt: String,
+    val responseSchema: JsonNode,
+    val allowedSources: List<AnalysisSource>,
+)
 
 @Repository
 class AnalysisRepository(
     private val jdbc: JdbcTemplate,
     private val mapper: ObjectMapper,
 ) {
+    fun queueMeeting(meetingId: UUID) {
+        jdbc.update(
+            """
+            INSERT INTO analysis_meeting_queue(meeting_id, status)
+            VALUES (?, 'PENDING')
+            ON CONFLICT (meeting_id) DO UPDATE SET
+                status = CASE WHEN analysis_meeting_queue.status = 'COMPLETE' THEN 'COMPLETE' ELSE 'PENDING' END,
+                updated_at = CURRENT_TIMESTAMP
+            """.trimIndent(),
+            meetingId,
+        )
+    }
+
+    fun claimMeeting(): UUID? = jdbc.query(
+        """
+        WITH candidate AS (
+            SELECT meeting_id FROM analysis_meeting_queue
+            WHERE status = 'PENDING' OR (status = 'CLAIMED' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+            ORDER BY created_at
+            FOR UPDATE SKIP LOCKED LIMIT 1
+        )
+        UPDATE analysis_meeting_queue q
+        SET status = 'CLAIMED', attempt_count = attempt_count + 1, updated_at = CURRENT_TIMESTAMP
+        FROM candidate c WHERE q.meeting_id = c.meeting_id
+        RETURNING q.meeting_id
+        """.trimIndent(),
+        { rs, _ -> rs.getObject("meeting_id", UUID::class.java) },
+    ).singleOrNull()
+
+    fun finishMeetingPreparation(meetingId: UUID) {
+        jdbc.update("UPDATE analysis_meeting_queue SET status = 'COMPLETE', error_code = NULL, updated_at = CURRENT_TIMESTAMP WHERE meeting_id = ?", meetingId)
+    }
+
+    fun retryMeetingPreparation(meetingId: UUID, errorCode: String) {
+        jdbc.update(
+            """
+            UPDATE analysis_meeting_queue SET
+                status = CASE WHEN attempt_count >= 5 THEN 'FAILED' ELSE 'PENDING' END,
+                error_code = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE meeting_id = ?
+            """.trimIndent(),
+            errorCode,
+            meetingId,
+        )
+    }
+
     fun createRun(meetingId: UUID, run: AnalysisRun): UUID = jdbc.query(
         """
         INSERT INTO analysis_run(
@@ -38,6 +95,135 @@ class AnalysisRepository(
         Timestamp.from(run.updatedAt),
         run.completedAt?.let(Timestamp::from),
     ).single()
+
+    fun createPreparedRun(prepared: PreparedAnalysisRun): UUID {
+        val runId = createRun(prepared.meetingId, prepared.run)
+        jdbc.update(
+            """
+            UPDATE analysis_run SET category = ?, agenda_item_source_id = ?, prompt_text = ?,
+                response_schema = CAST(? AS jsonb), allowed_sources = CAST(? AS jsonb), updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND prompt_text IS NULL
+            """.trimIndent(),
+            prepared.category,
+            prepared.agendaItemSourceId,
+            prepared.prompt,
+            mapper.writeValueAsString(prepared.responseSchema),
+            mapper.writeValueAsString(prepared.allowedSources),
+            runId,
+        )
+        return runId
+    }
+
+    fun claimPendingRun(): PreparedAnalysisRun? = jdbc.query(
+        """
+        WITH candidate AS (
+            SELECT id FROM analysis_run
+            WHERE (outbox_status = 'PENDING' OR (outbox_status = 'CLAIMED' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes'))
+              AND status = 'PENDING' AND prompt_text IS NOT NULL
+            ORDER BY created_at
+            FOR UPDATE SKIP LOCKED LIMIT 1
+        )
+        UPDATE analysis_run r SET outbox_status = 'CLAIMED', submit_attempts = submit_attempts + 1,
+            updated_at = CURRENT_TIMESTAMP
+        FROM candidate c WHERE r.id = c.id
+        RETURNING r.*
+        """.trimIndent(),
+        preparedRowMapper,
+    ).singleOrNull()
+
+    fun markSubmitted(runId: UUID, runtimeJobId: String, status: AnalysisStatus) {
+        jdbc.update(
+            """
+            UPDATE analysis_run SET runtime_job_id = ?, status = ?, outbox_status = 'SUBMITTED',
+                submitted_at = COALESCE(submitted_at, CURRENT_TIMESTAMP), error_code = NULL,
+                error_message = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+            """.trimIndent(),
+            runtimeJobId,
+            status.name,
+            runId,
+        )
+    }
+
+    fun retrySubmit(runId: UUID, errorCode: String) {
+        jdbc.update(
+            """
+            UPDATE analysis_run SET
+                outbox_status = CASE WHEN submit_attempts >= 8 THEN 'FAILED' ELSE 'PENDING' END,
+                status = CASE WHEN submit_attempts >= 8 THEN 'FAILED' ELSE 'PENDING' END,
+                error_code = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """.trimIndent(),
+            errorCode,
+            runId,
+        )
+    }
+
+    fun activeRuns(limit: Int = 20): List<PreparedAnalysisRun> = jdbc.query(
+        """
+        SELECT * FROM analysis_run
+        WHERE runtime_job_id IS NOT NULL AND status IN ('QUEUED', 'WAITING_FOR_WORKER', 'RUNNING')
+        ORDER BY updated_at LIMIT ?
+        """.trimIndent(),
+        preparedRowMapper,
+        limit,
+    )
+
+    fun updateRuntimeStatus(runId: UUID, status: AnalysisStatus, errorCode: String? = null) {
+        jdbc.update(
+            """
+            UPDATE analysis_run SET status = ?, error_code = ?,
+                outbox_status = CASE WHEN ? IN ('FAILED', 'CANCELLED') THEN 'FAILED' ELSE outbox_status END,
+                completed_at = CASE WHEN ? IN ('FAILED', 'CANCELLED') THEN CURRENT_TIMESTAMP ELSE completed_at END,
+                updated_at = CURRENT_TIMESTAMP WHERE id = ?
+            """.trimIndent(),
+            status.name,
+            errorCode,
+            status.name,
+            status.name,
+            runId,
+        )
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    fun completeWithAdvice(
+        prepared: PreparedAnalysisRun,
+        advice: JsonNode,
+        citations: JsonNode,
+        provider: String,
+        model: String,
+        completedAt: Instant,
+    ) {
+        saveAdvice(
+            UUID.randomUUID(), prepared.run.id, prepared.run.agendaItemId, prepared.category,
+            advice, citations, provider, model, prepared.run.promptVersion,
+            prepared.run.sourceFingerprint, completedAt,
+        )
+        jdbc.update(
+            """
+            UPDATE analysis_run SET status = 'SUCCEEDED', outbox_status = 'COMPLETE', error_code = NULL,
+                error_message = NULL, completed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+            """.trimIndent(),
+            Timestamp.from(completedAt),
+            prepared.run.id,
+        )
+    }
+
+    fun allRequiredRunsSucceeded(meetingId: UUID): Boolean = jdbc.queryForObject(
+        """
+        SELECT COUNT(*) > 0 AND NOT EXISTS (
+            SELECT 1 FROM agenda_item ai
+            WHERE ai.meeting_id = ? AND ai.substantive AND ai.category IN ('A', 'B', 'C')
+              AND NOT EXISTS (
+                  SELECT 1 FROM analysis_run ar
+                  WHERE ar.agenda_item_id = ai.id AND ar.status = 'SUCCEEDED'
+              )
+        )
+        FROM analysis_run WHERE meeting_id = ?
+        """.trimIndent(),
+        Boolean::class.java,
+        meetingId,
+        meetingId,
+    ) == true
 
     fun saveAdvice(
         id: UUID,
@@ -71,6 +257,32 @@ class AnalysisRepository(
             promptVersion,
             sourceFingerprint,
             Timestamp.from(createdAt),
+        )
+    }
+
+    private val preparedRowMapper = org.springframework.jdbc.core.RowMapper { rs, _ ->
+        val run = AnalysisRun(
+            id = rs.getObject("id", UUID::class.java),
+            agendaItemId = rs.getObject("agenda_item_id", UUID::class.java),
+            sourceFingerprint = rs.getString("source_fingerprint"),
+            promptVersion = rs.getString("prompt_version"),
+            selectionVersion = rs.getString("selection_version"),
+            idempotencyKey = rs.getString("idempotency_key"),
+            runtimeJobId = rs.getString("runtime_job_id"),
+            status = AnalysisStatus.valueOf(rs.getString("status")),
+            errorCode = rs.getString("error_code"),
+            createdAt = rs.getTimestamp("created_at").toInstant(),
+            updatedAt = rs.getTimestamp("updated_at").toInstant(),
+            completedAt = rs.getTimestamp("completed_at")?.toInstant(),
+        )
+        PreparedAnalysisRun(
+            run = run,
+            meetingId = rs.getObject("meeting_id", UUID::class.java),
+            category = rs.getString("category"),
+            agendaItemSourceId = rs.getString("agenda_item_source_id"),
+            prompt = rs.getString("prompt_text"),
+            responseSchema = mapper.readTree(rs.getString("response_schema")),
+            allowedSources = mapper.readValue(rs.getString("allowed_sources"), object : TypeReference<List<AnalysisSource>>() {}),
         )
     }
 }

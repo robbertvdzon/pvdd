@@ -78,4 +78,33 @@ class DocumentRepository(
         agendaItemId,
         sourceId,
     ) ?: 0
+
+    fun findPassagesForAnalysis(agendaItemId: UUID): List<DocumentPassage> = jdbc.query(
+        """
+        SELECT sd.source_id, sd.source_url,
+               (section ->> 'sequence')::integer AS section_sequence,
+               NULLIF(section ->> 'pageNumber', '')::integer AS page_number,
+               section ->> 'heading' AS heading,
+               section ->> 'text' AS section_text
+        FROM agenda_item target
+        JOIN agenda_item source_item ON source_item.meeting_id = target.meeting_id
+            AND (source_item.id = target.id OR source_item.source_id LIKE '%:meeting-documents')
+        JOIN source_document sd ON sd.agenda_item_id = source_item.id
+            AND sd.extraction_status = 'EXTRACTED'
+        CROSS JOIN LATERAL jsonb_array_elements(sd.extracted_sections) section
+        WHERE target.id = ?
+        ORDER BY source_item.sequence_number, sd.source_id, section_sequence
+        """.trimIndent(),
+        { rs, _ ->
+            DocumentPassage(
+                documentSourceId = rs.getString("source_id"),
+                sourceUrl = java.net.URI(rs.getString("source_url")),
+                sequence = rs.getInt("section_sequence"),
+                pageNumber = rs.getObject("page_number", Int::class.java),
+                heading = rs.getString("heading"),
+                text = rs.getString("section_text"),
+            )
+        },
+        agendaItemId,
+    )
 }

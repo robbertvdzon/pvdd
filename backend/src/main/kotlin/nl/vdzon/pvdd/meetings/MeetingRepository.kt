@@ -94,6 +94,59 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
         meetingId,
     ) ?: 0
 
+    fun findMeeting(meetingId: UUID): Meeting? = jdbc.query(
+        """
+        SELECT id, source_id, committee, starts_at, ends_at, location, title, source_url,
+               source_hash, status, checked_at, imported_at
+        FROM meeting WHERE id = ?
+        """.trimIndent(),
+        { rs, _ ->
+            Meeting(
+                id = rs.getObject("id", UUID::class.java),
+                sourceId = rs.getString("source_id"),
+                committee = rs.getString("committee"),
+                startsAt = rs.getTimestamp("starts_at").toInstant(),
+                endsAt = rs.getTimestamp("ends_at")?.toInstant(),
+                location = rs.getString("location"),
+                title = rs.getString("title"),
+                sourceUrl = java.net.URI(rs.getString("source_url")),
+                sourceHash = rs.getString("source_hash"),
+                status = MeetingStatus.valueOf(rs.getString("status")),
+                checkedAt = rs.getTimestamp("checked_at").toInstant(),
+                importedAt = rs.getTimestamp("imported_at")?.toInstant(),
+            )
+        },
+        meetingId,
+    ).singleOrNull()
+
+    fun findAgendaItems(meetingId: UUID): List<AgendaItem> = jdbc.query(
+        """
+        SELECT id, meeting_id, source_id, parent_source_id, sequence_number, display_number,
+               category, title, explanation, treatment_proposal, source_url, source_hash,
+               substantive, import_status
+        FROM agenda_item WHERE meeting_id = ? ORDER BY sequence_number
+        """.trimIndent(),
+        { rs, _ ->
+            AgendaItem(
+                id = rs.getObject("id", UUID::class.java),
+                meetingId = rs.getObject("meeting_id", UUID::class.java),
+                sourceId = rs.getString("source_id"),
+                parentSourceId = rs.getString("parent_source_id"),
+                sequence = rs.getInt("sequence_number"),
+                displayNumber = rs.getString("display_number"),
+                category = AgendaCategory.valueOf(rs.getString("category")),
+                title = rs.getString("title"),
+                explanation = rs.getString("explanation"),
+                treatmentProposal = rs.getString("treatment_proposal"),
+                sourceUrl = java.net.URI(rs.getString("source_url")),
+                sourceHash = rs.getString("source_hash"),
+                substantive = rs.getBoolean("substantive"),
+                importStatus = ImportStatus.valueOf(rs.getString("import_status")),
+            )
+        },
+        meetingId,
+    )
+
     override fun lastSuccessfulSourceId(): String? = jdbc.queryForList(
         "SELECT metadata_value FROM application_metadata WHERE metadata_key = 'last-successful-meeting-source-id'",
         String::class.java,

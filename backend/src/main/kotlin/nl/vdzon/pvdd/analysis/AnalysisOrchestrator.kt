@@ -1,0 +1,228 @@
+package nl.vdzon.pvdd.analysis
+
+import java.security.MessageDigest
+import java.time.Clock
+import java.util.UUID
+import nl.vdzon.pvdd.documents.DocumentPassage
+import nl.vdzon.pvdd.documents.DocumentRepository
+import nl.vdzon.pvdd.meetings.AgendaCategory
+import nl.vdzon.pvdd.meetings.AgendaItem
+import nl.vdzon.pvdd.meetings.MeetingCheckStatus
+import nl.vdzon.pvdd.meetings.MeetingImportedEvent
+import nl.vdzon.pvdd.meetings.MeetingRepository
+import nl.vdzon.pvdd.policy.PolicyImportService
+import nl.vdzon.pvdd.policy.PolicySelector
+import nl.vdzon.pvdd.runtime.AgentRuntimeGateway
+import nl.vdzon.pvdd.runtime.AgentRuntimeProperties
+import nl.vdzon.pvdd.runtime.RuntimeCreateRequest
+import nl.vdzon.pvdd.runtime.RuntimeJob
+import org.slf4j.LoggerFactory
+import org.springframework.context.event.EventListener
+import org.springframework.scheduling.annotation.Scheduled
+import org.springframework.stereotype.Component
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.ObjectMapper
+
+@Component
+class AnalysisOrchestrator(
+    private val repository: AnalysisRepository,
+    private val meetings: MeetingRepository,
+    private val documents: DocumentRepository,
+    private val policyImport: PolicyImportService,
+    private val policySelector: PolicySelector,
+    private val prompts: PromptBuilder,
+    private val validator: AdviceValidator,
+    private val runtime: AgentRuntimeGateway,
+    private val runtimeProperties: AgentRuntimeProperties,
+    private val mapper: ObjectMapper,
+    private val clock: Clock,
+) {
+    @EventListener
+    fun meetingImported(event: MeetingImportedEvent) {
+        repository.queueMeeting(event.meetingId)
+    }
+
+    @Scheduled(
+        fixedDelayString = "\${pvdd.analysis.reconcile-delay:5s}",
+        initialDelayString = "\${pvdd.analysis.reconcile-delay:5s}",
+    )
+    fun reconcile() {
+        prepareOneMeeting()
+        submitOneRun()
+        repository.activeRuns().forEach(::reconcileRun)
+    }
+
+    fun prepareOneMeeting() {
+        val meetingId = repository.claimMeeting() ?: return
+        try {
+            policyImport.ensureImported()
+            val meeting = requireNotNull(meetings.findMeeting(meetingId))
+            val items = meetings.findAgendaItems(meetingId)
+                .filter { it.substantive && it.category in setOf(AgendaCategory.A, AgendaCategory.B, AgendaCategory.C) }
+            require(items.isNotEmpty()) { "NO_ANALYSIS_ITEMS" }
+            items.forEach { item ->
+                val sources = sources(item)
+                val plan = prompts.plan(item.toAnalysisItem(), sources)
+                require(plan.phases.size == 1 && plan.phases.single().type == PromptPhaseType.DIRECT_ADVICE) {
+                    "PHASED_ANALYSIS_REQUIRED"
+                }
+                val fingerprint = fingerprint(item, sources)
+                val key = "pvdd-${sha256("${meeting.sourceId}|${item.sourceId}|$fingerprint|${PromptBuilder.PROMPT_VERSION}")}" 
+                val now = clock.instant()
+                repository.createPreparedRun(
+                    PreparedAnalysisRun(
+                        run = AnalysisRun(
+                            id = UUID.randomUUID(),
+                            agendaItemId = item.id,
+                            sourceFingerprint = fingerprint,
+                            promptVersion = PromptBuilder.PROMPT_VERSION,
+                            selectionVersion = PromptBuilder.SELECTION_VERSION,
+                            idempotencyKey = key,
+                            runtimeJobId = null,
+                            status = AnalysisStatus.PENDING,
+                            errorCode = null,
+                            createdAt = now,
+                            updatedAt = now,
+                            completedAt = null,
+                        ),
+                        meetingId = meetingId,
+                        category = item.category.name,
+                        agendaItemSourceId = item.sourceId,
+                        prompt = requireNotNull(plan.phases.single().prompt),
+                        responseSchema = prompts.schema(item.category.name),
+                        allowedSources = sources,
+                    ),
+                )
+            }
+            repository.finishMeetingPreparation(meetingId)
+        } catch (failure: Exception) {
+            log.warn("Analysis preparation failed for meeting {} with {}", meetingId, safeCode(failure))
+            repository.retryMeetingPreparation(meetingId, safeCode(failure))
+        }
+    }
+
+    fun submitOneRun() {
+        val prepared = repository.claimPendingRun() ?: return
+        try {
+            val job = runtime.create(
+                RuntimeCreateRequest(
+                    idempotencyKey = prepared.run.idempotencyKey,
+                    prompt = prepared.prompt,
+                    responseSchema = prepared.responseSchema,
+                    environmentKeys = emptyList(),
+                ),
+            )
+            repository.markSubmitted(prepared.run.id, job.id, job.status.toActiveStatus())
+        } catch (failure: Exception) {
+            log.warn("Runtime submit failed for analysis {} with {}", prepared.run.id, safeCode(failure))
+            repository.retrySubmit(prepared.run.id, "RUNTIME_UNAVAILABLE")
+        }
+    }
+
+    private fun reconcileRun(prepared: PreparedAnalysisRun) {
+        val jobId = prepared.run.runtimeJobId ?: return
+        try {
+            val job = runtime.status(jobId)
+            when (job.status) {
+                "SUCCEEDED" -> complete(prepared, job)
+                "FAILED" -> fail(prepared, AnalysisStatus.FAILED, job.errorCode ?: "RUNTIME_FAILED")
+                "CANCELLED" -> fail(prepared, AnalysisStatus.CANCELLED, job.errorCode ?: "RUNTIME_CANCELLED")
+                else -> repository.updateRuntimeStatus(prepared.run.id, job.status.toActiveStatus())
+            }
+        } catch (failure: Exception) {
+            log.warn("Runtime reconciliation failed for analysis {} with {}", prepared.run.id, safeCode(failure))
+        }
+    }
+
+    private fun complete(prepared: PreparedAnalysisRun, job: RuntimeJob) {
+        try {
+            val result = runtime.result(requireNotNull(prepared.run.runtimeJobId)).result
+            validator.validate(prepared.category, prepared.agendaItemSourceId, result, prepared.allowedSources)
+            repository.completeWithAdvice(
+                prepared,
+                result,
+                citations(result),
+                job.provider,
+                job.model,
+                clock.instant(),
+            )
+            if (repository.allRequiredRunsSucceeded(prepared.meetingId)) meetings.markSuccessful(prepared.meetingId)
+        } catch (failure: AdviceValidationException) {
+            fail(prepared, AnalysisStatus.FAILED, "INVALID_RESULT")
+        }
+    }
+
+    private fun fail(prepared: PreparedAnalysisRun, status: AnalysisStatus, errorCode: String) {
+        repository.updateRuntimeStatus(prepared.run.id, status, errorCode)
+        meetings.markPartial(prepared.meetingId, errorCode)
+    }
+
+    private fun sources(item: AgendaItem): List<AnalysisSource> {
+        val agendaText = listOfNotNull(item.title, item.explanation, item.treatmentProposal).joinToString("\n")
+        val documentSources = documents.findPassagesForAnalysis(item.id).map(::documentSource)
+        val selection = policySelector.select("$agendaText\n${documentSources.joinToString("\n") { it.text }}")
+        val policySources = selection.chunks.map { chunk ->
+            AnalysisSource(
+                sourceId = "policy-p${chunk.pageNumber}-c${chunk.sequence}",
+                sourceType = CitationSourceType.POLICY_PROGRAMME,
+                sourceUrl = chunk.sourceUrl,
+                pageNumber = chunk.pageNumber,
+                section = chunk.heading,
+                text = chunk.text,
+            )
+        }
+        return listOf(
+            AnalysisSource(
+                sourceId = "agenda-${item.sourceId}".take(160),
+                sourceType = CitationSourceType.MEETING_DOCUMENT,
+                sourceUrl = item.sourceUrl,
+                pageNumber = null,
+                section = "Agendapunt",
+                text = agendaText,
+            ),
+        ) + documentSources + policySources
+    }
+
+    private fun documentSource(passage: DocumentPassage): AnalysisSource = AnalysisSource(
+        sourceId = "doc-${passage.documentSourceId.take(110)}-s${passage.sequence}".take(160),
+        sourceType = CitationSourceType.MEETING_DOCUMENT,
+        sourceUrl = passage.sourceUrl,
+        pageNumber = passage.pageNumber,
+        section = passage.heading,
+        text = passage.text,
+    )
+
+    private fun fingerprint(item: AgendaItem, sources: List<AnalysisSource>): String = sha256(
+        buildString {
+            append(item.sourceHash)
+            sources.sortedBy { it.sourceId }.forEach { source ->
+                append('|').append(source.sourceId).append(':').append(sha256(source.text))
+            }
+        },
+    )
+
+    private fun citations(result: JsonNode): JsonNode = mapper.createArrayNode().also { target ->
+        result.findValues("citations").filter { it.isArray }.forEach { array -> array.forEach(target::add) }
+    }
+
+    private fun AgendaItem.toAnalysisItem() = AnalysisAgendaItem(sourceId, category.name, title, explanation, treatmentProposal)
+
+    private fun String.toActiveStatus(): AnalysisStatus = when (this) {
+        "QUEUED", "SUCCEEDED" -> AnalysisStatus.QUEUED
+        "WAITING_FOR_WORKER" -> AnalysisStatus.WAITING_FOR_WORKER
+        "RUNNING" -> AnalysisStatus.RUNNING
+        else -> AnalysisStatus.QUEUED
+    }
+
+    private fun safeCode(failure: Exception): String = failure.message
+        ?.takeIf { it.matches(Regex("[A-Z0-9_]{1,120}")) }
+        ?: failure::class.java.simpleName.uppercase().take(120)
+
+    companion object {
+        private val log = LoggerFactory.getLogger(AnalysisOrchestrator::class.java)
+
+        private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+    }
+}

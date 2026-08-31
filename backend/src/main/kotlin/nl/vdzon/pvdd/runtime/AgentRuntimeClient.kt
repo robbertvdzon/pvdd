@@ -36,6 +36,13 @@ data class RuntimeCreateRequest(
     val executionTimeoutSeconds: Int = 300,
 )
 
+interface AgentRuntimeGateway {
+    fun create(request: RuntimeCreateRequest): RuntimeJob
+    fun status(jobId: String): RuntimeJob
+    fun result(jobId: String): RuntimeResult
+    fun cancel(jobId: String): RuntimeJob
+}
+
 open class AgentRuntimeException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
 class AgentRuntimeRejectedException(val statusCode: Int) : AgentRuntimeException("Agent Runtime rejected the request (HTTP $statusCode).")
 class AgentRuntimeUnavailableException(cause: Throwable) : AgentRuntimeException("Agent Runtime is temporarily unavailable.", cause)
@@ -45,8 +52,8 @@ class AgentRuntimeClient(
     private val properties: AgentRuntimeProperties,
     private val mapper: ObjectMapper,
     private val httpClient: HttpClient = HttpClient.newBuilder().connectTimeout(properties.connectTimeout).build(),
-) {
-    fun create(request: RuntimeCreateRequest): RuntimeJob {
+) : AgentRuntimeGateway {
+    override fun create(request: RuntimeCreateRequest): RuntimeJob {
         val payload = mapOf(
             "jobKind" to "APPLICATION_WORK",
             "idempotencyKey" to request.idempotencyKey,
@@ -67,11 +74,11 @@ class AgentRuntimeClient(
         }
     }
 
-    fun status(jobId: String): RuntimeJob = exchange("GET", "/v1/jobs/${safeId(jobId)}", null, RuntimeJob::class.java)
+    override fun status(jobId: String): RuntimeJob = exchange("GET", "/v1/jobs/${safeId(jobId)}", null, RuntimeJob::class.java)
 
-    fun result(jobId: String): RuntimeResult = exchange("GET", "/v1/jobs/${safeId(jobId)}/result", null, RuntimeResult::class.java)
+    override fun result(jobId: String): RuntimeResult = exchange("GET", "/v1/jobs/${safeId(jobId)}/result", null, RuntimeResult::class.java)
 
-    fun cancel(jobId: String): RuntimeJob = exchange("POST", "/v1/jobs/${safeId(jobId)}/cancel", "{}", RuntimeJob::class.java)
+    override fun cancel(jobId: String): RuntimeJob = exchange("POST", "/v1/jobs/${safeId(jobId)}/cancel", "{}", RuntimeJob::class.java)
 
     private fun safeId(id: String): String {
         require(id.matches(Regex("[A-Za-z0-9-]{1,100}"))) { "Invalid Runtime job ID." }

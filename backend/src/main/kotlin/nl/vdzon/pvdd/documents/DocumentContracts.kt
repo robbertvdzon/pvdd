@@ -36,3 +36,12 @@ data class ExtractedSection(
     val heading: String?,
     val text: String,
 )
+
+data class DocumentPassage(
+    val documentSourceId: String,
+    val sourceUrl: URI,
+    val sequence: Int,
+    val pageNumber: Int?,
+    val heading: String?,
+    val text: String,
+)

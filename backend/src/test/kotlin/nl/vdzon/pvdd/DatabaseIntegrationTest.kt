@@ -9,6 +9,9 @@ import kotlin.test.assertTrue
 import nl.vdzon.pvdd.analysis.AnalysisRepository
 import nl.vdzon.pvdd.analysis.AnalysisRun
 import nl.vdzon.pvdd.analysis.AnalysisStatus
+import nl.vdzon.pvdd.analysis.AnalysisSource
+import nl.vdzon.pvdd.analysis.CitationSourceType
+import nl.vdzon.pvdd.analysis.PreparedAnalysisRun
 import nl.vdzon.pvdd.documents.DocumentRepository
 import nl.vdzon.pvdd.documents.ExtractedSection
 import nl.vdzon.pvdd.documents.ExtractionStatus
@@ -32,6 +35,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
+import tools.jackson.module.kotlin.jacksonObjectMapper
 
 @Testcontainers
 @SpringBootTest
@@ -132,9 +136,54 @@ class DatabaseIntegrationTest(
         assertEquals(run.id, analysisRepository.createRun(meetingId, run))
         assertEquals(run.id, analysisRepository.createRun(meetingId, run.copy(id = UUID.randomUUID())))
 
+        analysisRepository.queueMeeting(meetingId)
+        assertEquals(meetingId, analysisRepository.claimMeeting())
+        analysisRepository.finishMeetingPreparation(meetingId)
+
+        val mapper = jacksonObjectMapper()
+        val prepared = PreparedAnalysisRun(
+            run = run.copy(
+                id = UUID.randomUUID(),
+                idempotencyKey = "pvdd-${"9".repeat(64)}",
+            ),
+            meetingId = meetingId,
+            category = "A",
+            agendaItemSourceId = item.sourceId,
+            prompt = "synthetic durable prompt",
+            responseSchema = mapper.readTree("""{"type":"object"}"""),
+            allowedSources = listOf(
+                AnalysisSource(
+                    sourceId = "policy-p1-c1",
+                    sourceType = CitationSourceType.POLICY_PROGRAMME,
+                    sourceUrl = policyUrl,
+                    pageNumber = 1,
+                    section = "Natuur",
+                    text = "Synthetische beleidstekst",
+                ),
+            ),
+        )
+        val preparedId = analysisRepository.createPreparedRun(prepared)
+        val firstClaim = requireNotNull(analysisRepository.claimPendingRun())
+        assertEquals(preparedId, firstClaim.run.id)
+        analysisRepository.retrySubmit(preparedId, "LOST_RESPONSE")
+        val recoveredClaim = requireNotNull(analysisRepository.claimPendingRun())
+        assertEquals(prepared.run.idempotencyKey, recoveredClaim.run.idempotencyKey)
+        assertEquals(prepared.allowedSources, recoveredClaim.allowedSources)
+        analysisRepository.markSubmitted(preparedId, "runtime-job-1", AnalysisStatus.RUNNING)
+        assertEquals(preparedId, analysisRepository.activeRuns().single { it.run.id == preparedId }.run.id)
+        analysisRepository.completeWithAdvice(
+            recoveredClaim,
+            mapper.readTree("""{"validated":true}"""),
+            mapper.createArrayNode(),
+            "MOCKED",
+            "mock-model",
+            now.plusSeconds(2),
+        )
+        assertTrue(analysisRepository.allRequiredRunsSucceeded(meetingId))
+
         val policy = PolicyChunk(
             id = UUID.randomUUID(),
-            sourceUrl = URI("https://example.invalid/policy.pdf"),
+            sourceUrl = policyUrl,
             sourceSha256 = "f".repeat(64),
             fetchedAt = now,
             pageNumber = 1,
@@ -182,6 +231,8 @@ class DatabaseIntegrationTest(
         errorCode = null,
         sections = listOf(ExtractedSection(1, 1, null, "Synthetische documenttekst")),
     )
+
+    private val policyUrl = URI("https://example.invalid/policy.pdf")
 
     companion object {
         @Container @ServiceConnection @JvmField
