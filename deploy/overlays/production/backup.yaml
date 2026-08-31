@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pvdd-database-backup
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pvdd-database-backup-local-path-scc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:local-path-postgresql
+subjects:
+  - {kind: ServiceAccount, name: pvdd-database-backup}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvdd-database-backups
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests: {storage: 10Gi}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pvdd-database-backup
+spec:
+  schedule: "30 2 * * *"
+  timeZone: Europe/Amsterdam
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels: {app.kubernetes.io/name: pvdd, app.kubernetes.io/component: database-backup}
+        spec:
+          serviceAccountName: pvdd-database-backup
+          restartPolicy: Never
+          securityContext:
+            fsGroupChangePolicy: OnRootMismatch
+            seLinuxOptions: {type: spc_t}
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: backup
+              image: quay.io/sclorg/postgresql-16-c9s@sha256:22162c54bc5a00ac54c5d48da193a8a3805e10950b961b36aa121ea6b11ea6ae
+              command: [/bin/bash, -ec]
+              args:
+                - |
+                  set -o pipefail
+                  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+                  temporary="/backups/.pvdd-${stamp}.dump.tmp"
+                  final="/backups/pvdd-${stamp}.dump"
+                  pg_dump --format=custom --no-owner --no-acl --file="$temporary"
+                  test -s "$temporary"
+                  sha256sum "$temporary" | sed "s#${temporary}#${final}#" > "${final}.sha256.tmp"
+                  mv "$temporary" "$final"
+                  mv "${final}.sha256.tmp" "${final}.sha256"
+                  echo "backup_created file=$(basename "$final")"
+              env:
+                - {name: PGHOST, value: database}
+                - {name: PGDATABASE, value: pvdd}
+                - name: PGUSER
+                  valueFrom: {secretKeyRef: {name: pvdd-secrets, key: PVDD_DATABASE_USER}}
+                - name: PGPASSWORD
+                  valueFrom: {secretKeyRef: {name: pvdd-secrets, key: PVDD_DATABASE_PASSWORD}}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: {drop: [ALL]}
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              resources:
+                requests: {cpu: 25m, memory: 64Mi}
+                limits: {cpu: 500m, memory: 256Mi}
+              volumeMounts:
+                - {name: backups, mountPath: /backups}
+                - {name: temporary-files, mountPath: /tmp}
+          volumes:
+            - name: backups
+              persistentVolumeClaim: {claimName: pvdd-database-backups}
+            - name: temporary-files
+              emptyDir: {sizeLimit: 64Mi}

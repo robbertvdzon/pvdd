@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: pvdd
 resources:
   - ../../base
+  - backup.yaml
   - configmap.yaml
   - route.yaml
   - sealed-secret.yaml
