@@ -12,6 +12,7 @@ class ModulithArchitectureTest {
         "analysis",
         "auth",
         "documents",
+        "dashboard",
         "meetings",
         "policy",
         "persistence",

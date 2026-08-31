@@ -19,6 +19,8 @@ data class PreparedAnalysisRun(
     val allowedSources: List<AnalysisSource>,
 )
 
+data class RunControl(val id: UUID, val meetingId: UUID, val runtimeJobId: String?, val status: AnalysisStatus)
+
 @Repository
 class AnalysisRepository(
     private val jdbc: JdbcTemplate,
@@ -224,6 +226,19 @@ class AnalysisRepository(
         meetingId,
         meetingId,
     ) == true
+
+    fun runControl(runId: UUID): RunControl? = jdbc.query(
+        "SELECT id, meeting_id, runtime_job_id, status FROM analysis_run WHERE id = ?",
+        { rs, _ ->
+            RunControl(
+                rs.getObject("id", UUID::class.java),
+                rs.getObject("meeting_id", UUID::class.java),
+                rs.getString("runtime_job_id"),
+                AnalysisStatus.valueOf(rs.getString("status")),
+            )
+        },
+        runId,
+    ).singleOrNull()
 
     fun saveAdvice(
         id: UUID,

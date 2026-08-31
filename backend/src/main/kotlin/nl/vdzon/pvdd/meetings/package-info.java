@@ -1,2 +1,2 @@
-@org.springframework.modulith.ApplicationModule(allowedDependencies = {"documents", "source"})
+@org.springframework.modulith.ApplicationModule(allowedDependencies = {"auth", "documents", "source"})
 package nl.vdzon.pvdd.meetings;
