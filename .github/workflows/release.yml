@@ -79,7 +79,9 @@ jobs:
     needs: metadata
     runs-on: ubuntu-24.04
     permissions: {contents: read, packages: write}
-    outputs: {digest: "${{ steps.image.outputs.digest }}"}
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
+      acceptance_digest: ${{ steps.acceptance-image.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
         with: {ref: "${{ needs.metadata.outputs.revision }}"}
@@ -98,6 +100,21 @@ jobs:
             GIT_REVISION=${{ needs.metadata.outputs.revision }}
             BUILD_TIME=${{ needs.metadata.outputs.build_time }}
             ENVIRONMENT=production
+            GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }}
+          cache-from: type=gha,scope=pvdd-frontend
+          cache-to: type=gha,mode=max,scope=pvdd-frontend
+      - id: acceptance-image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/robbertvdzon/pvdd-frontend:sha-${{ needs.metadata.outputs.revision }}-acceptance
+          build-args: |
+            APP_VERSION=0.1.0
+            GIT_REVISION=${{ needs.metadata.outputs.revision }}
+            BUILD_TIME=${{ needs.metadata.outputs.build_time }}
+            ENVIRONMENT=acceptance
             GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }}
           cache-from: type=gha,scope=pvdd-frontend
           cache-to: type=gha,mode=max,scope=pvdd-frontend
@@ -138,6 +155,7 @@ jobs:
           REVISION: ${{ needs.metadata.outputs.revision }}
           BACKEND_DIGEST: ${{ needs.backend.outputs.digest }}
           FRONTEND_DIGEST: ${{ needs.frontend.outputs.digest }}
+          ACCEPTANCE_FRONTEND_DIGEST: ${{ needs.frontend.outputs.acceptance_digest }}
           MOCK_DIGEST: ${{ needs.meeting-source-mock.outputs.digest }}
         run: |
           set -euo pipefail
@@ -161,7 +179,7 @@ jobs:
 
           (cd deploy/overlays/acceptance && kustomize edit set image \
             "ghcr.io/robbertvdzon/pvdd-backend=ghcr.io/robbertvdzon/pvdd-backend@${BACKEND_DIGEST}" \
-            "ghcr.io/robbertvdzon/pvdd-frontend=ghcr.io/robbertvdzon/pvdd-frontend@${FRONTEND_DIGEST}" \
+            "ghcr.io/robbertvdzon/pvdd-frontend=ghcr.io/robbertvdzon/pvdd-frontend@${ACCEPTANCE_FRONTEND_DIGEST}" \
             "ghcr.io/robbertvdzon/pvdd-meeting-source-mock=ghcr.io/robbertvdzon/pvdd-meeting-source-mock@${MOCK_DIGEST}")
           git add deploy/overlays/acceptance/kustomization.yaml
           git commit -m "deploy: promote $REVISION to acceptance [skip ci]"

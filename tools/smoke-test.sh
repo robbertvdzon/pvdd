@@ -21,6 +21,7 @@ auth_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --con
 test "$auth_status" = 401
 test "$(jq -r '.gitRevision' <<<"$frontend_version")" = "$expected_revision"
 test "$(jq -r '.gitRevision' <<<"$backend_version")" = "$expected_revision"
+test "$(jq -r '.environment' <<<"$frontend_version")" = "$environment_name"
 test "$(jq -r '.environment' <<<"$backend_version")" = "$environment_name"
 grep -qi '^cache-control: no-cache' <<<"$headers"
 printf 'smoke-test: %s revisie=%s login=afgeschermd\n' "$environment_name" "$expected_revision"

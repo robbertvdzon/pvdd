@@ -9,8 +9,9 @@ deployroute.
 
 Na een groene `Repository verification` bouwt `.github/workflows/release.yml` backend, frontend en
 mockserver voor exact dezelfde bron-SHA en UTC-buildtijd. De workflow pint immutable digests eerst
-in acceptance, wacht op `tools/smoke-test.sh acceptance`, en pint daarna dezelfde backend- en
-frontenddigests in production. De mockdigest komt nooit in production. Als `main` onderweg wijzigt,
+in acceptance, wacht op `tools/smoke-test.sh acceptance`, en pint daarna de productievarianten.
+Beide frontendvarianten hebben dezelfde bron-SHA en buildtijd. De mockdigest komt nooit in
+production. Als `main` onderweg wijzigt,
 stopt de promotie.
 
 ## Controleren
