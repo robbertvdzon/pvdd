@@ -4,7 +4,7 @@
 
 - Kotlin op JDK 21, Spring Boot, Spring Modulith en Maven;
 - PostgreSQL 16 met Flyway;
-- Flutter web met Material 3;
+- Flutter web met Material 3, gepind op revision `ee80f08bbf97172ec030b8751ceab557177a34a6`;
 - Google ID-tokenauthenticatie met backend-allowlist;
 - Agent Runtime via het asynchrone v1-jobcontract;
 - containers, Kustomize, OpenShift, Argo CD en GitHub Actions.

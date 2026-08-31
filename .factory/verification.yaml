@@ -9,3 +9,23 @@ commands:
     argv: [bash, tools/verify-documentation.sh]
     workingDirectory: .
     timeoutSeconds: 120
+  - id: backend-maven-verify
+    pathPrefixes: [backend/, .factory/verification.yaml, .github/workflows/verify.yml]
+    argv: [mvn, -B, --no-transfer-progress, clean, verify]
+    workingDirectory: backend
+    timeoutSeconds: 1800
+  - id: frontend-flutter-analyze
+    pathPrefixes: [frontend/, .factory/verification.yaml, .github/workflows/verify.yml]
+    argv: [flutter, analyze]
+    workingDirectory: frontend
+    timeoutSeconds: 900
+  - id: frontend-flutter-test
+    pathPrefixes: [frontend/, .factory/verification.yaml, .github/workflows/verify.yml]
+    argv: [flutter, test]
+    workingDirectory: frontend
+    timeoutSeconds: 900
+  - id: frontend-flutter-build
+    pathPrefixes: [frontend/, .factory/verification.yaml, .github/workflows/verify.yml]
+    argv: [flutter, build, web, --release, --pwa-strategy=none]
+    workingDirectory: frontend
+    timeoutSeconds: 1800

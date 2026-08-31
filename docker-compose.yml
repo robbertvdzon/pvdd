@@ -1,0 +1,53 @@
+services:
+  database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: pvdd
+      POSTGRES_USER: pvdd
+      POSTGRES_PASSWORD: local-development-only
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U pvdd -d pvdd]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    ports:
+      - "${PVDD_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - pvdd-database:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    environment:
+      PVDD_DATABASE_URL: jdbc:postgresql://database:5432/pvdd
+      PVDD_DATABASE_USER: pvdd
+      PVDD_DATABASE_PASSWORD: local-development-only
+      PVDD_ENVIRONMENT: local
+      PVDD_GOOGLE_CLIENT_ID: local-development-client-id
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -qO-, http://localhost:8080/actuator/health/readiness]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "${PVDD_BACKEND_PORT:-18080}:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        APP_VERSION: "0.1.0"
+        GIT_REVISION: "0000000000000000000000000000000000000000"
+        BUILD_TIME: "1970-01-01T00:00:00Z"
+        ENVIRONMENT: "local"
+        GOOGLE_CLIENT_ID: "local-development-client-id"
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${PVDD_FRONTEND_PORT:-18088}:8080"
+
+volumes:
+  pvdd-database:

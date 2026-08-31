@@ -30,8 +30,9 @@ for required_file in "${required_files[@]}"; do
   fi
 done
 
-if grep -RInE '(AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[0-9A-Za-z]{20,}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----)' \
-  README.md docs .factory .github tools; then
+if grep -RInE --exclude='pubspec.lock' --exclude-dir='.dart_tool' --exclude-dir='build' --exclude-dir='target' \
+  '(AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[0-9A-Za-z]{20,}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----)' \
+  README.md docs .factory .github tools backend frontend secrets.env.example docker-compose.yml; then
   echo 'Mogelijk geheim aangetroffen in getrackte documentatie/configuratie.' >&2
   exit 1
 fi

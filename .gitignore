@@ -1,0 +1,12 @@
+.DS_Store
+.idea/
+.vscode/
+secrets.env
+*.local.env
+backend/target/
+frontend/.dart_tool/
+frontend/build/
+frontend/.flutter-plugins*
+frontend/coverage/
+data/
+backups/
