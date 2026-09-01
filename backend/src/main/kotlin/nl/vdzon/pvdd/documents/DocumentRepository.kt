@@ -100,7 +100,7 @@ class DocumentRepository(
                 documentSourceId = rs.getString("source_id"),
                 sourceUrl = java.net.URI(rs.getString("source_url")),
                 sequence = rs.getInt("section_sequence"),
-                pageNumber = rs.getObject("page_number", Int::class.java),
+                pageNumber = (rs.getObject("page_number") as? Number)?.toInt(),
                 heading = rs.getString("heading"),
                 text = rs.getString("section_text"),
             )

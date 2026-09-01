@@ -105,6 +105,10 @@ class DatabaseIntegrationTest(
         assertFalse(documentRepository.insertVersion(originalDocument.copy(id = UUID.randomUUID())))
         assertTrue(documentRepository.insertVersion(document(itemId, "d".repeat(64), now.plusSeconds(1))))
         assertEquals(2, documentRepository.countVersions(itemId, "doc-a"))
+        val passages = documentRepository.findPassagesForAnalysis(itemId)
+        assertEquals(2, passages.size)
+        assertEquals(1, passages.first().pageNumber)
+        assertEquals("Synthetische documenttekst", passages.first().text)
 
         val failedDocument = document(itemId, "e".repeat(64), now).copy(
             id = UUID.randomUUID(),

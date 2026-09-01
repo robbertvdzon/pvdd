@@ -106,7 +106,7 @@ class AnalysisOrchestrator(
             }
             repository.finishMeetingPreparation(meetingId)
         } catch (failure: Exception) {
-            log.warn("Analysis preparation failed for meeting {} with {}", meetingId, safeCode(failure))
+            log.warn("Analysis preparation failed for meeting {} with {}", meetingId, safeCode(failure), failure)
             repository.retryMeetingPreparation(meetingId, safeCode(failure))
         }
     }
