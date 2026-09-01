@@ -151,7 +151,9 @@ class AdviceValidator {
         val section = sectionNode?.takeIf { it.isString }?.stringValue()
         if (sectionNode != null && !sectionNode.isNull && !sectionNode.isString) errors += "${path}_invalid_section"
         if (source.section != null && source.section != section) errors += "${path}_section_mismatch"
-        if (!normalize(source.text).contains(normalize(quote))) errors += "${path}_quote_not_in_source"
+        if (!normalizeCitationText(source.text).contains(normalizeCitationText(quote))) {
+            errors += "${path}_quote_not_in_source"
+        }
         return Citation(sourceId, source.sourceType, source.sourceUrl, page, section, quote)
     }
 
@@ -189,8 +191,6 @@ class AdviceValidator {
         return text
     }
 
-    private fun normalize(value: String): String = value.lowercase().replace(WHITESPACE, " ").trim()
-
     companion object {
         private const val MAX_RESULT_CHARACTERS = 50_000
         private const val MAX_SECTION_CHARACTERS = 6_000
@@ -203,6 +203,15 @@ class AdviceValidator {
         )
         private val SECTION_PROPERTIES = setOf("text", "citations")
         private val CITATION_PROPERTIES = setOf("sourceId", "sourceType", "quote")
-        private val WHITESPACE = Regex("\\s+")
     }
 }
+
+/**
+ * PDF extraction may insert control characters or split a printed word across whitespace
+ * (for example `D e` instead of `De`). Citations still have to be a literal sequence of
+ * letters and numbers from the source; only presentation artefacts are ignored.
+ */
+internal fun normalizeCitationText(value: String): String =
+    value.lowercase().replace(NON_ALPHANUMERIC, "")
+
+private val NON_ALPHANUMERIC = Regex("[^\\p{L}\\p{N}]")

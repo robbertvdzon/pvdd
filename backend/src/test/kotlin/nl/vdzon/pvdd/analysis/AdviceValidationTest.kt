@@ -74,6 +74,18 @@ class AdviceValidationTest {
     }
 
     @Test
+    fun `accepts literal citations despite PDF extraction artefacts`() {
+        val extractedPolicy = policy.copy(
+            text = "De provincie investeert in veilige wandel-, fiets-\nen snelfietspaden. • \\u0007 D e natuur telt mee.",
+        )
+        val output = validAb()
+            .replace("draagkracht van de planeet", "De provincie investeert in veilige wandel-, fiets- en snelfietspaden")
+        assertIs<ValidatedAdvice.Ab>(
+            validator.validate("A", "item-a", mapper.readTree(output), listOf(extractedPolicy, document)),
+        )
+    }
+
+    @Test
     fun `rejects free text oversized fields and C yes without key question`() {
         assertFailsWith<Exception> { mapper.readTree("Hier is mijn advies zonder JSON") }
         val oversized = validAb().replace("Feitelijke samenvatting", "x".repeat(6_001))
@@ -111,7 +123,7 @@ class AdviceValidationTest {
     @Test
     fun `runtime schemas are closed and self contained`() {
         val builder = PromptBuilder(mapper)
-        assertEquals("pvdd-advice-v3", PromptBuilder.PROMPT_VERSION)
+        assertEquals("pvdd-advice-v4", PromptBuilder.PROMPT_VERSION)
         listOf(builder.schema("A"), builder.schema("C"), builder.sourceNotesSchema()).forEach { schema ->
             assertEquals(false, schema.path("additionalProperties").booleanValue())
             assertTrue(schema.toString().contains("\"required\""))

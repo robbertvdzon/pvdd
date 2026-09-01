@@ -172,6 +172,11 @@ class AnalysisOrchestrator(
                 if (repository.allRequiredRunsSucceeded(prepared.meetingId)) meetings.markSuccessful(prepared.meetingId)
             }
         } catch (failure: AdviceValidationException) {
+            log.warn(
+                "AI result validation failed for analysis {} with {}",
+                prepared.run.id,
+                failure.errors.joinToString(","),
+            )
             fail(prepared, AnalysisStatus.FAILED, "INVALID_RESULT")
         }
     }

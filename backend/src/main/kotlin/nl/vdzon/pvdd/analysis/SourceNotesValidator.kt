@@ -53,18 +53,17 @@ class SourceNotesValidator {
         val section = citation.get("section")?.takeUnless { it.isNull }?.takeIf { it.isString }?.stringValue()
         if (source.section != null && section != source.section) errors += "note_${index}_section_mismatch"
         val quote = citation.path("quote").takeIf { it.isString }?.stringValue()?.trim().orEmpty()
-        if (quote.length !in 1..500 || !normalize(source.text).contains(normalize(quote))) {
+        if (quote.length !in 1..500 ||
+            !normalizeCitationText(source.text).contains(normalizeCitationText(quote))
+        ) {
             errors += "note_${index}_invalid_quote"
         }
     }
-
-    private fun normalize(value: String): String = value.lowercase().replace(WHITESPACE, " ").trim()
 
     companion object {
         private val ROOT_PROPERTIES = setOf("agendaItemSourceId", "notes")
         private val NOTE_PROPERTIES = setOf("text", "citation")
         private val REQUIRED_CITATION_PROPERTIES = setOf("sourceId", "sourceType", "quote")
         private val CITATION_PROPERTIES = setOf("sourceId", "sourceType", "pageNumber", "section", "quote")
-        private val WHITESPACE = Regex("\\s+")
     }
 }
