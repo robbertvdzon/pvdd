@@ -114,7 +114,12 @@ class AdviceValidationTest {
             assertEquals(false, schema.path("additionalProperties").booleanValue())
             assertTrue(schema.toString().contains("\"required\""))
         }
-        assertTrue(builder.schema("C").findValues("\$ref").all { it.stringValue().startsWith("#/") })
+        val unsupported = setOf("\$ref", "allOf", "anyOf", "oneOf", "not", "if", "then", "else")
+        listOf(builder.schema("A"), builder.schema("C"), builder.sourceNotesSchema()).forEach { schema ->
+            unsupported.forEach { keyword ->
+                assertTrue(schema.findValues(keyword).isEmpty(), "Unsupported keyword: $keyword")
+            }
+        }
     }
 
     @Test
