@@ -9,3 +9,4 @@ data:
   PVDD_AGENT_RUNTIME_PROVIDER: CODEX
   PVDD_AGENT_RUNTIME_MODEL: gpt-5.6-sol
   PVDD_MEETING_SOURCE_BASE_URL: https://noordholland.bestuurlijkeinformatie.nl
+  PVDD_POLICY_SOURCE_URL: https://assets.partijvoordedieren.nl/assets/site/noordHolland/PvdDNH-programma-PS23.pdf
