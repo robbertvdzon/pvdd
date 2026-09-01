@@ -176,7 +176,12 @@ class MeetingCheckWorkflow(
                 clock.instant(),
             )
             if (comparison.unchanged) {
-                meetings.markSuccessful(meetingId)
+                if (baseline?.revisionStatus == RevisionStatus.REPROCESSING) {
+                    meetings.markAnalysing(meetingId)
+                    events.publishEvent(MeetingImportedEvent(meetingId, agenda.sourceId, clock.instant()))
+                } else {
+                    meetings.markSuccessful(meetingId)
+                }
                 MeetingCheckResult(
                     MeetingCheckStatus.UNCHANGED,
                     agenda.sourceId,

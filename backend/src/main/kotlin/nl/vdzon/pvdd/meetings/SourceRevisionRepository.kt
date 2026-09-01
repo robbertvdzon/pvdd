@@ -13,7 +13,8 @@ class SourceRevisionRepository(private val jdbc: JdbcTemplate) : SourceRevisionS
     override fun baseline(meetingSourceId: String): RevisionBaseline? {
         val revision = jdbc.query(
             """
-            SELECT mr.id, mr.revision_number, mr.publication_status, mr.canonical_fingerprint
+            SELECT mr.id, mr.revision_number, mr.publication_status, mr.canonical_fingerprint,
+                   mr.revision_status
             FROM meeting_revision mr JOIN meeting m ON m.id = mr.meeting_id
             WHERE m.source_id = ? ORDER BY mr.revision_number DESC LIMIT 1
             """.trimIndent(),
@@ -23,6 +24,7 @@ class SourceRevisionRepository(private val jdbc: JdbcTemplate) : SourceRevisionS
                     rs.getInt("revision_number"),
                     PublicationStatus.valueOf(rs.getString("publication_status")),
                     rs.getString("canonical_fingerprint"),
+                    RevisionStatus.valueOf(rs.getString("revision_status")),
                 )
             },
             meetingSourceId,
@@ -54,7 +56,14 @@ class SourceRevisionRepository(private val jdbc: JdbcTemplate) : SourceRevisionS
             },
             revision.id,
         ).associateBy(RevisionItem::sourceId)
-        return RevisionBaseline(revision.id, revision.number, revision.publicationStatus, revision.fingerprint, items)
+        return RevisionBaseline(
+            revision.id,
+            revision.number,
+            revision.publicationStatus,
+            revision.fingerprint,
+            items,
+            revision.status,
+        )
     }
 
     @Transactional
@@ -192,6 +201,7 @@ class SourceRevisionRepository(private val jdbc: JdbcTemplate) : SourceRevisionS
         val number: Int,
         val publicationStatus: PublicationStatus,
         val fingerprint: String,
+        val status: RevisionStatus,
     )
 
     private fun pgArray(values: Set<DifferenceType>): String = values.map(DifferenceType::name)

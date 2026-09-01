@@ -35,11 +35,26 @@ class MeetingCheckWorkflowTest {
         val fixture = fixture(discovery = discovery)
 
         assertEquals(MeetingCheckStatus.IMPORTED, fixture.workflow.check().status)
+        fixture.revisions.markCurrent()
         val result = fixture.workflow.check()
         assertEquals(MeetingCheckStatus.UNCHANGED, result.status)
         assertEquals(2, discovery.fetchCount)
         assertEquals(1, result.revisionNumber)
         assertEquals(1, fixture.store.successful.size)
+        assertEquals(1, fixture.events.size)
+    }
+
+    @Test
+    fun `unchanged reprocessing revision resumes analysis reconciliation`() {
+        val found = DiscoveryOutcome.Found(DiscoveredMeeting("meeting-future", now.plusSeconds(3600), meetingUrl))
+        val discovery = StubDiscovery(found, AgendaParser().parse(resource("agenda-full.html"), meetingUrl))
+        val fixture = fixture(discovery = discovery)
+
+        assertEquals(MeetingCheckStatus.IMPORTED, fixture.workflow.check().status)
+        assertEquals(MeetingCheckStatus.UNCHANGED, fixture.workflow.check().status)
+
+        assertEquals(2, fixture.events.size)
+        assertEquals(0, fixture.store.successful.size)
     }
 
     @Test
@@ -103,6 +118,7 @@ class MeetingCheckWorkflowTest {
         val store = StubStore(lastSuccessful)
         val documents = CountingDocuments()
         val events = mutableListOf<MeetingImportedEvent>()
+        val revisions = InMemoryRevisionStore()
         val workflow = MeetingCheckWorkflow(
             discovery,
             store,
@@ -111,9 +127,9 @@ class MeetingCheckWorkflowTest {
             ApplicationEventPublisher { event -> if (event is MeetingImportedEvent) events += event },
             Clock.fixed(now, ZoneOffset.UTC),
             AgendaRevisionComparator(),
-            InMemoryRevisionStore(),
+            revisions,
         )
-        return WorkflowFixture(workflow, store, documents, events)
+        return WorkflowFixture(workflow, store, documents, events, revisions)
     }
 
     private fun resource(name: String): String = requireNotNull(
@@ -125,6 +141,7 @@ class MeetingCheckWorkflowTest {
         val store: StubStore,
         val documents: CountingDocuments,
         val events: List<MeetingImportedEvent>,
+        val revisions: InMemoryRevisionStore,
     )
 
     private class StubDiscovery(
@@ -180,6 +197,10 @@ class MeetingCheckWorkflowTest {
 
         override fun baseline(meetingSourceId: String): RevisionBaseline? = current
 
+        fun markCurrent() {
+            current = current?.copy(revisionStatus = RevisionStatus.CURRENT)
+        }
+
         override fun record(
             meetingId: UUID,
             agenda: ParsedMeetingAgenda,
@@ -199,6 +220,7 @@ class MeetingCheckWorkflowTest {
                 publicationStatus,
                 comparison.canonicalFingerprint,
                 items.associateBy(RevisionItem::sourceId),
+                if (comparison.requiresAnalysis) RevisionStatus.REPROCESSING else RevisionStatus.CURRENT,
             )
             current = revision
             return StoredRevision(revision.revisionId, revision.revisionNumber, comparison)

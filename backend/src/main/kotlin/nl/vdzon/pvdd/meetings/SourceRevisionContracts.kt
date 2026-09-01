@@ -55,6 +55,7 @@ data class RevisionBaseline(
     val publicationStatus: PublicationStatus,
     val canonicalFingerprint: String,
     val items: Map<String, RevisionItem>,
+    val revisionStatus: RevisionStatus = RevisionStatus.CURRENT,
 )
 
 data class ItemDifference(
