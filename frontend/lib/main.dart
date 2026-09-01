@@ -186,10 +186,11 @@ class _LoginPage extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
-                    Icons.pets_outlined,
-                    size: 52,
-                    color: PvddColors.primary,
+                  Image.asset(
+                    'assets/brand/pvdd-commissie-assistent.png',
+                    width: 92,
+                    height: 92,
+                    semanticLabel: 'Logo PvdD Commissie-assistent',
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -322,8 +323,24 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
                     icon: const Icon(Icons.menu),
                   ),
                 ),
-          title: Text(
-            constraints.maxWidth < 420 ? 'PvdD' : 'PvdD Commissie-assistent',
+          title: Row(
+            children: [
+              Image.asset(
+                'assets/brand/pvdd-commissie-assistent.png',
+                width: 36,
+                height: 36,
+                semanticLabel: 'Logo PvdD Commissie-assistent',
+              ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  constraints.maxWidth < 420
+                      ? 'PvdD'
+                      : 'PvdD Commissie-assistent',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
           actions: [
             if (constraints.maxWidth >= 560)
