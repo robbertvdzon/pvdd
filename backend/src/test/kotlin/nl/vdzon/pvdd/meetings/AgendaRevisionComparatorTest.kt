@@ -81,6 +81,19 @@ class AgendaRevisionComparatorTest {
     }
 
     @Test
+    fun `moving an unchanged item creates a revision but no reanalysis`() {
+        val original = item("item-a", sequence = 1)
+        val moved = original.copy(sequence = 9, fingerprint = AgendaParser.sha256("item-a|9"))
+
+        val result = comparator.compare(agenda, PublicationStatus.CURRENT, listOf(moved), baseline(original))
+        val difference = result.items.single()
+
+        assertEquals(setOf(DifferenceType.ITEM_MOVED), difference.differences)
+        assertFalse(difference.requiresAnalysis)
+        assertFalse(result.requiresAnalysis)
+    }
+
+    @Test
     fun `equivalent parsed formatting creates no revision differences`() {
         val current = item("item-a", sequence = 1)
         val result = comparator.compare(

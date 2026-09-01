@@ -63,8 +63,18 @@ data class ItemDifference(
     val differences: Set<DifferenceType>,
 ) {
     val requiresAnalysis: Boolean
-        get() = item?.sourceState == SourceState.CURRENT && differences.isNotEmpty()
+        get() = item?.sourceState == SourceState.CURRENT && differences.any(ANALYSIS_AFFECTING_DIFFERENCES::contains)
 }
+
+private val ANALYSIS_AFFECTING_DIFFERENCES = setOf(
+    DifferenceType.PUBLICATION_STATUS,
+    DifferenceType.ITEM_ADDED,
+    DifferenceType.CATEGORY_CHANGED,
+    DifferenceType.METADATA_CHANGED,
+    DifferenceType.DOCUMENT_ADDED,
+    DifferenceType.DOCUMENT_REMOVED,
+    DifferenceType.DOCUMENT_CONTENT_CHANGED,
+)
 
 data class RevisionComparison(
     val publicationStatus: PublicationStatus,
