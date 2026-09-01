@@ -257,6 +257,13 @@ class DatabaseIntegrationTest(
             String::class.java,
             preparedId,
         ))
+        assertEquals(
+            "CURRENT",
+            requireNotNull(dashboardRepository.agendaItems(meetingId))
+                .single { it.id == itemId }
+                .adviceActuality,
+        )
+        assertEquals("CURRENT", requireNotNull(dashboardRepository.item(itemId)).adviceActuality)
 
         val phasedFinal = prepared.copy(
             run = prepared.run.copy(id = UUID.randomUUID(), idempotencyKey = "pvdd-${"7".repeat(64)}"),

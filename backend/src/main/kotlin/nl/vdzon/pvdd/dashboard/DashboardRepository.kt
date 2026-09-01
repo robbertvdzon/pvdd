@@ -118,7 +118,11 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                 SELECT actuality FROM agenda_item_advice aia
                 JOIN analysis_run ar ON ar.id = aia.analysis_run_id
                 WHERE aia.agenda_item_id = ai.id AND ar.status = 'SUCCEEDED'
-                ORDER BY ar.created_at DESC, ar.id DESC LIMIT 1
+                ORDER BY CASE aia.actuality
+                    WHEN 'CURRENT' THEN 0
+                    WHEN 'STALE' THEN 1
+                    ELSE 2
+                END, ar.created_at DESC, ar.id DESC LIMIT 1
             ) advice ON TRUE
             LEFT JOIN meeting m ON m.id = ai.meeting_id
             LEFT JOIN meeting_revision mr ON mr.meeting_id = m.id AND mr.revision_number = m.current_revision_number
@@ -143,7 +147,11 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                 SELECT aia.advice, aia.actuality FROM agenda_item_advice aia
                 JOIN analysis_run ar ON ar.id = aia.analysis_run_id
                 WHERE aia.agenda_item_id = ai.id AND ar.status = 'SUCCEEDED'
-                ORDER BY ar.created_at DESC, ar.id DESC LIMIT 1
+                ORDER BY CASE aia.actuality
+                    WHEN 'CURRENT' THEN 0
+                    WHEN 'STALE' THEN 1
+                    ELSE 2
+                END, ar.created_at DESC, ar.id DESC LIMIT 1
             ) advice ON TRUE
             LEFT JOIN meeting m ON m.id = ai.meeting_id
             LEFT JOIN meeting_revision mr ON mr.meeting_id = m.id AND mr.revision_number = m.current_revision_number
