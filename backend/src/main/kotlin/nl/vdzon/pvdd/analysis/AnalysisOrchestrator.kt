@@ -42,6 +42,10 @@ class AnalysisOrchestrator(
     private val clock: Clock,
 ) {
     @EventListener(ApplicationReadyEvent::class)
+    @Scheduled(
+        fixedDelayString = "\${pvdd.analysis.prompt-upgrade-delay:1m}",
+        initialDelayString = "\${pvdd.analysis.prompt-upgrade-delay:1m}",
+    )
     fun queuePromptUpgrade() {
         val queued = repository.queueMeetingsMissingPromptVersion(PromptBuilder.PROMPT_VERSION)
         if (queued > 0) log.info("Queued {} meeting(s) for prompt {}", queued, PromptBuilder.PROMPT_VERSION)
