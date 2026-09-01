@@ -84,6 +84,10 @@ class PromptBuilder(private val mapper: ObjectMapper) {
     private fun prompt(item: AnalysisAgendaItem, sources: List<AnalysisSource>): String = buildString {
         append(SYSTEM_PROMPT)
         append("\n\nAnalyseer agendapunt ${item.sourceId} in categorie ${item.category}.\n")
+        if (sources.any { it.sourceType == CitationSourceType.POLICY_POSITIONS }) {
+            append("Bekijk alle standpunten in POLICY_POSITIONS en bepaal zelf welke inhoudelijk relevant zijn. ")
+            append("Gebruik de geselecteerde oorspronkelijke bronpassages voor feitelijke onderbouwing.\n")
+        }
         append("BEGIN_UNTRUSTED_SOURCE_DATA\n")
         append(mapper.writeValueAsString(mapOf("agendaItem" to item, "sources" to sources)))
         append("\nEND_UNTRUSTED_SOURCE_DATA")
@@ -92,14 +96,17 @@ class PromptBuilder(private val mapper: ObjectMapper) {
     private fun notesPrompt(item: AnalysisAgendaItem, sources: List<AnalysisSource>): String = buildString {
         append(SYSTEM_PROMPT)
         append("\n\nMaak uitsluitend feitelijke bronnotities voor een latere synthese; behoud alle bron-ID's en paginanummers.")
+        if (sources.any { it.sourceType == CitationSourceType.POLICY_POSITIONS }) {
+            append(" Beoordeel ieder aangeleverd standpunt op relevantie voor dit agendapunt en behoud de relevante standpunt-ID's en referenties.")
+        }
         append("\nBEGIN_UNTRUSTED_SOURCE_DATA\n")
         append(mapper.writeValueAsString(mapOf("agendaItem" to item, "sources" to sources)))
         append("\nEND_UNTRUSTED_SOURCE_DATA")
     }
 
     companion object {
-        const val PROMPT_VERSION = "pvdd-advice-v9"
-        const val SELECTION_VERSION = "policy-selection-v1"
+        const val PROMPT_VERSION = "pvdd-advice-v10"
+        const val SELECTION_VERSION = "policy-selection-v2-all-positions"
         private const val MAX_DIRECT_PROMPT_CHARACTERS = 80_000
         private const val NOTES_BATCH_CHARACTERS = 35_000
         private val SYSTEM_PROMPT = requireNotNull(PromptBuilder::class.java.getResource("/prompts/advice-system-v1.txt")).readText()

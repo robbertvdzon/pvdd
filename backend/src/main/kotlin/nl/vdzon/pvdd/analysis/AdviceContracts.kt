@@ -30,4 +30,4 @@ data class AnalysisRun(
     val completedAt: Instant?,
 )
 
-enum class CitationSourceType { MEETING_DOCUMENT, POLICY_PROGRAMME }
+enum class CitationSourceType { MEETING_DOCUMENT, POLICY_PROGRAMME, POLICY_POSITIONS }

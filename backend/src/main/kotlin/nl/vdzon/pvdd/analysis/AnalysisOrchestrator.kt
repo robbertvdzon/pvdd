@@ -33,6 +33,7 @@ class AnalysisOrchestrator(
     private val documents: DocumentRepository,
     private val policyImport: PolicyImportService,
     private val policySelector: PolicySelector,
+    private val policyPositionCatalogue: PolicyPositionCatalogue,
     private val prompts: PromptBuilder,
     private val resultValidator: ContentResultValidator,
     private val runtime: AgentRuntimeGateway,
@@ -79,8 +80,9 @@ class AnalysisOrchestrator(
                         it.category in setOf(AgendaCategory.A, AgendaCategory.B, AgendaCategory.C)
                 }
             require(items.isNotEmpty()) { "NO_ANALYSIS_ITEMS" }
+            val positionCatalogue = policyPositionCatalogue.currentSource()
             items.forEach { item ->
-                val sources = sources(item)
+                val sources = sources(item, positionCatalogue)
                 val plan = prompts.plan(item.toAnalysisItem(), sources)
                 val fingerprint = fingerprint(item, sources, meeting.publicationStatus.name)
                 val key = "pvdd-${sha256("${meeting.sourceId}|${item.sourceId}|$fingerprint|${PromptBuilder.PROMPT_VERSION}")}" 
@@ -245,7 +247,7 @@ class AnalysisOrchestrator(
         parentRunId = parentRunId,
     )
 
-    private fun sources(item: AgendaItem): List<AnalysisSource> {
+    private fun sources(item: AgendaItem, positionCatalogue: AnalysisSource?): List<AnalysisSource> {
         val agendaText = listOfNotNull(item.title, item.explanation, item.treatmentProposal).joinToString("\n")
         val documentSources = documents.findPassagesForAnalysis(item.id).map(::documentSource)
         val selection = policySelector.select("$agendaText\n${documentSources.joinToString("\n") { it.text }}")
@@ -268,7 +270,7 @@ class AnalysisOrchestrator(
                 section = "Agendapunt",
                 text = agendaText,
             ),
-        ) + documentSources + policySources
+        ) + documentSources + policySources + listOfNotNull(positionCatalogue)
     }
 
     private fun documentSource(passage: DocumentPassage): AnalysisSource = AnalysisSource(

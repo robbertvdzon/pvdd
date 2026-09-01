@@ -66,7 +66,7 @@ class ContentResultValidationTest {
     @Test
     fun `final advice and source notes use their own strict schemas`() {
         val builder = PromptBuilder(mapper)
-        assertEquals("pvdd-advice-v9", PromptBuilder.PROMPT_VERSION)
+        assertEquals("pvdd-advice-v10", PromptBuilder.PROMPT_VERSION)
         val schema = builder.schema()
         assertEquals(false, schema.path("additionalProperties").booleanValue())
         val required = schema.path("required").iterator().asSequence().map { it.stringValue() }.toSet()

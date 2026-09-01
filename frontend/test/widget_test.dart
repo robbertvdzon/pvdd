@@ -98,6 +98,27 @@ void main() {
     expect(find.byTooltip('Menu openen'), findsOneWidget);
   });
 
+  testWidgets('agenda facts table remains usable at 320 pixels', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      PvddApp(
+        authenticationGateway: FakeAuthenticationGateway(),
+        versionGateway: FakeVersionGateway(),
+        frontendVersionSource: FakeFrontendVersionSource(),
+        dashboardGateway: FakeDashboardGateway(withMeeting: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('AI-titel'), findsWidgets);
+    expect(find.text('Laatste AI-analyse'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('shows A B C progress and one free Markdown analysis', (
     tester,
   ) async {
@@ -119,9 +140,15 @@ void main() {
     expect(find.text('C-agenda'), findsOneWidget);
     expect(find.text('Technische sectiekop'), findsNothing);
     expect(find.text('Ingetrokken stuk'), findsNothing);
+    expect(find.text('AI-titel'), findsNWidgets(3));
+    expect(find.text('Korte conclusie'), findsNWidgets(3));
+    expect(find.text('Laatste wijziging'), findsNWidgets(3));
+    expect(find.text('Laatste AI-analyse'), findsNWidgets(3));
+    expect(find.text('Natuur en wonen combineren'), findsOneWidget);
+    expect(find.text('01-09-2026 20:03 · Gereed'), findsOneWidget);
 
-    await tester.ensureVisible(find.text('1.a Natuurinclusief wonen'));
-    await tester.tap(find.text('1.a Natuurinclusief wonen'));
+    await tester.ensureVisible(find.text('Natuurinclusief wonen'));
+    await tester.tap(find.text('Natuurinclusief wonen'));
     await tester.pumpAndSettle();
     expect(find.text('Vrije Markdown-analyse'), findsOneWidget);
     expect(
@@ -153,7 +180,7 @@ void main() {
 
     expect(find.text('Voorlopige agenda'), findsWidgets);
     expect(find.text('Gereed'), findsWidgets);
-    await tester.tap(find.text('1.a Natuurinclusief wonen'));
+    await tester.tap(find.text('Natuurinclusief wonen'));
     await tester.pumpAndSettle();
     expect(
       find.textContaining('dit beschikbare stuk is geanalyseerd'),
@@ -269,6 +296,17 @@ class FakeDashboardGateway implements DashboardGateway {
       currentFingerprint: null,
       adviceActuality: 'CURRENT',
       changeTypes: [],
+      lastDetectedChangeAt: DateTime(2026, 9, 1, 19, 48),
+      displayTitle: 'Natuur en wonen combineren',
+      shortConclusion:
+          'Het voorstel is kansrijk als harde natuurnormen worden toegevoegd.',
+      lastAnalysisRun: AnalysisRunInfo(
+        id: 'analysis-a',
+        status: 'SUCCEEDED',
+        createdAt: DateTime(2026, 9, 1, 19, 58),
+        updatedAt: DateTime(2026, 9, 1, 20, 3),
+        completedAt: DateTime(2026, 9, 1, 20, 3),
+      ),
     ),
     AgendaItemSummary(
       id: 'item-b',

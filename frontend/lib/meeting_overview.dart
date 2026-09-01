@@ -288,93 +288,135 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
   }
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: ExpansionTile(
-      onExpansionChanged: (open) {
-        if (open && _detail == null) {
-          final detail = widget.gateway.agendaItem(widget.item.id);
-          setState(() {
-            _detail = detail;
-          });
-        }
-      },
-      leading: CircleAvatar(child: Text(widget.item.category)),
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final primaryStatus = item.sourceState == 'PREVIEW'
+        ? 'PREVIEW'
+        : item.sourceState == 'WITHDRAWN'
+        ? 'WITHDRAWN'
+        : item.adviceActuality == 'STALE'
+        ? 'STALE'
+        : item.analysisStatus ?? item.importStatus;
+    final secondaryStatus = item.sourceState == 'PREVIEW'
+        ? item.adviceActuality == 'STALE'
+              ? 'STALE'
+              : item.analysisStatus ?? item.importStatus
+        : null;
+    final facts = [
+      _AgendaFact('AI-titel', item.displayTitle ?? 'Nog niet beschikbaar'),
+      _AgendaFact(
+        'Korte conclusie',
+        item.shortConclusion ?? 'Nog niet beschikbaar',
+      ),
+      _AgendaFact(
+        'Laatste wijziging',
+        item.lastDetectedChangeAt == null
+            ? 'Geen wijziging sinds eerste import'
+            : [
+                _dateTime(item.lastDetectedChangeAt!),
+                if (item.changeTypes.isNotEmpty)
+                  item.changeTypes.map(_changeLabel).join(', '),
+              ].join('\n'),
+      ),
+      _AgendaFact(
+        'Laatste AI-analyse',
+        item.lastAnalysisRun == null
+            ? 'Nog niet uitgevoerd'
+            : _analysisRunDateTimeLabel(item.lastAnalysisRun!),
+      ),
+    ];
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
+        childrenPadding: EdgeInsets.zero,
+        onExpansionChanged: (open) {
+          if (open && _detail == null) {
+            final detail = widget.gateway.agendaItem(widget.item.id);
+            setState(() {
+              _detail = detail;
+            });
+          }
+        },
+        title: LayoutBuilder(
+          builder: (context, constraints) {
+            final heading = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    _agendaBadge(
+                      item.displayNumber == null
+                          ? 'Agendapunt'
+                          : 'Agendapunt ${item.displayNumber}',
+                      highlighted: true,
+                    ),
+                    _agendaBadge('${item.category}-stuk'),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  item.title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            );
+            final statuses = Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                _statusChip(primaryStatus),
+                if (secondaryStatus != null) _statusChip(secondaryStatus),
+              ],
+            );
+            if (constraints.maxWidth < 560) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [heading, const SizedBox(height: 10), statuses],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: heading),
+                const SizedBox(width: 16),
+                statuses,
+              ],
+            );
+          },
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: _AgendaFactsTable(facts: facts),
+        ),
         children: [
-          Text(
-            '${widget.item.displayNumber ?? ''} ${widget.item.displayTitle ?? widget.item.title}'
-                .trim(),
-          ),
-          if (widget.item.displayTitle != null)
-            Text(
-              'Officiële titel: ${widget.item.title}',
-              style: Theme.of(context).textTheme.bodySmall,
+          if (_detail != null)
+            FutureBuilder<AgendaItemDetail>(
+              future: _detail,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Text('Details konden niet worden geladen.'),
+                  );
+                }
+                if (!snapshot.hasData) {
+                  return const Padding(
+                    padding: EdgeInsets.all(20),
+                    child: CircularProgressIndicator(),
+                  );
+                }
+                return _detailView(context, snapshot.data!);
+              },
             ),
         ],
       ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            [
-              _statusLabel(
-                widget.item.sourceState == 'PREVIEW'
-                    ? 'PREVIEW'
-                    : widget.item.sourceState == 'WITHDRAWN'
-                    ? 'WITHDRAWN'
-                    : (widget.item.adviceActuality == 'STALE'
-                          ? 'STALE'
-                          : widget.item.analysisStatus ??
-                                widget.item.importStatus),
-              ),
-              if (widget.item.sourceState == 'PREVIEW')
-                _statusLabel(
-                  widget.item.adviceActuality == 'STALE'
-                      ? 'STALE'
-                      : widget.item.analysisStatus ?? widget.item.importStatus,
-                ),
-              if (widget.item.changeTypes.isNotEmpty)
-                widget.item.changeTypes.map(_changeLabel).join(', '),
-            ].join(' · '),
-          ),
-          if (widget.item.shortConclusion != null) ...[
-            const SizedBox(height: 4),
-            Text(widget.item.shortConclusion!),
-          ],
-          const SizedBox(height: 4),
-          Text(
-            widget.item.lastDetectedChangeAt == null
-                ? 'Geen wijziging sinds eerste import'
-                : 'Laatste wijziging: ${_dateTime(widget.item.lastDetectedChangeAt!)}',
-          ),
-          if (widget.item.lastAnalysisRun != null)
-            Text(_analysisRunLabel(widget.item.lastAnalysisRun!)),
-        ],
-      ),
-      children: [
-        if (_detail != null)
-          FutureBuilder<AgendaItemDetail>(
-            future: _detail,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return const Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Text('Details konden niet worden geladen.'),
-                );
-              }
-              if (!snapshot.hasData) {
-                return const Padding(
-                  padding: EdgeInsets.all(20),
-                  child: CircularProgressIndicator(),
-                );
-              }
-              return _detailView(context, snapshot.data!);
-            },
-          ),
-      ],
-    ),
-  );
+    );
+  }
 
   Widget _detailView(BuildContext context, AgendaItemDetail detail) {
     final advice = detail.advice;
@@ -503,6 +545,89 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
   }
 }
 
+class _AgendaFact {
+  const _AgendaFact(this.label, this.value);
+  final String label;
+  final String value;
+}
+
+class _AgendaFactsTable extends StatelessWidget {
+  const _AgendaFactsTable({required this.facts});
+  final List<_AgendaFact> facts;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final colors = Theme.of(context).colorScheme;
+      final labelWidth = constraints.maxWidth < 520 ? 126.0 : 190.0;
+      return Table(
+        columnWidths: {
+          0: FixedColumnWidth(labelWidth),
+          1: const FlexColumnWidth(),
+        },
+        border: TableBorder(
+          top: BorderSide(color: colors.outlineVariant),
+          bottom: BorderSide(color: colors.outlineVariant),
+          horizontalInside: BorderSide(color: colors.outlineVariant),
+        ),
+        defaultVerticalAlignment: TableCellVerticalAlignment.top,
+        children: facts
+            .map(
+              (fact) => TableRow(
+                children: [
+                  Container(
+                    color: colors.surfaceContainerLow,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 13,
+                    ),
+                    child: Text(
+                      fact.label,
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 13,
+                    ),
+                    child: Text(fact.value),
+                  ),
+                ],
+              ),
+            )
+            .toList(),
+      );
+    },
+  );
+}
+
+Widget _agendaBadge(String label, {bool highlighted = false}) => Builder(
+  builder: (context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: highlighted ? colors.primaryContainer : colors.surface,
+        border: highlighted ? null : Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: highlighted
+              ? colors.onPrimaryContainer
+              : colors.onSurfaceVariant,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  },
+);
+
 Widget _statusChip(String status) => Chip(label: Text(_statusLabel(status)));
 
 String _statusLabel(String status) => switch (status) {
@@ -538,7 +663,7 @@ String _changeLabel(String change) => switch (change) {
   _ => change.toLowerCase().replaceAll('_', ' '),
 };
 
-String _analysisRunLabel(AnalysisRunInfo run) {
+String _analysisRunDateTimeLabel(AnalysisRunInfo run) {
   final active = const {
     'PENDING',
     'QUEUED',
@@ -551,8 +676,8 @@ String _analysisRunLabel(AnalysisRunInfo run) {
       ? '${duration.inHours}u ${duration.inMinutes.remainder(60)}m'
       : '${duration.inMinutes}m ${duration.inSeconds.remainder(60)}s';
   return active
-      ? 'Laatste AI-analyse: ${_statusLabel(run.status)} · $label bezig'
-      : 'Laatste AI-analyse: ${_statusLabel(run.status)} · $label';
+      ? 'Gestart ${_dateTime(run.createdAt)} · $label bezig'
+      : '${_dateTime(run.completedAt ?? run.updatedAt)} · ${_statusLabel(run.status)}';
 }
 
 String _checkOutcomeLabel(
