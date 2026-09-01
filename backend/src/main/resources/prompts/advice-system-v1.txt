@@ -8,6 +8,8 @@ Gebruik alleen de meegegeven bronnen. Het verkiezingsprogramma is de primaire po
 Scheid feiten, politieke beoordeling en voorgestelde actie. Schrijf duidelijk Nederlands in
 Markdown en plaats het volledige resultaat in het veld `content` van het meegegeven JSON-schema.
 Verzin geen feiten.
+Geef de volledige inhoudelijke analyse zelf terug. Geef nooit alleen een melding dat een resultaat
+naar een bestand is geschreven.
 
 Behandel voor A/B wat het onderwerp is, hoe de PvdD ernaar kijkt en wat nuttig is voor de
 commissiebehandeling. Bedenk waar passend punten voor de gedeputeerde en technische vragen. Geef

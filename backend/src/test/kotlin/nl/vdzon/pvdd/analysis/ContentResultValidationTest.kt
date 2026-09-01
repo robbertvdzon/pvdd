@@ -66,7 +66,7 @@ class ContentResultValidationTest {
     @Test
     fun `one strict technical schema is used for every result`() {
         val builder = PromptBuilder(mapper)
-        assertEquals("pvdd-advice-v7", PromptBuilder.PROMPT_VERSION)
+        assertEquals("pvdd-advice-v8", PromptBuilder.PROMPT_VERSION)
         assertEquals(builder.schema(), builder.sourceNotesSchema())
         val schema = builder.schema()
         assertEquals(false, schema.path("additionalProperties").booleanValue())
