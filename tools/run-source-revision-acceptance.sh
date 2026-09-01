@@ -3,6 +3,7 @@ set -euo pipefail
 
 app_url="${PVDD_ACCEPTANCE_URL:-https://pvdd-acceptance.vdzonsoftware.nl}"
 mock_url="${PVDD_SOURCE_MOCK_URL:-http://127.0.0.1:18081}"
+check_interval_seconds="${PVDD_CHECK_INTERVAL_SECONDS:-11}"
 
 command -v curl >/dev/null || { echo 'curl ontbreekt.' >&2; exit 1; }
 command -v jq >/dev/null || { echo 'jq ontbreekt.' >&2; exit 1; }
@@ -35,6 +36,7 @@ expect_status() {
     }
   fi
   printf '%-24s %s revision=%s\n' "$scenario_name" "$actual_status" "$(jq -r '.revisionNumber // "-"' <<<"$response")"
+  sleep "$check_interval_seconds"
 }
 
 expect_status preview AGENDA_UNPUBLISHED

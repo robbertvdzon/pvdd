@@ -109,6 +109,10 @@ class AnalysisOrchestrator(
                 }
             }
             repository.finishMeetingPreparation(meetingId)
+            // A source revision can require a fresh actuality decision while all
+            // current item fingerprints still map to already successful runs.
+            // In that case no runtime callback will arrive to close the meeting.
+            if (repository.allRequiredRunsSucceeded(meetingId)) meetings.markSuccessful(meetingId)
         } catch (failure: Exception) {
             log.warn("Analysis preparation failed for meeting {} with {}", meetingId, safeCode(failure), failure)
             repository.retryMeetingPreparation(meetingId, safeCode(failure))
