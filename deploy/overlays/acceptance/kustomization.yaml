@@ -15,12 +15,12 @@ patches:
     kind: SealedSecret
     name: pvdd-secrets
 images:
-- digest: sha256:d5cc52adecfbb29460a7fd66aa82aa2a4ef3ba0bc161486cb2faa3004a0d53f9
+- digest: sha256:ca14a222885651f68f63c16f19929775675299476031d22eb78de93cc7e86081
   name: ghcr.io/robbertvdzon/pvdd-backend
   newName: ghcr.io/robbertvdzon/pvdd-backend
-- digest: sha256:91cf9a950f6e38fcd4eaf0aedd9f16afcf382fd4a6e69ddd21289522d2894369
+- digest: sha256:ccaa92a27fbd2a7a87f455f518efb69b69e1ca0e2c9b9bb4fd7815b30acd6e73
   name: ghcr.io/robbertvdzon/pvdd-frontend
   newName: ghcr.io/robbertvdzon/pvdd-frontend
-- digest: sha256:e2ba7e2a0e7f4d960b590994040281a792c83cda999537e7b2f670c5eacd3419
+- digest: sha256:ce486c5869618adac16691545d2df5d8f2e8b6151aae58ddfd2983b6b539ca42
   name: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
   newName: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
