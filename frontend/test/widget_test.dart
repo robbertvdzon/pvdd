@@ -117,6 +117,8 @@ void main() {
     expect(find.text('A-agenda'), findsOneWidget);
     expect(find.text('B-agenda'), findsOneWidget);
     expect(find.text('C-agenda'), findsOneWidget);
+    expect(find.text('Technische sectiekop'), findsNothing);
+    expect(find.text('Ingetrokken stuk'), findsNothing);
 
     await tester.ensureVisible(find.text('1.a Natuurinclusief wonen'));
     await tester.tap(find.text('1.a Natuurinclusief wonen'));
@@ -158,6 +160,34 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Vrije Markdown-analyse'), findsOneWidget);
+  });
+
+  testWidgets('refreshes an open detail when its analysis completes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final gateway = RefreshingDashboardGateway();
+    await tester.pumpWidget(
+      PvddApp(
+        authenticationGateway: FakeAuthenticationGateway(),
+        versionGateway: FakeVersionGateway(),
+        frontendVersionSource: FakeFrontendVersionSource(),
+        dashboardGateway: gateway,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Lopende analyse'));
+    await tester.pumpAndSettle();
+    expect(find.text('De analyse is nog niet beschikbaar.'), findsOneWidget);
+
+    gateway.ready = true;
+    await tester.pump(const Duration(seconds: 15));
+    await tester.pumpAndSettle();
+    expect(find.text('Automatisch vernieuwd advies'), findsOneWidget);
+    expect(find.text('De analyse is nog niet beschikbaar.'), findsNothing);
   });
 }
 
@@ -268,6 +298,34 @@ class FakeDashboardGateway implements DashboardGateway {
       adviceActuality: null,
       changeTypes: [],
     ),
+    AgendaItemSummary(
+      id: 'section-c',
+      sequence: 4,
+      displayNumber: null,
+      category: 'C',
+      title: 'Technische sectiekop',
+      substantive: false,
+      importStatus: 'COMPLETE',
+      analysisStatus: null,
+      sourceState: 'CURRENT',
+      currentFingerprint: null,
+      adviceActuality: null,
+      changeTypes: [],
+    ),
+    AgendaItemSummary(
+      id: 'withdrawn-c',
+      sequence: 5,
+      displayNumber: null,
+      category: 'C',
+      title: 'Ingetrokken stuk',
+      substantive: true,
+      importStatus: 'PENDING',
+      analysisStatus: null,
+      sourceState: 'WITHDRAWN',
+      currentFingerprint: null,
+      adviceActuality: null,
+      changeTypes: [],
+    ),
   ];
 
   @override
@@ -295,5 +353,40 @@ class FakeDashboardGateway implements DashboardGateway {
     status: 'UNCHANGED',
     revisionNumber: 2,
     differences: [],
+  );
+}
+
+class RefreshingDashboardGateway extends FakeDashboardGateway {
+  RefreshingDashboardGateway() : super(withMeeting: true);
+  bool ready = false;
+
+  AgendaItemSummary get item => AgendaItemSummary(
+    id: 'refreshing-item',
+    sequence: 1,
+    displayNumber: null,
+    category: 'C',
+    title: 'Lopende analyse',
+    substantive: true,
+    importStatus: 'COMPLETE',
+    analysisStatus: ready ? 'SUCCEEDED' : 'RUNNING',
+    sourceState: 'CURRENT',
+    currentFingerprint: 'fingerprint',
+    adviceActuality: ready ? 'CURRENT' : null,
+    changeTypes: const [],
+  );
+
+  @override
+  Future<List<AgendaItemSummary>> agendaItems(String meetingId) async => [item];
+
+  @override
+  Future<AgendaItemDetail> agendaItem(String itemId) async => AgendaItemDetail(
+    item: item,
+    explanation: null,
+    treatmentProposal: null,
+    sourceUrl: Uri.parse('https://example.test/item'),
+    advice: ready ? const {'content': '# Automatisch vernieuwd advies'} : null,
+    adviceActuality: ready ? 'CURRENT' : null,
+    sources: const [],
+    warning: 'AI-concept — controleer bronnen en formulering vóór gebruik',
   );
 }

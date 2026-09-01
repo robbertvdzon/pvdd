@@ -129,8 +129,11 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
                     _filters(),
                     const SizedBox(height: 8),
                     ..._filteredItems.map(
-                      (item) =>
-                          _AgendaItemCard(item: item, gateway: widget.gateway),
+                      (item) => _AgendaItemCard(
+                        key: ValueKey(item.id),
+                        item: item,
+                        gateway: widget.gateway,
+                      ),
                     ),
                   ],
                 ],
@@ -235,8 +238,12 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
         .toList(),
   );
 
-  Iterable<AgendaItemSummary> get _filteredItems =>
-      _items.where((item) => _filter == 'ALLE' || item.category == _filter);
+  Iterable<AgendaItemSummary> get _filteredItems => _items.where(
+    (item) =>
+        item.substantive &&
+        item.sourceState != 'WITHDRAWN' &&
+        (_filter == 'ALLE' || item.category == _filter),
+  );
 
   Widget _message(IconData icon, String text, Color color) => Card(
     child: Padding(
@@ -253,7 +260,7 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
 }
 
 class _AgendaItemCard extends StatefulWidget {
-  const _AgendaItemCard({required this.item, required this.gateway});
+  const _AgendaItemCard({required this.item, required this.gateway, super.key});
   final AgendaItemSummary item;
   final DashboardGateway gateway;
   @override
@@ -262,6 +269,18 @@ class _AgendaItemCard extends StatefulWidget {
 
 class _AgendaItemCardState extends State<_AgendaItemCard> {
   Future<AgendaItemDetail>? _detail;
+
+  @override
+  void didUpdateWidget(covariant _AgendaItemCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_detail != null &&
+        (oldWidget.item.analysisStatus != widget.item.analysisStatus ||
+            oldWidget.item.adviceActuality != widget.item.adviceActuality ||
+            oldWidget.item.currentFingerprint !=
+                widget.item.currentFingerprint)) {
+      _detail = widget.gateway.agendaItem(widget.item.id);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Card(
