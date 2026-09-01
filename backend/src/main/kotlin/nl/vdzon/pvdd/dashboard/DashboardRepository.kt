@@ -198,7 +198,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
         LEFT JOIN LATERAL (
             SELECT status FROM analysis_run ar WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE' ORDER BY created_at DESC LIMIT 1
         ) latest ON TRUE
-        WHERE ai.meeting_id = ? AND ai.source_state = 'CURRENT'
+        WHERE ai.meeting_id = ? AND ai.source_state <> 'WITHDRAWN'
           AND ai.substantive AND ai.category IN ('A', 'B', 'C')
         """.trimIndent(),
         { rs, _ -> ProgressDto(rs.getInt("total"), rs.getInt("complete"), rs.getInt("failed")) },

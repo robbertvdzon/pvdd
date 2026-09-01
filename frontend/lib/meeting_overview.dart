@@ -288,6 +288,12 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
                       ? 'STALE'
                       : widget.item.analysisStatus ?? widget.item.importStatus),
           ),
+          if (widget.item.sourceState == 'PREVIEW')
+            _statusLabel(
+              widget.item.adviceActuality == 'STALE'
+                  ? 'STALE'
+                  : widget.item.analysisStatus ?? widget.item.importStatus,
+            ),
           if (widget.item.changeTypes.isNotEmpty)
             widget.item.changeTypes.map(_changeLabel).join(', '),
         ].join(' · '),
@@ -332,7 +338,7 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
           if (detail.item.sourceState == 'PREVIEW')
             _actualityWarning(
               context,
-              'Voorlopig C-stuk — de volledige agenda is nog niet gepubliceerd en er is nog geen AI-analyse gestart.',
+              'Voorlopige bronversie — dit beschikbare stuk is geanalyseerd en wordt bij nieuwe broninformatie opnieuw verwerkt.',
             ),
           if (advice == null)
             const Padding(
@@ -470,7 +476,7 @@ String _checkOutcomeLabel(
 ) => switch (outcome.status) {
   'UNCHANGED' => 'De bron is gecontroleerd en ongewijzigd.',
   'AGENDA_UNPUBLISHED' =>
-    'De volledige agenda is nog niet gepubliceerd; voorlopige C-stukken zijn bijgewerkt.',
+    'De volledige agenda is nog niet gepubliceerd en bevat nog geen verwerkbare stukken.',
   'IMPORTED' when outcome.differences.isNotEmpty =>
     'Bronwijziging gevonden. De gerichte heranalyse is gestart.',
   'IMPORTED' => 'De agenda is verwerkt.',

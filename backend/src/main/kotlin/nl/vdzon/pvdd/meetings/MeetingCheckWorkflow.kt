@@ -59,30 +59,45 @@ class MeetingCheckWorkflow(
                     errorCode = outcome.code.name,
                 )
                 is DiscoveryOutcome.AgendaUnpublished -> {
-                    val agenda = discovery.fetchAgenda(outcome.meeting.sourceUrl, enrichReports = false)
+                    val agenda = discovery.fetchAgenda(outcome.meeting.sourceUrl, enrichReports = true)
                     val baseline = revisions.baseline(agenda.sourceId)
-                    meetingId = saveMeeting(
-                        agenda,
-                        MeetingStatus.AGENDA_UNPUBLISHED,
-                        imported = false,
-                        publicationStatus = PublicationStatus.PREVIEW,
-                    )
-                    val preview = savePreviewItems(meetingId, agenda)
-                    val comparison = comparator.compare(agenda, PublicationStatus.PREVIEW, preview, baseline)
-                    val stored = revisions.record(
-                        meetingId,
-                        agenda,
-                        PublicationStatus.PREVIEW,
-                        preview,
-                        comparison,
-                        clock.instant(),
-                    )
-                    MeetingCheckResult(
-                        MeetingCheckStatus.AGENDA_UNPUBLISHED,
-                        agenda.sourceId,
-                        revisionNumber = stored.number,
-                        differences = comparison.differences,
-                    )
+                    if (agenda.items.none { it.substantive && it.category in ANALYSIS_CATEGORIES }) {
+                        meetingId = saveMeeting(
+                            agenda,
+                            MeetingStatus.AGENDA_UNPUBLISHED,
+                            imported = false,
+                            publicationStatus = PublicationStatus.PREVIEW,
+                        )
+                        val comparison = comparator.compare(agenda, PublicationStatus.PREVIEW, emptyList(), baseline)
+                        val stored = revisions.record(
+                            meetingId,
+                            agenda,
+                            PublicationStatus.PREVIEW,
+                            emptyList(),
+                            comparison,
+                            clock.instant(),
+                        )
+                        MeetingCheckResult(
+                            MeetingCheckStatus.AGENDA_UNPUBLISHED,
+                            agenda.sourceId,
+                            revisionNumber = stored.number,
+                            differences = comparison.differences,
+                        )
+                    } else {
+                        meetingId = saveMeeting(
+                            agenda,
+                            MeetingStatus.IMPORTING,
+                            imported = true,
+                            publicationStatus = PublicationStatus.PREVIEW,
+                        )
+                        importAgenda(
+                            meetingId,
+                            agenda,
+                            baseline,
+                            PublicationStatus.PREVIEW,
+                            SourceState.PREVIEW,
+                        )
+                    }
                 }
                 is DiscoveryOutcome.Found -> {
                     val agenda = discovery.fetchAgenda(outcome.meeting.sourceUrl, enrichReports = true)
@@ -109,6 +124,8 @@ class MeetingCheckWorkflow(
         meetingId: UUID,
         agenda: ParsedMeetingAgenda,
         baseline: RevisionBaseline?,
+        publicationStatus: PublicationStatus = PublicationStatus.CURRENT,
+        sourceState: SourceState = SourceState.CURRENT,
     ): MeetingCheckResult {
         var fullyRead = true
         val revisionItems = mutableListOf<RevisionItem>()
@@ -130,6 +147,7 @@ class MeetingCheckWorkflow(
                     sourceHash = AgendaParser.sha256(agenda.agendaDocuments.joinToString { it.sourceUrl.toString() }),
                     substantive = false,
                     importStatus = ImportStatus.IN_PROGRESS,
+                    sourceState = sourceState,
                 ),
             )
             val summary = documents.ingest(itemId, agenda.agendaDocuments.map { it.toReference() })
@@ -138,7 +156,7 @@ class MeetingCheckWorkflow(
         }
 
         agenda.items.forEach { parsed ->
-            val initial = parsed.toAgendaItem(meetingId, ImportStatus.IN_PROGRESS, SourceState.CURRENT)
+            val initial = parsed.toAgendaItem(meetingId, ImportStatus.IN_PROGRESS, sourceState)
             val itemId = meetings.upsert(initial)
             val summary = if (parsed.substantive) {
                 documents.ingest(itemId, parsed.documents.map { it.toReference() })
@@ -151,6 +169,7 @@ class MeetingCheckWorkflow(
                 parsed,
                 itemId,
                 if (parsed.substantive) meetingDocuments + (summary?.documents ?: emptyList()) else emptyList(),
+                sourceState,
             )
             revisionItems += revisionItem
             meetings.upsert(
@@ -166,11 +185,11 @@ class MeetingCheckWorkflow(
         meetings.markMissingItemsWithdrawn(meetingId, currentSourceIds)
 
         return if (fullyRead) {
-            val comparison = comparator.compare(agenda, PublicationStatus.CURRENT, revisionItems, baseline)
+            val comparison = comparator.compare(agenda, publicationStatus, revisionItems, baseline)
             val stored = revisions.record(
                 meetingId,
                 agenda,
-                PublicationStatus.CURRENT,
+                publicationStatus,
                 revisionItems,
                 comparison,
                 clock.instant(),
@@ -235,25 +254,6 @@ class MeetingCheckWorkflow(
         ),
     )
 
-    private fun savePreviewItems(meetingId: UUID, agenda: ParsedMeetingAgenda): List<RevisionItem> {
-        val itemIds = agenda.items
-            .filter { it.substantive && it.category == AgendaCategory.C }
-            .associate { parsed ->
-                parsed.sourceId to meetings.upsert(
-                    parsed.toAgendaItem(meetingId, ImportStatus.PENDING, SourceState.PREVIEW),
-                )
-            }
-        val preview = comparator.previewItems(agenda, itemIds)
-        preview.forEach { revisionItem ->
-            val parsed = requireNotNull(agenda.items.firstOrNull { it.sourceId == revisionItem.sourceId })
-            meetings.upsert(
-                parsed.toAgendaItem(meetingId, ImportStatus.PENDING, SourceState.PREVIEW)
-                    .copy(id = revisionItem.agendaItemId, currentFingerprint = revisionItem.fingerprint),
-            )
-        }
-        return preview
-    }
-
     private fun ParsedAgendaItem.toAgendaItem(
         meetingId: UUID,
         status: ImportStatus,
@@ -280,6 +280,7 @@ class MeetingCheckWorkflow(
 
     companion object {
         const val WORKFLOW_LOCK = "meeting-check"
+        private val ANALYSIS_CATEGORIES = setOf(AgendaCategory.A, AgendaCategory.B, AgendaCategory.C)
     }
 
     private object TransientRevisionStore : SourceRevisionStore {

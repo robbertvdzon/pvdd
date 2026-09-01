@@ -697,8 +697,9 @@ geblokkeerd totdat de functionele poort F13 en bronactualiteitspoort R7 groen zi
 De identiteit van een vergadering is geen inhoudsversie. Iedere controle legt daarom een immutable
 bronsnapshot vast met publicatiestatus, canonieke fingerprint, controletijd en verschilsoorten.
 
-- `PREVIEW`: de bron kondigt latere publicatie aan. Alleen reeds zichtbare veilige C-metadata en
-  bronlinks zijn voorlopig beschikbaar; documenten en AI blijven geblokkeerd.
+- `PREVIEW`: de bron kondigt latere publicatie aan. Reeds zichtbare stukken, documenten en analyses
+  worden direct verwerkt, maar blijven ondubbelzinnig voorlopig totdat een nieuwere bronversie is
+  gecontroleerd.
 - `CURRENT`: de volledig gepubliceerde, laatst succesvol vastgelegde bronversie.
 - `CHANGED`: een nieuwe canonieke bronversie verschilt inhoudelijk van `CURRENT`.
 - `REPROCESSING`: gewijzigde punten worden opnieuw verwerkt; de vorige succesvolle versie blijft
@@ -713,11 +714,11 @@ behandelvoorstel en geordende document-ID's plus document-SHA-256. URL-tracking,
 presentatie-HTML tellen niet mee. Een advies is uitsluitend actueel bij exact dezelfde
 puntfingerprint, promptversie en beleidsbronversie.
 
-Een expliciete publicatiemelding wint altijd van zichtbare punten. Een preview kan nooit een
-documentdownload, prompt of Runtime-job veroorzaken. Na publicatie en bij iedere volgende
-05:00-/handmatige controle wordt hetzelfde vergadering-ID opnieuw vergeleken. Alleen gewijzigde of
-nieuwe punten krijgen een revisiegebonden idempotente analyse; oude resultaten kunnen een nieuwere
-revisie nooit actueel maken.
+Een expliciete publicatiemelding wint altijd bij de kwalificatie van de agenda als voorlopig, maar
+blokkeert de verwerking van reeds beschikbare stukken niet. Na publicatie en bij iedere volgende
+05:00-/handmatige controle wordt hetzelfde vergadering-ID opnieuw vergeleken. Een nieuwe
+publicatieversie en inhoudelijk gewijzigde of nieuwe punten krijgen een revisiegebonden idempotente
+analyse; oude resultaten kunnen een nieuwere revisie nooit actueel maken.
 
 Deze punten blokkeren het eerste specificatiedocument niet, maar moeten vóór de betreffende story
 worden besloten:

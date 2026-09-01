@@ -135,7 +135,7 @@ class AnalysisRepository(
                 ELSE 'STALE'
             END
             WHERE advice.agenda_item_id = ?
-              AND (SELECT source_state FROM agenda_item WHERE id = ?) = 'CURRENT'
+              AND (SELECT source_state FROM agenda_item WHERE id = ?) <> 'WITHDRAWN'
             """.trimIndent(),
             runId,
             agendaItemId,
@@ -325,7 +325,7 @@ class AnalysisRepository(
         """
         SELECT COUNT(*) > 0 AND NOT EXISTS (
             SELECT 1 FROM agenda_item ai
-            WHERE ai.meeting_id = ? AND ai.source_state = 'CURRENT'
+            WHERE ai.meeting_id = ? AND ai.source_state <> 'WITHDRAWN'
               AND ai.substantive AND ai.category IN ('A', 'B', 'C')
               AND NOT EXISTS (
                   SELECT 1 FROM agenda_item_advice advice

@@ -341,7 +341,16 @@ class DatabaseIntegrationTest(
                 ),
             )
         }
-        val previewItems = revisionComparator.previewItems(parsed.copy(published = false), previewIds)
+        val previewItems = parsed.items
+            .filter { it.substantive && it.category == AgendaCategory.C }
+            .map { item ->
+                revisionComparator.currentItem(
+                    item,
+                    requireNotNull(previewIds[item.sourceId]),
+                    emptyList(),
+                    SourceState.PREVIEW,
+                )
+            }
         val previewComparison = revisionComparator.compare(parsed, PublicationStatus.PREVIEW, previewItems, null)
         val preview = sourceRevisionRepository.record(
             meetingId, parsed, PublicationStatus.PREVIEW, previewItems, previewComparison, now,

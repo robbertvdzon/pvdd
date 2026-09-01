@@ -1,6 +1,6 @@
 # Stappenplan 4 — bronrevisies en gerichte heranalyse
 
-Status: **BRONACTUALITEIT GEREED**; de echte F13-inhoudsproef volgt na publicatie
+Status: in herverificatie na correctie van de voorlopige-verwerkingsregel
 
 Bron: [microservice-specificatie](../microservice-specificatie.md)
 
@@ -33,7 +33,8 @@ agenda en stukken horen.
 1. Een expliciete melding dat de agenda later wordt gepubliceerd, heeft voorrang op reeds zichtbare
    agendapunten. De vergadering blijft dan `AGENDA_UNPUBLISHED`.
 2. Reeds openbare C-stukken mogen vóór volledige publicatie als **voorlopig** worden getoond met
-   bronlinks. Zij maken de agenda niet compleet en starten nog geen documentdownload of AI-analyse.
+   bronlinks. Zij maken de agenda niet compleet, maar beschikbare documenten en AI-analyse worden
+   direct verwerkt en ondubbelzinnig als voorlopig getoond.
 3. Na volledige publicatie controleert zowel de 05:00-run als **Nu controleren** ook een vergadering
    die eerder succesvol is verwerkt.
 4. Alleen een gelijk vergadering-ID én een gelijke canonieke bronfingerprint betekent
@@ -113,7 +114,7 @@ Acceptatie:
 - De fixtures bevatten geen persoonsgegevens, secrets of onnodig gekopieerde brontekst.
 - Iedere verschilsoort heeft een eenduidige verwachte status en herverwerkingsbeslissing.
 - Een vergadering-ID wordt nergens meer als inhoudsversie beschreven.
-- Voorlopige C-stukken zijn zichtbaar maar kunnen geen AI-job veroorzaken.
+- Voorlopige C-stukken zijn zichtbaar en veroorzaken direct een AI-job zodra hun inhoud leesbaar is.
 
 ## R1 — Duurzame bronrevisies en snapshots
 
@@ -172,19 +173,22 @@ Repository: `pvdd`
 Werk:
 
 1. Laat een expliciete toekomstige publicatiemelding prevaleren boven de aanwezigheid van C-items.
-2. Importeer van reeds zichtbare C-items uitsluitend veilige previewmetadata en bronlinks.
+2. Importeer van reeds zichtbare C-items metadata, bronlinks en beschikbare documenten.
 3. Markeer de vergadering en ieder previewitem ondubbelzinnig als voorlopig en mogelijk onvolledig.
-4. Start vóór volledige publicatie geen documentdownload, tekstextractie of AI-job.
+4. Start direct documentdownload, tekstextractie en AI-analyse voor ieder zichtbaar inhoudelijk
+   previewitem; markeer het advies als voorlopig.
 5. Controleer de bron de volgende ochtend en via **Nu controleren** opnieuw.
 6. Koppel previewitems bij publicatie op stabiele bron-ID aan de definitieve agenda; behandel
-   verdwenen previewitems als ingetrokken zonder ze historisch te wissen.
+   verdwenen previewitems als ingetrokken zonder ze historisch te wissen en analyseer de nieuwe
+   publicatieversie opnieuw.
 
 Acceptatie:
 
 - De pagina kan niet door alleen C-items ten onrechte als volledig gepubliceerd gelden.
 - De frontend toont welke informatie voorlopig is en wanneer opnieuw is gecontroleerd.
-- Previewdata verschijnt nooit in een AI-prompt of definitief advies.
-- Volledige publicatie met hetzelfde vergadering-ID wordt wel geïmporteerd en geanalyseerd.
+- Previewdata verschijnt in een voorlopig gemarkeerde AI-analyse en nooit ongemarkeerd als
+  definitief advies.
+- Volledige publicatie met hetzelfde vergadering-ID wordt opnieuw geïmporteerd en geanalyseerd.
 
 ## R4 — Gerichte heranalyse en concurrency
 
@@ -252,7 +256,8 @@ Repositories: `pvdd`; alleen bij een gevonden platformfout een aparte wijziging 
 Werk:
 
 1. Doorloop alle R0-fixtureparen in de echte OpenShift-acceptatieomgeving met gemockte bron en AI.
-2. Bewijs de keten preview → publicatie → analyse → bronwijziging → gerichte heranalyse → actueel.
+2. Bewijs de keten preview → voorlopige analyse → publicatie → nieuwe analyse → bronwijziging →
+   gerichte heranalyse → actueel.
 3. Bewijs dat een opmaakwijziging en volledig ongewijzigde controle nul AI-jobs veroorzaken.
 4. Bewijs herstel na backendrestart tijdens revisie-import en tijdens heranalyse.
 5. Draai vóór productiepromotie een niet-muterende bronvergelijking tegen de actuele openbare bron.
@@ -279,7 +284,7 @@ Acceptatie:
 Alle onderstaande controles zijn verplicht:
 
 - [x] Een expliciete toekomstige publicatiemelding wint van reeds zichtbare C-items.
-- [x] Voorlopige C-items zijn herkenbaar zichtbaar en starten geen document- of AI-verwerking.
+- [ ] Voorlopige C-items zijn herkenbaar zichtbaar en starten direct document- en AI-verwerking.
 - [x] Publicatie met hetzelfde vergadering-ID wordt gedetecteerd en volledig verwerkt.
 - [x] Alleen gelijk vergadering-ID plus gelijke canonieke fingerprint betekent ongewijzigd.
 - [x] Toevoegen, intrekken, verplaatsen en categoriewijziging worden correct herkend.
@@ -292,12 +297,12 @@ Alle onderstaande controles zijn verplicht:
 - [x] Revisies en eerdere adviezen blijven auditbaar bewaard.
 - [x] Geplande en handmatige controle delen dezelfde veilige orkestratie.
 - [x] Bronfouten en herstarts beschadigen de laatst succesvolle snapshot niet.
-- [x] De volledige acceptatieketen is groen met gemockte bron en AI.
+- [ ] De volledige acceptatieketen is groen met gemockte bron en AI.
 - [x] Acceptance is in een schone browser zonder account of token direct bruikbaar.
 - [x] Acceptance toont permanent dat gegevens gemockt zijn en authenticatie uitstaat.
 - [x] De authbypass kan in production en onbekende omgevingen niet worden geactiveerd.
 - [x] Acceptance bevat geen Google-configuratie, productiebrondata, echte AI of productietokens.
-- [x] De productie-uitrol draait de bewezen SHA en Argo CD is gezond.
+- [ ] De productie-uitrol draait de bewezen SHA en Argo CD is gezond.
 
 Poortbesluit:
 

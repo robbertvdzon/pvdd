@@ -4,6 +4,14 @@ import server
 
 
 class SourceRevisionFixtureTest(unittest.TestCase):
+    def test_preview_update_changes_both_agenda_and_report_metadata(self):
+        original = server.agenda_for("preview")
+        updated = server.agenda_for("preview-new-info")
+
+        self.assertNotEqual(original, updated)
+        self.assertIn(b"Aangevulde brief", updated)
+        self.assertIn("preview-new-info", server.SCENARIOS)
+
     def test_item_moved_reorders_complete_sections_without_changing_categories(self):
         html = server.agenda_for("item-moved").decode("utf-8")
         markers = (

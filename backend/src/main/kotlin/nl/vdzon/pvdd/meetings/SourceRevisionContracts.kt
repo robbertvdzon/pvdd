@@ -64,7 +64,8 @@ data class ItemDifference(
     val differences: Set<DifferenceType>,
 ) {
     val requiresAnalysis: Boolean
-        get() = item?.sourceState == SourceState.CURRENT && differences.any(ANALYSIS_AFFECTING_DIFFERENCES::contains)
+        get() = item != null && item.sourceState != SourceState.WITHDRAWN &&
+            differences.any(ANALYSIS_AFFECTING_DIFFERENCES::contains)
 }
 
 private val ANALYSIS_AFFECTING_DIFFERENCES = setOf(
@@ -107,14 +108,15 @@ interface SourceRevisionStore {
 
 @Component
 class AgendaRevisionComparator {
-    fun previewItems(agenda: ParsedMeetingAgenda, itemIds: Map<String, UUID>): List<RevisionItem> = agenda.items
-        .filter { it.substantive && it.category == AgendaCategory.C }
-        .map { item -> item(item, requireNotNull(itemIds[item.sourceId]), SourceState.PREVIEW, emptyList()) }
-
-    fun currentItem(item: ParsedAgendaItem, agendaItemId: UUID, documents: List<SourceDocument>): RevisionItem = item(
+    fun currentItem(
+        item: ParsedAgendaItem,
+        agendaItemId: UUID,
+        documents: List<SourceDocument>,
+        sourceState: SourceState = SourceState.CURRENT,
+    ): RevisionItem = item(
         item,
         agendaItemId,
-        SourceState.CURRENT,
+        sourceState,
         documents.map { document ->
             RevisionDocument(
                 document.sourceId,
@@ -134,7 +136,7 @@ class AgendaRevisionComparator {
     ): RevisionComparison {
         val fingerprint = meetingFingerprint(agenda, publicationStatus, items)
         if (baseline == null) {
-            val firstType = if (publicationStatus == PublicationStatus.PREVIEW) emptySet() else setOf(DifferenceType.ITEM_ADDED)
+            val firstType = if (items.isEmpty()) emptySet() else setOf(DifferenceType.ITEM_ADDED)
             return RevisionComparison(
                 publicationStatus,
                 fingerprint,

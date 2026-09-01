@@ -56,7 +56,9 @@ expect_status() {
   sleep "$check_interval_seconds"
 }
 
-expect_status preview AGENDA_UNPUBLISHED
+expect_status preview IMPORTED ITEM_ADDED
+expect_status preview-new-info IMPORTED METADATA_CHANGED
+expect_status preview-new-info UNCHANGED
 expect_status published IMPORTED PUBLICATION_STATUS
 expect_status formatting-only UNCHANGED
 expect_status item-added IMPORTED ITEM_ADDED

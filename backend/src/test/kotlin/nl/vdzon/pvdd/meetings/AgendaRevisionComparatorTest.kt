@@ -14,14 +14,16 @@ class AgendaRevisionComparatorTest {
     private val agenda = AgendaParser().parse(resource("agenda-full.html"), MEETING_URL)
 
     @Test
-    fun `preview exposes only C metadata and never requires analysis`() {
-        val ids = agenda.items.associate { it.sourceId to UUID.randomUUID() }
-        val preview = comparator.previewItems(agenda.copy(published = false), ids)
+    fun `available preview items require analysis and retain their provisional state`() {
+        val preview = agenda.items
+            .filter { it.substantive && it.category == AgendaCategory.C }
+            .map { comparator.currentItem(it, UUID.randomUUID(), emptyList(), SourceState.PREVIEW) }
         val result = comparator.compare(agenda.copy(published = false), PublicationStatus.PREVIEW, preview, null)
 
         assertTrue(preview.isNotEmpty())
         assertTrue(preview.all { it.category == AgendaCategory.C && it.documents.isEmpty() && it.sourceState == SourceState.PREVIEW })
-        assertFalse(result.requiresAnalysis)
+        assertTrue(result.requiresAnalysis)
+        assertEquals(setOf(DifferenceType.ITEM_ADDED), result.differences)
     }
 
     @Test
@@ -116,7 +118,7 @@ class AgendaRevisionComparatorTest {
             .toSet()
         assertEquals(
             setOf(
-                "preview-to-published", "item-added", "item-withdrawn", "item-moved",
+                "preview-to-published", "preview-new-info", "item-added", "item-withdrawn", "item-moved",
                 "category-changed", "metadata-changed", "document-added", "document-removed",
                 "same-url-new-bytes", "formatting-only",
             ),

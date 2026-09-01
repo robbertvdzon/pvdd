@@ -10,9 +10,10 @@ Ruimte van Provincie Noord-Holland.
 Na Google-login toont de app de eerstvolgende vergadering, bronstatus, laatste controle en
 analysevoortgang. Dezelfde orkestratie draait dagelijks om 05:00 uur in `Europe/Amsterdam` en via
 **Nu controleren**. Zonder toekomstige vergadering, bij hetzelfde reeds succesvol verwerkte
-bron-ID of bij een ongepubliceerde agenda ontstaan geen documentdownloads en geen AI-jobs. Alleen
-een volledig geïmporteerde en geanalyseerde vergadering wordt als laatst succesvol verwerkt
-vastgelegd.
+bron-ID én dezelfde canonieke inhoud, of bij een ongepubliceerde agenda zonder zichtbare
+verwerkbare stukken ontstaan geen documentdownloads en geen AI-jobs. Zichtbare voorlopige stukken
+worden direct gedownload en geanalyseerd; het voorlopige advies wordt bij een nieuwe bronversie
+gericht vervangen.
 
 ## Vergadering en agenda
 

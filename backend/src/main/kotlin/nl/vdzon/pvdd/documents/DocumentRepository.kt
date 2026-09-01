@@ -96,7 +96,7 @@ class DocumentRepository(
         JOIN agenda_item_revision current_item
             ON current_item.meeting_revision_id = current_revision.id
             AND current_item.agenda_item_id = source_item.id
-            AND current_item.source_state = 'CURRENT'
+            AND current_item.source_state <> 'WITHDRAWN'
         JOIN document_revision current_document
             ON current_document.agenda_item_revision_id = current_item.id
             AND current_document.source_state = 'CURRENT'

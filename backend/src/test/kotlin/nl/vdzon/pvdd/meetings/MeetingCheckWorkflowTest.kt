@@ -75,6 +75,66 @@ class MeetingCheckWorkflowTest {
     }
 
     @Test
+    fun `available items on an unpublished agenda are imported and analysed immediately`() {
+        val discovered = DiscoveredMeeting("meeting-future", now.plusSeconds(3600), meetingUrl)
+        val previewAgenda = AgendaParser().parse(resource("agenda-full.html"), meetingUrl).copy(published = false)
+        val discovery = StubDiscovery(DiscoveryOutcome.AgendaUnpublished(discovered), previewAgenda)
+        val fixture = fixture(discovery = discovery)
+
+        val preview = fixture.workflow.check()
+
+        assertEquals(MeetingCheckStatus.IMPORTED, preview.status)
+        assertEquals(setOf(DifferenceType.ITEM_ADDED), preview.differences)
+        assertTrue(fixture.documents.calls > 0)
+        assertEquals(1, fixture.events.size)
+        assertEquals(PublicationStatus.PREVIEW, fixture.store.savedMeetings.single().publicationStatus)
+        assertEquals(MeetingStatus.IMPORTING, fixture.store.savedMeetings.single().status)
+    }
+
+    @Test
+    fun `publication after a processed preview starts a new analysis version`() {
+        val discovered = DiscoveredMeeting("meeting-future", now.plusSeconds(3600), meetingUrl)
+        val agenda = AgendaParser().parse(resource("agenda-full.html"), meetingUrl)
+        val discovery = StubDiscovery(DiscoveryOutcome.AgendaUnpublished(discovered), agenda.copy(published = false))
+        val fixture = fixture(discovery = discovery)
+
+        assertEquals(MeetingCheckStatus.IMPORTED, fixture.workflow.check().status)
+        fixture.revisions.markCurrent()
+        discovery.outcome = DiscoveryOutcome.Found(discovered)
+        discovery.agenda = agenda.copy(published = true)
+
+        val published = fixture.workflow.check()
+
+        assertEquals(MeetingCheckStatus.IMPORTED, published.status)
+        assertTrue(DifferenceType.PUBLICATION_STATUS in published.differences)
+        assertEquals(2, fixture.events.size)
+    }
+
+    @Test
+    fun `new information on a processed preview starts reanalysis before publication`() {
+        val discovered = DiscoveredMeeting("meeting-future", now.plusSeconds(3600), meetingUrl)
+        val agenda = AgendaParser().parse(resource("agenda-full.html"), meetingUrl)
+        val discovery = StubDiscovery(DiscoveryOutcome.AgendaUnpublished(discovered), agenda.copy(published = false))
+        val fixture = fixture(discovery = discovery)
+
+        assertEquals(MeetingCheckStatus.IMPORTED, fixture.workflow.check().status)
+        fixture.revisions.markCurrent()
+        discovery.agenda = agenda.copy(
+            published = false,
+            items = agenda.items.map { item ->
+                if (item.substantive) item.copy(explanation = "Nieuwe informatie in de voorlopige agenda") else item
+            },
+        )
+
+        val updatedPreview = fixture.workflow.check()
+
+        assertEquals(MeetingCheckStatus.IMPORTED, updatedPreview.status)
+        assertTrue(DifferenceType.METADATA_CHANGED in updatedPreview.differences)
+        assertEquals(2, fixture.events.size)
+        assertEquals(PublicationStatus.PREVIEW, fixture.store.savedMeetings.last().publicationStatus)
+    }
+
+    @Test
     fun `published source change creates a new revision and starts reanalysis`() {
         val parsed = AgendaParser().parse(resource("agenda-full.html"), meetingUrl)
         val discovery = StubDiscovery(
@@ -145,7 +205,7 @@ class MeetingCheckWorkflowTest {
     )
 
     private class StubDiscovery(
-        private val outcome: DiscoveryOutcome,
+        var outcome: DiscoveryOutcome,
         var agenda: ParsedMeetingAgenda? = null,
     ) : MeetingDiscoveryGateway {
         var fetchCount = 0

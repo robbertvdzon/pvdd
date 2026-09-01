@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 FIXTURES = Path(__file__).parent / "fixtures"
 SCENARIOS = {
     "preview",
+    "preview-new-info",
     "published",
     "item-added",
     "item-withdrawn",
@@ -38,8 +39,14 @@ def scenario() -> str:
 
 
 def agenda_for(active: str) -> bytes:
-    if active == "preview":
-        return fixture("agenda-unpublished.html")
+    if active in {"preview", "preview-new-info"}:
+        html = fixture("agenda-unpublished.html")
+        if active == "preview-new-info":
+            return html.replace(
+                b"Brief over herstel van een natuurverbinding",
+                b"Aangevulde brief over versneld herstel van een natuurverbinding",
+            )
+        return html
     html = fixture("agenda.html").decode("utf-8")
     housing = re.search(r'<li><div class="agenda-item" id="item-a-housing">.*?</div></li>', html, re.S)
     mobility = re.search(r'<li><div class="agenda-item" id="item-b-mobility">.*?</div></li>', html, re.S)
@@ -109,7 +116,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/Agenda/Index/acceptance-meeting-v1":
             return self.respond(200, agenda_for(active), "text/html; charset=utf-8")
         if path == "/Reports/Item/report-nature":
-            return self.respond(200, fixture("report-nature.html"), "text/html; charset=utf-8")
+            report = fixture("report-nature.html")
+            if active == "preview-new-info":
+                report = report.replace(
+                    b"De brief vraagt om snelle verbinding van versnipperde leefgebieden.",
+                    b"De aangevulde brief vraagt om versneld herstel en een concreet uitvoeringsschema.",
+                )
+            return self.respond(200, report, "text/html; charset=utf-8")
         documents = {
             "/Document/View/doc-housing": "doc-housing-changed.txt" if active == "same-url-new-bytes" else "doc-housing.txt",
             "/Document/View/doc-mobility": "doc-mobility.html",

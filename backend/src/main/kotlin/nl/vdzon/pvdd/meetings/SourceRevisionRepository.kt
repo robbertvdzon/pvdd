@@ -95,8 +95,8 @@ class SourceRevisionRepository(private val jdbc: JdbcTemplate) : SourceRevisionS
         val number = (previous?.revisionNumber ?: 0) + 1
         val revisionId = UUID.randomUUID()
         val status = when {
-            publicationStatus == PublicationStatus.PREVIEW -> RevisionStatus.PREVIEW
             comparison.requiresAnalysis -> RevisionStatus.REPROCESSING
+            publicationStatus == PublicationStatus.PREVIEW -> RevisionStatus.PREVIEW
             comparison.differences.isEmpty() -> RevisionStatus.CURRENT
             else -> RevisionStatus.CHANGED
         }

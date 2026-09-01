@@ -62,14 +62,14 @@ class AnalysisOrchestrator(
             val meeting = requireNotNull(meetings.findMeeting(meetingId))
             val items = meetings.findAgendaItems(meetingId)
                 .filter {
-                    it.sourceState == SourceState.CURRENT && it.substantive &&
+                    it.sourceState != SourceState.WITHDRAWN && it.substantive &&
                         it.category in setOf(AgendaCategory.A, AgendaCategory.B, AgendaCategory.C)
                 }
             require(items.isNotEmpty()) { "NO_ANALYSIS_ITEMS" }
             items.forEach { item ->
                 val sources = sources(item)
                 val plan = prompts.plan(item.toAnalysisItem(), sources)
-                val fingerprint = fingerprint(item, sources)
+                val fingerprint = fingerprint(item, sources, meeting.publicationStatus.name)
                 val key = "pvdd-${sha256("${meeting.sourceId}|${item.sourceId}|$fingerprint|${PromptBuilder.PROMPT_VERSION}")}" 
                 val now = clock.instant()
                 val finalRunId = UUID.randomUUID()
@@ -266,7 +266,11 @@ class AnalysisOrchestrator(
         text = passage.text,
     )
 
-    private fun fingerprint(item: AgendaItem, sources: List<AnalysisSource>): String = analysisFingerprint(item, sources)
+    private fun fingerprint(
+        item: AgendaItem,
+        sources: List<AnalysisSource>,
+        publicationStatus: String,
+    ): String = analysisFingerprint(item, sources, publicationStatus)
 
     private fun citations(result: JsonNode): JsonNode = mapper.createArrayNode().also { target ->
         result.findValues("citations").filter { it.isArray }.forEach { array -> array.forEach(target::add) }
@@ -294,9 +298,14 @@ class AnalysisOrchestrator(
     }
 }
 
-internal fun analysisFingerprint(item: AgendaItem, sources: List<AnalysisSource>): String =
+internal fun analysisFingerprint(
+    item: AgendaItem,
+    sources: List<AnalysisSource>,
+    publicationStatus: String = "CURRENT",
+): String =
     MessageDigest.getInstance("SHA-256").digest(
         buildString {
+            appendFingerprintPart(publicationStatus)
             appendFingerprintPart(item.category.name)
             appendFingerprintPart(item.title)
             appendFingerprintPart(item.explanation.orEmpty())

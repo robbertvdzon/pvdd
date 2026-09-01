@@ -139,6 +139,38 @@ void main() {
     }
     expect(find.textContaining('AI-concept'), findsOneWidget);
   });
+
+  testWidgets('shows processed preview advice as provisional and ready', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      PvddApp(
+        acceptanceBypass: true,
+        authenticationGateway: FakeAuthenticationGateway(),
+        tokenStore: MemoryTokenStore(),
+        versionGateway: FakeVersionGateway(),
+        frontendVersionSource: FakeFrontendVersionSource(),
+        dashboardGateway: FakeDashboardGateway(
+          withMeeting: true,
+          preview: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Voorlopige agenda'), findsWidgets);
+    expect(find.text('Gereed'), findsWidgets);
+    await tester.tap(find.text('1.a Natuurinclusief wonen'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('dit beschikbare stuk is geanalyseerd'),
+      findsOneWidget,
+    );
+    expect(find.text('Waar gaat het over?'), findsOneWidget);
+  });
 }
 
 class MemoryTokenStore implements TokenStore {
@@ -174,8 +206,9 @@ class FakeFrontendVersionSource implements FrontendVersionSource {
 }
 
 class FakeDashboardGateway implements DashboardGateway {
-  FakeDashboardGateway({this.withMeeting = false});
+  FakeDashboardGateway({this.withMeeting = false, this.preview = false});
   final bool withMeeting;
+  final bool preview;
 
   @override
   Future<MeetingOverview> overview() async => MeetingOverview(
@@ -188,8 +221,8 @@ class FakeDashboardGateway implements DashboardGateway {
             endsAt: DateTime.utc(2026, 9, 14, 20, 30),
             location: 'Statenzaal',
             sourceUrl: Uri.parse('https://example.test/agenda'),
-            status: 'ANALYSING',
-            publicationStatus: 'CURRENT',
+            status: preview ? 'COMPLETE' : 'ANALYSING',
+            publicationStatus: preview ? 'PREVIEW' : 'CURRENT',
             revisionNumber: 2,
             canonicalFingerprint: List.filled(64, 'a').join(),
             revisionStatus: 'REPROCESSING',
@@ -201,7 +234,7 @@ class FakeDashboardGateway implements DashboardGateway {
 
   @override
   Future<List<AgendaItemSummary>> agendaItems(String meetingId) async => [
-    const AgendaItemSummary(
+    AgendaItemSummary(
       id: 'item-a',
       sequence: 1,
       displayNumber: '1.a',
@@ -210,12 +243,12 @@ class FakeDashboardGateway implements DashboardGateway {
       substantive: true,
       importStatus: 'COMPLETE',
       analysisStatus: 'SUCCEEDED',
-      sourceState: 'CURRENT',
+      sourceState: preview ? 'PREVIEW' : 'CURRENT',
       currentFingerprint: null,
       adviceActuality: 'CURRENT',
       changeTypes: [],
     ),
-    const AgendaItemSummary(
+    AgendaItemSummary(
       id: 'item-b',
       sequence: 2,
       displayNumber: '2.a',
@@ -224,12 +257,12 @@ class FakeDashboardGateway implements DashboardGateway {
       substantive: true,
       importStatus: 'COMPLETE',
       analysisStatus: 'RUNNING',
-      sourceState: 'CURRENT',
+      sourceState: preview ? 'PREVIEW' : 'CURRENT',
       currentFingerprint: null,
       adviceActuality: 'STALE',
       changeTypes: ['DOCUMENT_CONTENT_CHANGED'],
     ),
-    const AgendaItemSummary(
+    AgendaItemSummary(
       id: 'item-c',
       sequence: 3,
       displayNumber: null,
@@ -238,7 +271,7 @@ class FakeDashboardGateway implements DashboardGateway {
       substantive: true,
       importStatus: 'COMPLETE',
       analysisStatus: 'QUEUED',
-      sourceState: 'CURRENT',
+      sourceState: preview ? 'PREVIEW' : 'CURRENT',
       currentFingerprint: null,
       adviceActuality: null,
       changeTypes: [],

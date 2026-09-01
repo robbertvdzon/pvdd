@@ -29,9 +29,10 @@ De parser is tijdens de spike aangepast aan twee daadwerkelijk waargenomen iBabs
 2. agenda- en reportdocumentlinks openen een HTML-viewer; de bytes staan op de openbare route
    `/Document/View/{documentId}`.
 
-De expliciete publicatiemelding heeft voorrang op reeds zichtbare C-items. Daardoor start de
-productieworkflow vóór 3 september geen documentimport of AI-analyse en wordt dezelfde vergadering
-bij een volgende controle opnieuw beoordeeld.
+De expliciete publicatiemelding heeft voorrang bij de kwalificatie van de agenda als voorlopig.
+Reeds zichtbare C-items worden desondanks direct geïmporteerd en voorlopig geanalyseerd. Dezelfde
+vergadering wordt bij iedere volgende controle opnieuw beoordeeld en bij een nieuwe bronversie
+gericht opnieuw verwerkt.
 
 ## Documentinventaris
 
@@ -46,7 +47,7 @@ bij een volgende controle opnieuw beoordeeld.
 
 De vijf C-items en zes documentkoppelingen komen overeen met de openbare bronpagina. Alle zes
 bestanden zijn als PDF herkend en leverden tekst per pagina. Er is geen brondata in een database
-geschreven en er is geen AI-opdracht uitgevoerd.
+geschreven en er is tijdens deze read-only spike geen AI-opdracht uitgevoerd.
 
 ## OCR-besluit
 
