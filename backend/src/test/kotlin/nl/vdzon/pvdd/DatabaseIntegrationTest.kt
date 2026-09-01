@@ -35,8 +35,13 @@ import nl.vdzon.pvdd.meetings.SourceState
 import nl.vdzon.pvdd.meetings.WorkflowLockRepository
 import nl.vdzon.pvdd.persistence.ApplicationMetadataRepository
 import nl.vdzon.pvdd.policy.PolicyChunk
+import nl.vdzon.pvdd.policy.CrawledPolicySource
+import nl.vdzon.pvdd.policy.PolicyCrawlResult
 import nl.vdzon.pvdd.policy.PolicySourceRepository
+import nl.vdzon.pvdd.policy.PolicySyncRepository
+import nl.vdzon.pvdd.policy.PolicySyncTrigger
 import nl.vdzon.pvdd.policy.PolicyTheme
+import nl.vdzon.pvdd.policy.PolicyWebSourceType
 import org.junit.jupiter.api.Test
 import org.springframework.web.server.ResponseStatusException
 import org.springframework.beans.factory.annotation.Autowired
@@ -57,6 +62,7 @@ class DatabaseIntegrationTest(
     @param:Autowired private val documentRepository: DocumentRepository,
     @param:Autowired private val analysisRepository: AnalysisRepository,
     @param:Autowired private val policySourceRepository: PolicySourceRepository,
+    @param:Autowired private val policySyncRepository: PolicySyncRepository,
     @param:Autowired private val workflowLockRepository: WorkflowLockRepository,
     @param:Autowired private val sourceRevisionRepository: SourceRevisionRepository,
     @param:Autowired private val revisionComparator: AgendaRevisionComparator,
@@ -65,6 +71,30 @@ class DatabaseIntegrationTest(
     @param:Autowired private val healthEndpoint: HealthEndpoint,
     @param:Autowired private val userSessionService: UserSessionService,
 ) {
+    @Test
+    fun `degraded policy crawl retains the latest known revision`() {
+        val now = Instant.parse("2026-09-01T19:00:00Z")
+        val url = URI("https://noordholland.partijvoordedieren.nl/onze-idealen/integratietest-${UUID.randomUUID()}")
+        val source = CrawledPolicySource(
+            url, PolicyWebSourceType.IDEAL, "Bekend standpunt", null, now, "text/html", 100,
+            "a".repeat(64), null, null, "Bekende en eerder succesvol opgehaalde beleidstekst.",
+        )
+        val firstRun = policySyncRepository.createRun(PolicySyncTrigger.MANUAL, "policy-integration-${UUID.randomUUID()}", now)
+        policySyncRepository.persistCandidate(firstRun.id, PolicyCrawlResult(listOf(source)))
+        policySyncRepository.fail(firstRun.id, "TEST_COMPLETE")
+
+        val retryRun = policySyncRepository.createRun(
+            PolicySyncTrigger.MANUAL,
+            "policy-integration-retry-${UUID.randomUUID()}",
+            now.plusSeconds(1),
+        )
+        val candidate = policySyncRepository.persistCandidate(retryRun.id, PolicyCrawlResult(emptyList(), setOf(url)))
+
+        assertEquals(listOf(url), candidate.sources.map { it.url })
+        assertEquals("a".repeat(64), candidate.sources.single().sha256)
+        policySyncRepository.fail(retryRun.id, "TEST_COMPLETE")
+    }
+
     @Test
     fun `empty PostgreSQL is migrated and metadata survives writes`() {
         assertEquals("PvdD technical baseline", metadataRepository.get("schema-purpose"))

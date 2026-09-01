@@ -8,6 +8,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import org.apache.pdfbox.pdmodel.PDDocument
@@ -40,11 +41,39 @@ class PolicySourceTest {
                 Clock.systemUTC(),
             )
 
-            val sources = crawler.crawl()
+            val result = crawler.crawl()
 
             assertEquals(2, requests)
-            assertEquals(1, sources.size)
-            assertEquals("Actueel standpunt", sources.single().title)
+            assertTrue(result.complete)
+            assertEquals(1, result.sources.size)
+            assertEquals("Actueel standpunt", result.sources.single().title)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `web crawler reports an exhausted transient source without inventing disappearance`() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        var requests = 0
+        server.createContext("/policy") { exchange ->
+            requests++
+            val body = "tijdelijk niet beschikbaar"
+            exchange.sendResponseHeaders(503, body.toByteArray().size.toLong())
+            exchange.responseBody.use { it.write(body.toByteArray()) }
+        }
+        server.start()
+        try {
+            val url = URI("http://127.0.0.1:${server.address.port}/policy")
+            val result = PolicyWebCrawler(
+                PolicySyncProperties(environment = "local", startUrls = listOf(url)),
+                Clock.systemUTC(),
+            ).crawl()
+
+            assertEquals(3, requests)
+            assertFalse(result.complete)
+            assertEquals(setOf(url), result.unavailableUrls)
+            assertTrue(result.sources.isEmpty())
         } finally {
             server.stop(0)
         }

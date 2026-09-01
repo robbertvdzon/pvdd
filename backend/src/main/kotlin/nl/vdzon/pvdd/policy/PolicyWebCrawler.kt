@@ -33,6 +33,13 @@ data class CrawledPolicySource(
     val extractedText: String,
 )
 
+data class PolicyCrawlResult(
+    val sources: List<CrawledPolicySource>,
+    val unavailableUrls: Set<URI> = emptySet(),
+) {
+    val complete: Boolean get() = unavailableUrls.isEmpty()
+}
+
 @Component
 class PolicyWebCrawler(
     private val properties: PolicySyncProperties,
@@ -44,17 +51,24 @@ class PolicyWebCrawler(
         .followRedirects(HttpClient.Redirect.NEVER)
         .build()
 
-    fun crawl(): List<CrawledPolicySource> {
+    fun crawl(): PolicyCrawlResult {
         properties.validate()
         val queue = ArrayDeque(properties.startUrls.map { canonical(it) to 0 })
         val visited = linkedSetOf<URI>()
         val result = mutableListOf<CrawledPolicySource>()
+        val unavailable = linkedSetOf<URI>()
         var totalBytes = 0L
         while (queue.isNotEmpty() && visited.size < properties.maxPages) {
             val (url, depth) = queue.removeFirst()
             if (!visited.add(url)) continue
             properties.validateUrl(url)
-            val response = fetch(url) ?: continue
+            val response = try {
+                fetch(url)
+            } catch (failure: PolicySourceException) {
+                if (!isRetryable(failure.code)) throw failure
+                unavailable += url
+                continue
+            } ?: continue
             totalBytes += response.bytes.size
             if (totalBytes > properties.maxTotalBytes) throw PolicySourceException("POLICY_TOTAL_TOO_LARGE")
             val parsed = parse(url, response)
@@ -67,8 +81,8 @@ class PolicyWebCrawler(
                     .forEach { queue.addLast(it to depth + 1) }
             }
         }
-        if (result.isEmpty()) throw PolicySourceException("NO_POLICY_SOURCES")
-        return result.sortedBy { it.canonicalUrl.toString() }
+        if (result.isEmpty() && unavailable.isEmpty()) throw PolicySourceException("NO_POLICY_SOURCES")
+        return PolicyCrawlResult(result.sortedBy { it.canonicalUrl.toString() }, unavailable)
     }
 
     private fun fetch(initialUrl: URI): FetchResponse? {

@@ -127,12 +127,12 @@ class PolicySyncRepository(private val jdbc: JdbcTemplate) {
     ).singleOrNull()
 
     @Transactional
-    fun persistCandidate(runId: UUID, crawled: List<CrawledPolicySource>): CandidatePolicySnapshot {
-        require(crawled.isNotEmpty())
+    fun persistCandidate(runId: UUID, crawl: PolicyCrawlResult): CandidatePolicySnapshot {
+        val crawled = crawl.sources
         var newCount = 0
         var changedCount = 0
         var unchangedCount = 0
-        val candidateSources = crawled.map { source ->
+        val fetchedSources = crawled.map { source ->
             val existing = jdbc.query(
                 """
                 SELECT source.id, revision.sha256 FROM policy_web_source source
@@ -180,13 +180,22 @@ class PolicySyncRepository(private val jdbc: JdbcTemplate) {
                 source.publicationDate, source.sha256, source.fetchedAt, source.extractedText,
             )
         }
+        val fetchedUrls = fetchedSources.map { it.url }.toSet()
+        val currentSources = if (crawl.complete) emptyList() else currentPolicySources()
+        if (crawl.unavailableUrls.any { unavailable -> currentSources.none { it.url == unavailable } }) {
+            throw PolicySourceException("POLICY_INCOMPLETE_CRAWL")
+        }
+        val retainedSources = currentSources.filterNot { it.url in fetchedUrls }
+        unchangedCount += retainedSources.size
+        val candidateSources = (fetchedSources + retainedSources).sortedBy { it.url.toString() }
+        if (candidateSources.isEmpty()) throw PolicySourceException("NO_POLICY_SOURCES")
         val fingerprint = sha256(candidateSources.sortedBy { it.url.toString() }.joinToString("\n") { "${it.url}|${it.sha256}" })
         val activeFingerprint = activeSnapshot()?.fingerprint
         val knownUrls = candidateSources.map { it.url.toString() }.toSet()
-        val disappeared = jdbc.queryForList(
+        val disappeared = if (crawl.complete) jdbc.queryForList(
             "SELECT canonical_url FROM policy_web_source WHERE status = 'CURRENT'",
             String::class.java,
-        ).count { it !in knownUrls }
+        ).count { it !in knownUrls } else 0
         if (activeFingerprint == fingerprint) {
             updateSourceStatuses(candidateSources)
             jdbc.update(
@@ -341,6 +350,25 @@ class PolicySyncRepository(private val jdbc: JdbcTemplate) {
             rs.getTimestamp("fetched_at").toInstant(), rs.getString("extracted_text"),
         ) },
         snapshotId,
+    )
+
+    private fun currentPolicySources(): List<CandidatePolicySource> = jdbc.query(
+        """
+        SELECT revision.id revision_id, source.id source_id, source.canonical_url, source.source_type,
+               revision.title, revision.publication_date, revision.sha256, revision.fetched_at, revision.extracted_text
+        FROM policy_web_source source
+        JOIN LATERAL (
+            SELECT * FROM policy_web_revision revision
+            WHERE revision.source_id = source.id ORDER BY revision.fetched_at DESC LIMIT 1
+        ) revision ON TRUE
+        WHERE source.status = 'CURRENT' ORDER BY source.canonical_url
+        """.trimIndent(),
+        { rs, _ -> CandidatePolicySource(
+            rs.getObject("revision_id", UUID::class.java), rs.getObject("source_id", UUID::class.java),
+            URI(rs.getString("canonical_url")), PolicyWebSourceType.valueOf(rs.getString("source_type")),
+            rs.getString("title"), rs.getDate("publication_date")?.toLocalDate(), rs.getString("sha256"),
+            rs.getTimestamp("fetched_at").toInstant(), rs.getString("extracted_text"),
+        ) },
     )
 
     private fun findByIdempotencyKey(key: String): PolicySyncRunRecord? = jdbc.query(
