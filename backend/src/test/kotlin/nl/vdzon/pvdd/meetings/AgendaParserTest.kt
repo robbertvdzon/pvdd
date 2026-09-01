@@ -36,6 +36,10 @@ class AgendaParserTest {
         assertEquals(AgendaCategory.A, housing.category)
         assertEquals("section-a", housing.parentSourceId)
         assertEquals("doc-housing", housing.documents.single().sourceId)
+        assertEquals(
+            URI("http://localhost:18091/Document/View/doc-housing"),
+            housing.documents.single().sourceUrl,
+        )
         assertNotNull(housing.explanation)
         assertNotNull(housing.treatmentProposal)
 

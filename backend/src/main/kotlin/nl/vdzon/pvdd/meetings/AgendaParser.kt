@@ -55,9 +55,13 @@ class AgendaParseException(val code: SourceErrorCode) : RuntimeException(code.na
 class AgendaParser {
     fun parse(html: String, sourceUrl: URI): ParsedMeetingAgenda {
         val document = Jsoup.parse(html, sourceUrl.toString())
-        val committee = document.selectFirst("main h1, h1")?.text()?.trim().orEmpty()
-        val dateText = document.selectFirst("main h2, h2")?.text()?.trim().orEmpty()
-        val timeText = document.selectFirst(".heading3")?.text()?.trim().orEmpty()
+        val content = document.selectFirst("#maincontent")
+            ?: document.selectFirst(".maincontent")
+            ?: document.selectFirst("main")
+            ?: document
+        val committee = content.selectFirst("h1")?.text()?.trim().orEmpty()
+        val dateText = content.selectFirst("h2")?.text()?.trim().orEmpty()
+        val timeText = content.selectFirst(".heading3")?.text()?.trim().orEmpty()
         if (committee.isBlank() || dateText.isBlank() || timeText.isBlank() || document.selectFirst("#agendaitems") == null) {
             throw AgendaParseException(SourceErrorCode.UNKNOWN_HTML)
         }
@@ -67,7 +71,7 @@ class AgendaParser {
             ?: throw AgendaParseException(SourceErrorCode.UNKNOWN_HTML)
         val items = parseItems(document.select("#agendaitems .agenda-item").toList(), sourceUrl)
         val agendaDocuments = document.select("dl .list-attachments a[data-document-id]").map { documentLink(it, sourceUrl) }
-        val location = document.select("dl dt").firstOrNull { it.text().trim().equals("Locatie", ignoreCase = true) }
+        val location = content.select("dl dt").firstOrNull { it.text().trim().equals("Locatie", ignoreCase = true) }
             ?.nextElementSibling()?.text()?.trim()?.takeIf { it.isNotBlank() }
         return ParsedMeetingAgenda(
             sourceId = sourceId,
@@ -191,10 +195,12 @@ class AgendaParser {
 
     private fun documentLink(element: Element, baseUrl: URI): ParsedDocumentLink {
         val nameNode = element.clone().apply { select(".badge, .icon").remove() }
+        val sourceId = element.attr("data-document-id").trim()
+        if (!sourceId.matches(SAFE_SOURCE_ID)) throw AgendaParseException(SourceErrorCode.UNKNOWN_HTML)
         return ParsedDocumentLink(
-            sourceId = element.attr("data-document-id").trim(),
+            sourceId = sourceId,
             name = nameNode.text().trim(),
-            sourceUrl = baseUrl.resolve(element.attr("href")),
+            sourceUrl = baseUrl.resolve("/Document/View/$sourceId"),
         )
     }
 
@@ -241,6 +247,7 @@ class AgendaParser {
             "\\bagenda\\b.{0,160}\\bwordt\\b.{0,80}\\bgepubliceerd\\b",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
         )
+        private val SAFE_SOURCE_ID = Regex("[A-Za-z0-9-]{1,160}")
 
         fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(Charsets.UTF_8))

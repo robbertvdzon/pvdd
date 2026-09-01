@@ -1,5 +1,16 @@
 # Operations en herstel
 
+## Read-only productiebronspike
+
+De optionele, standaard uitgeschakelde live inventaris draait zonder database en zonder AI:
+
+```bash
+cd backend
+PVDD_LIVE_SOURCE_SPIKE=true mvn -q -Dtest=LiveSourceSpikeTest test
+```
+
+Leg de uitkomst en het OCR-besluit vast in `docs/production-source-spike.md`.
+
 ## Health, metrics en logs
 
 De backend levert Kubernetes-probes via `/actuator/health/liveness` en
