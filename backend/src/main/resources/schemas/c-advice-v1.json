@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://pvdd.vdzonsoftware.nl/schemas/c-advice-v1.json",
-  "title": "PvdD C-agenda-bespreekadvies v1",
+  "$id": "https://pvdd.vdzonsoftware.nl/schemas/c-advice-v2.json",
+  "title": "PvdD C-agenda-bespreekadvies v2",
   "type": "object",
   "additionalProperties": false,
   "required": ["agendaItemSourceId", "besprekenEnNaarB", "motivering", "urgentie", "commissieDoel", "kernvraag"],

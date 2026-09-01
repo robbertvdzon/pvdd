@@ -110,6 +110,7 @@ class AdviceValidationTest {
     @Test
     fun `runtime schemas are closed and self contained`() {
         val builder = PromptBuilder(mapper)
+        assertEquals("pvdd-advice-v2", PromptBuilder.PROMPT_VERSION)
         listOf(builder.schema("A"), builder.schema("C"), builder.sourceNotesSchema()).forEach { schema ->
             assertEquals(false, schema.path("additionalProperties").booleanValue())
             assertTrue(schema.toString().contains("\"required\""))

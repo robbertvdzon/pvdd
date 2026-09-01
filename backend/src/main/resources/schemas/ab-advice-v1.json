@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://pvdd.vdzonsoftware.nl/schemas/ab-advice-v1.json",
-  "title": "PvdD A/B-agenda-advies v1",
+  "$id": "https://pvdd.vdzonsoftware.nl/schemas/ab-advice-v2.json",
+  "title": "PvdD A/B-agenda-advies v2",
   "type": "object",
   "additionalProperties": false,
   "required": ["agendaItemSourceId", "waarGaatHetOver", "watVindenWeErvan", "commissieInzet", "puntenVoorGedeputeerde", "technischeVragen"],
