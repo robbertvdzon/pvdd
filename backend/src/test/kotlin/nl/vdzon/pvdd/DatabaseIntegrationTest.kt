@@ -118,10 +118,7 @@ class DatabaseIntegrationTest(
         assertFalse(documentRepository.insertVersion(originalDocument.copy(id = UUID.randomUUID())))
         assertTrue(documentRepository.insertVersion(document(itemId, "d".repeat(64), now.plusSeconds(1))))
         assertEquals(2, documentRepository.countVersions(itemId, "doc-a"))
-        val passages = documentRepository.findPassagesForAnalysis(itemId)
-        assertEquals(1, passages.size)
-        assertEquals(1, passages.first().pageNumber)
-        assertEquals("Synthetische documenttekst", passages.first().text)
+        assertTrue(documentRepository.findPassagesForAnalysis(itemId).isEmpty())
 
         val failedDocument = document(itemId, "e".repeat(64), now).copy(
             id = UUID.randomUUID(),
@@ -398,6 +395,38 @@ class DatabaseIntegrationTest(
             SourceState.CURRENT.name,
             requireNotNull(dashboardRepository.item(dashboardItems.first().id)).item.sourceState,
         )
+
+        val target = currentItems.first()
+        val currentDocument = SourceDocument(
+            UUID.randomUUID(), target.agendaItemId, target.documents.single().sourceId,
+            target.documents.single().name, target.documents.single().sourceUrl,
+            "text/plain", "text/plain", target.documents.single().sha256,
+            target.documents.single().sizeBytes, ExtractionStatus.EXTRACTED, now.plusSeconds(180), null,
+            listOf(ExtractedSection(1, 1, null, "Actuele synthetische documenttekst")),
+        )
+        assertTrue(documentRepository.insertVersion(currentDocument))
+        assertEquals(
+            "Actuele synthetische documenttekst",
+            documentRepository.findPassagesForAnalysis(target.agendaItemId).single().text,
+        )
+
+        val parsedTarget = parsed.items.single { it.sourceId == target.sourceId }
+        val withoutDocument = currentItems.map { item ->
+            if (item.sourceId == target.sourceId) {
+                revisionComparator.currentItem(parsedTarget, target.agendaItemId, emptyList())
+            } else {
+                item
+            }
+        }
+        val removedComparison = revisionComparator.compare(
+            parsed, PublicationStatus.CURRENT, withoutDocument, sourceRevisionRepository.baseline(sourceId),
+        )
+        assertTrue(DifferenceType.DOCUMENT_REMOVED in removedComparison.differences)
+        sourceRevisionRepository.record(
+            meetingId, parsed, PublicationStatus.CURRENT, withoutDocument,
+            removedComparison, now.plusSeconds(240),
+        )
+        assertTrue(documentRepository.findPassagesForAnalysis(target.agendaItemId).isEmpty())
     }
 
     @Test

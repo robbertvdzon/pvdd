@@ -87,13 +87,28 @@ class DocumentRepository(
                section ->> 'heading' AS heading,
                section ->> 'text' AS section_text
         FROM agenda_item target
+        JOIN meeting target_meeting ON target_meeting.id = target.meeting_id
+        JOIN meeting_revision current_revision
+            ON current_revision.meeting_id = target_meeting.id
+            AND current_revision.revision_number = target_meeting.current_revision_number
         JOIN agenda_item source_item ON source_item.meeting_id = target.meeting_id
             AND (source_item.id = target.id OR source_item.source_id LIKE '%:meeting-documents')
+        JOIN agenda_item_revision current_item
+            ON current_item.meeting_revision_id = current_revision.id
+            AND current_item.agenda_item_id = source_item.id
+            AND current_item.source_state = 'CURRENT'
+        JOIN document_revision current_document
+            ON current_document.agenda_item_revision_id = current_item.id
+            AND current_document.source_state = 'CURRENT'
         JOIN LATERAL (
-            SELECT DISTINCT ON (version.source_id) version.*
+            SELECT version.*
             FROM source_document version
-            WHERE version.agenda_item_id = source_item.id AND version.extraction_status = 'EXTRACTED'
-            ORDER BY version.source_id, version.fetched_at DESC, version.created_at DESC
+            WHERE version.agenda_item_id = source_item.id
+                AND version.source_id = current_document.source_id
+                AND version.sha256 = current_document.sha256
+                AND version.extraction_status = 'EXTRACTED'
+            ORDER BY version.fetched_at DESC, version.created_at DESC
+            LIMIT 1
         ) sd ON TRUE
         CROSS JOIN LATERAL jsonb_array_elements(sd.extracted_sections) section
         WHERE target.id = ?
