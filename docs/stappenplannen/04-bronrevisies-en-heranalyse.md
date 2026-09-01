@@ -1,6 +1,6 @@
 # Stappenplan 4 — bronrevisies en gerichte heranalyse
 
-Status: in herverificatie na correctie van de voorlopige-verwerkingsregel
+Status: **BRONACTUALITEIT GEREED**
 
 Bron: [microservice-specificatie](../microservice-specificatie.md)
 
@@ -287,7 +287,7 @@ Acceptatie:
 Alle onderstaande controles zijn verplicht:
 
 - [x] Een expliciete toekomstige publicatiemelding wint van reeds zichtbare C-items.
-- [ ] Voorlopige C-items zijn herkenbaar zichtbaar en starten direct document- en AI-verwerking.
+- [x] Voorlopige C-items zijn herkenbaar zichtbaar en starten direct document- en AI-verwerking.
 - [x] Publicatie met hetzelfde vergadering-ID wordt gedetecteerd en volledig verwerkt.
 - [x] Alleen gelijk vergadering-ID plus gelijke canonieke fingerprint betekent ongewijzigd.
 - [x] Toevoegen, intrekken, verplaatsen en categoriewijziging worden correct herkend.
@@ -300,17 +300,17 @@ Alle onderstaande controles zijn verplicht:
 - [x] Revisies en eerdere adviezen blijven auditbaar bewaard.
 - [x] Geplande en handmatige controle delen dezelfde veilige orkestratie.
 - [x] Bronfouten en herstarts beschadigen de laatst succesvolle snapshot niet.
-- [ ] De volledige acceptatieketen is groen met gemockte bron en AI.
+- [x] De volledige acceptatieketen is groen met gemockte bron en AI.
 - [x] Acceptance is in een schone browser zonder account of token direct bruikbaar.
 - [x] Acceptance toont permanent dat gegevens gemockt zijn en authenticatie uitstaat.
 - [x] De authbypass kan in production en onbekende omgevingen niet worden geactiveerd.
 - [x] Acceptance bevat geen Google-configuratie, productiebrondata, echte AI of productietokens.
-- [ ] De productie-uitrol draait de bewezen SHA en Argo CD is gezond.
+- [x] De productie-uitrol draait de bewezen SHA en Argo CD is gezond.
 
 Poortbesluit:
 
 - Alleen bij twintig groene controles krijgt deze uitbreiding status **BRONACTUALITEIT GEREED**.
-- Tag daarna de repository met `source-revision-v1` en leg de definitieve commit-SHA vast in het
+- Tag daarna de repository met `source-revision-v2` en leg de definitieve commit-SHA vast in het
   bewijsdocument.
 - Pas daarna mag [stappenplan 3 — Software Factory-aansluiting](03-software-factory-aansluiting.md)
   starten.
