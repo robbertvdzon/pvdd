@@ -66,7 +66,9 @@ class AdviceValidator {
         val moveNode = node.get("besprekenEnNaarB")
         if (moveNode == null || !moveNode.isBoolean) errors += "besprekenEnNaarB_must_be_boolean"
         val move = moveNode?.takeIf { it.isBoolean }?.booleanValue() ?: false
-        val motivation = section(node, "motivering", sources, errors, requirePolicy = true)
+        // A placeholder or otherwise contentless C item can legitimately remain on C without
+        // inventing a policy link. Moving an item to B must always be grounded in the programme.
+        val motivation = section(node, "motivering", sources, errors, requirePolicy = move)
         val goal = section(node, "commissieDoel", sources, errors)
         val urgency = when (string(node, "urgentie", 10, errors)) {
             "LAAG" -> Urgency.LOW

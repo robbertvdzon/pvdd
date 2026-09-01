@@ -55,6 +55,21 @@ class AdviceValidationTest {
     }
 
     @Test
+    fun `accepts keeping a contentless C placeholder without an invented policy citation`() {
+        val placeholder = mapper.readTree(validC()) as tools.jackson.databind.node.ObjectNode
+        placeholder.put("besprekenEnNaarB", false)
+        placeholder.putNull("kernvraag")
+        listOf("motivering", "commissieDoel").forEach { sectionName ->
+            val citations = placeholder.path(sectionName).path("citations") as tools.jackson.databind.node.ArrayNode
+            citations.removeAll()
+            citations.add(mapper.readTree(documentCitation()))
+        }
+        assertIs<ValidatedAdvice.C>(
+            validator.validate("C", "item-c", placeholder, listOf(policy, document)),
+        )
+    }
+
+    @Test
     fun `rejects missing sections unknown fields sources pages and invented quotes`() {
         val missing = mapper.readTree(validAb()).deepCopy().apply { (this as tools.jackson.databind.node.ObjectNode).remove("technischeVragen") }
         assertFailsWith<AdviceValidationException> { validator.validate("A", "item-a", missing, listOf(policy, document)) }
@@ -123,7 +138,7 @@ class AdviceValidationTest {
     @Test
     fun `runtime schemas are closed and self contained`() {
         val builder = PromptBuilder(mapper)
-        assertEquals("pvdd-advice-v4", PromptBuilder.PROMPT_VERSION)
+        assertEquals("pvdd-advice-v5", PromptBuilder.PROMPT_VERSION)
         listOf(builder.schema("A"), builder.schema("C"), builder.sourceNotesSchema()).forEach { schema ->
             assertEquals(false, schema.path("additionalProperties").booleanValue())
             assertTrue(schema.toString().contains("\"required\""))
@@ -187,6 +202,11 @@ class AdviceValidationTest {
         "sourceId":"policy-p3-c1","sourceType":"POLICY_PROGRAMME","pageNumber":3,
         "section":"Inleiding","quote":"draagkracht van de planeet"
       }]
+    }"""
+
+    private fun documentCitation() = """{
+      "sourceId":"doc-housing-p1","sourceType":"MEETING_DOCUMENT","pageNumber":1,
+      "section":null,"quote":"Het voorstel bouwt honderd betaalbare woningen"
     }"""
 
     private fun assertStrictObjectSchemas(node: JsonNode) {

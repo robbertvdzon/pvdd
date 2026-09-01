@@ -100,7 +100,7 @@ class PromptBuilder(private val mapper: ObjectMapper) {
     }
 
     companion object {
-        const val PROMPT_VERSION = "pvdd-advice-v4"
+        const val PROMPT_VERSION = "pvdd-advice-v5"
         const val SELECTION_VERSION = "policy-selection-v1"
         private const val MAX_DIRECT_PROMPT_CHARACTERS = 80_000
         private const val NOTES_BATCH_CHARACTERS = 35_000
