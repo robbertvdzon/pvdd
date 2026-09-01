@@ -61,10 +61,11 @@ class PromptBuilder(private val mapper: ObjectMapper) {
         return PromptPlan(phases)
     }
 
-    fun schema(): JsonNode = requireNotNull(javaClass.getResourceAsStream("/schemas/content-result-v1.json"))
+    fun schema(): JsonNode = requireNotNull(javaClass.getResourceAsStream("/schemas/content-result-v2.json"))
         .use(mapper::readTree)
 
-    fun sourceNotesSchema(): JsonNode = schema()
+    fun sourceNotesSchema(): JsonNode = requireNotNull(javaClass.getResourceAsStream("/schemas/source-notes-v1.json"))
+        .use(mapper::readTree)
 
     fun synthesisPrompt(
         agendaItemSourceId: String,
@@ -97,7 +98,7 @@ class PromptBuilder(private val mapper: ObjectMapper) {
     }
 
     companion object {
-        const val PROMPT_VERSION = "pvdd-advice-v8"
+        const val PROMPT_VERSION = "pvdd-advice-v9"
         const val SELECTION_VERSION = "policy-selection-v1"
         private const val MAX_DIRECT_PROMPT_CHARACTERS = 80_000
         private const val NOTES_BATCH_CHARACTERS = 35_000

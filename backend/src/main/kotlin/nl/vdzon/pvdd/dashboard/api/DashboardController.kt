@@ -7,6 +7,9 @@ import nl.vdzon.pvdd.auth.ApiAuthenticationFilter
 import nl.vdzon.pvdd.dashboard.AgendaItemDetailDto
 import nl.vdzon.pvdd.dashboard.AgendaItemSummaryDto
 import nl.vdzon.pvdd.dashboard.AnalysisRunDto
+import nl.vdzon.pvdd.dashboard.AiRunQueryRepository
+import nl.vdzon.pvdd.dashboard.LogicalAiRunDetailDto
+import nl.vdzon.pvdd.dashboard.LogicalAiRunPageDto
 import nl.vdzon.pvdd.dashboard.DashboardRepository
 import nl.vdzon.pvdd.dashboard.MeetingOverviewDto
 import nl.vdzon.pvdd.meetings.MutationGuard
@@ -17,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestAttribute
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
@@ -27,6 +31,7 @@ class DashboardController(
     private val dashboard: DashboardRepository,
     private val analyses: AnalysisFacade,
     private val guard: MutationGuard,
+    private val aiRuns: AiRunQueryRepository,
 ) {
     @GetMapping("/meetings/next")
     fun next(): MeetingOverviewDto = dashboard.overview()
@@ -39,6 +44,20 @@ class DashboardController(
 
     @GetMapping("/analysis-runs/{id}")
     fun run(@PathVariable id: UUID): AnalysisRunDto = dashboard.run(id) ?: notFound()
+
+    @GetMapping("/ai-runs")
+    fun aiRuns(
+        @RequestParam state: String,
+        @RequestParam(defaultValue = "10") limit: Int,
+        @RequestParam(required = false) cursor: String?,
+    ): LogicalAiRunPageDto = try {
+        aiRuns.page(state, limit, cursor)
+    } catch (_: IllegalArgumentException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_ai_run_query")
+    }
+
+    @GetMapping("/ai-runs/{id}")
+    fun aiRun(@PathVariable id: UUID): LogicalAiRunDetailDto = aiRuns.detail(id) ?: notFound()
 
     @PostMapping("/meetings/{id}/analyses")
     @ResponseStatus(HttpStatus.ACCEPTED)

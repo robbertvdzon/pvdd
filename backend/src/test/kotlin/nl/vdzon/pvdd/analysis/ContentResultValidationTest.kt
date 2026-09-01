@@ -21,7 +21,7 @@ class ContentResultValidationTest {
 
     @Test
     fun `accepts arbitrary nonempty Markdown without functional validation`() {
-        val output = mapper.readTree("""{"content":"# Vrij advies\n\nDoe hiermee wat politiek nuttig is."}""")
+        val output = mapper.readTree("""{"displayTitle":"Natuurinclusief wonen","shortConclusion":"Steun het voorstel en vraag om harde natuurnormen.","content":"# Vrij advies\n\nDoe hiermee wat politiek nuttig is."}""")
         assertEquals("# Vrij advies\n\nDoe hiermee wat politiek nuttig is.", validator.validate(output))
     }
 
@@ -29,7 +29,7 @@ class ContentResultValidationTest {
     fun `rejects only technically unusable output`() {
         listOf(
             "{}",
-            "{\"content\":\"   \"}",
+            "{\"displayTitle\":\"Titel\",\"shortConclusion\":\"Conclusie\",\"content\":\"   \"}",
             "{\"content\":42}",
             "{\"content\":\"bruikbaar\",\"extra\":true}",
             mapper.writeValueAsString(mapOf("content" to "x".repeat(ContentResultValidator.MAX_CONTENT_CHARACTERS + 1))),
@@ -59,19 +59,20 @@ class ContentResultValidationTest {
         assertEquals(PromptPhaseType.SYNTHESIS, phases.last().type)
         assertEquals(large.map { it.sourceId }, phases.filter { it.type == PromptPhaseType.SOURCE_NOTES }.flatMap { it.sourceIds })
         val note = mapper.readTree("""{"content":"Vrije feitelijke notities in Markdown"}""")
-        assertEquals("Vrije feitelijke notities in Markdown", validator.validate(note))
+        assertEquals("Vrije feitelijke notities in Markdown", validator.validateNotes(note))
         assertTrue(builder.synthesisPrompt("item-a", "A", listOf(note)).contains("BEGIN_UNTRUSTED_SOURCE_NOTES"))
     }
 
     @Test
-    fun `one strict technical schema is used for every result`() {
+    fun `final advice and source notes use their own strict schemas`() {
         val builder = PromptBuilder(mapper)
-        assertEquals("pvdd-advice-v8", PromptBuilder.PROMPT_VERSION)
-        assertEquals(builder.schema(), builder.sourceNotesSchema())
+        assertEquals("pvdd-advice-v9", PromptBuilder.PROMPT_VERSION)
         val schema = builder.schema()
         assertEquals(false, schema.path("additionalProperties").booleanValue())
         val required = schema.path("required").iterator().asSequence().map { it.stringValue() }.toSet()
-        assertEquals(setOf("content"), required)
-        assertEquals(setOf("content"), schema.path("properties").propertyNames().toSet())
+        assertEquals(setOf("displayTitle", "shortConclusion", "content"), required)
+        assertEquals(setOf("displayTitle", "shortConclusion", "content"), schema.path("properties").propertyNames().toSet())
+        val notesRequired = builder.sourceNotesSchema().path("required").iterator().asSequence().map { it.stringValue() }.toSet()
+        assertEquals(setOf("content"), notesRequired)
     }
 }

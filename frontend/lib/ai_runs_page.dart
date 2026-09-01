@@ -1,0 +1,178 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import 'ai_runs_api.dart';
+
+class AiRunsPage extends StatefulWidget {
+  const AiRunsPage({required this.gateway, super.key});
+  final AiRunsGateway gateway;
+  @override
+  State<AiRunsPage> createState() => _AiRunsPageState();
+}
+
+class _AiRunsPageState extends State<AiRunsPage> {
+  List<AiRun> _active = const [];
+  List<AiRun> _finished = const [];
+  String? _cursor;
+  bool _loading = true;
+  bool _moreLoading = false;
+  String? _error;
+  Timer? _refreshTimer;
+  Timer? _durationTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => unawaited(_load(silent: true)),
+    );
+    _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    _durationTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent && mounted) setState(() => _loading = true);
+    try {
+      final active = await widget.gateway.active();
+      final finished = await widget.gateway.finished();
+      if (mounted) {
+        setState(() {
+          _active = active.items;
+          _finished = finished.items;
+          _cursor = finished.nextCursor;
+          _loading = false;
+          _error = null;
+        });
+      }
+    } on Object {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'AI-runs konden niet worden geladen.';
+        });
+      }
+    }
+  }
+
+  Future<void> _more() async {
+    if (_cursor == null || _moreLoading) return;
+    setState(() => _moreLoading = true);
+    try {
+      final page = await widget.gateway.finished(cursor: _cursor);
+      if (mounted) {
+        setState(() {
+          _finished = [
+            ..._finished,
+            ...page.items.where(
+              (item) => !_finished.any((existing) => existing.id == item.id),
+            ),
+          ];
+          _cursor = page.nextCursor;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _moreLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 980),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'AI-runs',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                Text('Nu bezig', style: Theme.of(context).textTheme.titleLarge),
+                if (_active.isEmpty)
+                  const Card(
+                    child: ListTile(
+                      title: Text('Er zijn nu geen actieve AI-runs.'),
+                    ),
+                  )
+                else
+                  ..._active.map((run) => _runCard(run, active: true)),
+                const SizedBox(height: 20),
+                Text('Afgerond', style: Theme.of(context).textTheme.titleLarge),
+                if (_finished.isEmpty)
+                  const Card(
+                    child: ListTile(
+                      title: Text('Er zijn nog geen afgeronde AI-runs.'),
+                    ),
+                  )
+                else
+                  ..._finished.map((run) => _runCard(run, active: false)),
+                if (_cursor != null)
+                  Align(
+                    alignment: Alignment.center,
+                    child: OutlinedButton(
+                      onPressed: _moreLoading ? null : _more,
+                      child: Text(_moreLoading ? 'Laden…' : 'Meer laden'),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _runCard(AiRun run, {required bool active}) {
+    final start = run.startedAt ?? run.createdAt;
+    final end = run.completedAt ?? DateTime.now();
+    final duration = end.difference(start);
+    final durationText = duration.inHours > 0
+        ? '${duration.inHours}u ${duration.inMinutes.remainder(60)}m'
+        : '${duration.inMinutes}m ${duration.inSeconds.remainder(60)}s';
+    return Card(
+      child: ListTile(
+        leading: active
+            ? const SizedBox.square(
+                dimension: 28,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              )
+            : Icon(
+                run.status == 'SUCCEEDED'
+                    ? Icons.check_circle_outline
+                    : Icons.error_outline,
+              ),
+        title: Text(run.title),
+        subtitle: Text(
+          '${run.explanation}\n${run.status} · ${active ? 'loopt' : 'duur'} $durationText · ${run.completedPhases}/${run.phaseCount} fasen${run.errorCode == null ? '' : '\nFoutcode: ${run.errorCode}'}',
+        ),
+        isThreeLine: true,
+      ),
+    );
+  }
+}

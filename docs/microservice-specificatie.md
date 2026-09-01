@@ -77,8 +77,10 @@ De webapp is alleen beschikbaar voor expliciet toegestane gebruikers.
   uitloggen direct worden ingetrokken. Een verlopen of onbekende sessie faalt gesloten.
 - Autorisatie vindt altijd in de backend plaats. Een verborgen frontendknop is geen
   beveiligingsgrens.
-- Productie heeft geen algemene backdoor of API-key die gebruikersauthenticatie omzeilt. Een
-  toekomstige machinekoppeling krijgt alleen expliciet benodigde, minimaal gescopeerde routes.
+- Productie heeft geen algemene API-key voor functionele routes. Een toolingtoken mag uitsluitend
+  via `POST /api/auth/tooling-session` na controle van een toegestane identiteit een normale,
+  intrekbare sessie openen. Het token staat nooit in Git, een URL of browseropslag. Alle volgende
+  requests gebruiken het gewone sessiecontract; mutaties vereisen bovendien CSRF-controle.
 
 Configuratie:
 
@@ -86,6 +88,8 @@ Configuratie:
 | --- | --- |
 | `PVDD_GOOGLE_CLIENT_ID` | Bestaande Google Web OAuth-client-ID |
 | `PVDD_AUTH_SESSION_DAYS` | Geldigheidsduur van de eigen sessie; productie gebruikt 180 dagen |
+| `PVDD_TOOLING_AUTH_ENABLED` | Activeert uitsluitend in productie het tooling-bootstrapendpoint |
+| `PVDD_TOOLING_TOKEN` | Geheim voor tooling-bootstrap; alleen via Sealed Secret |
 | `PVDD_CORS_ALLOWED_ORIGINS` | Alleen nodig als niet alles same-origin draait |
 
 De origin `https://pvdd.vdzonsoftware.nl` moet handmatig worden toegevoegd aan **Authorized
@@ -224,12 +228,12 @@ Minimaal terugkerende toetsingsassen zijn:
 
 ### 4.7 Technisch contract van AI-uitvoer
 
-De Agent Runtime-job gebruikt één minimaal JSON-responseschema voor A, B, C en interne
-bronnotities: `{"content":"<Markdown>"}`. De backend controleert uitsluitend dat het resultaat
-geldige JSON is, exact dit technische veld bevat, dat `content` een niet-lege string is en niet
-groter is dan 50.000 tekens. Er is geen inhoudelijke validatie op onderdelen, citaten, bron-ID's,
-pagina's, urgentie of politieke conclusies. Een technisch onbruikbaar resultaat wordt niet getoond;
-een inhoudelijk onvolmaakt resultaat wel, met de vaste waarschuwing dat het een AI-concept is.
+De definitieve Agent Runtime-job gebruikt voor A, B en C een strikt JSON-responseschema met
+`displayTitle`, `shortConclusion` en `content`. De titel is maximaal 160 tekens, de zelfstandige
+conclusie maximaal 280 tekens en de volledige Markdownanalyse maximaal 50.000 tekens. Interne
+bronnotities houden het minimale `{"content":"<Markdown>"}`-contract. Een technisch onbruikbaar
+resultaat wordt niet getoond; een inhoudelijk onvolmaakt resultaat wel, met de vaste waarschuwing
+dat het een AI-concept is.
 
 Grote dossiers mogen nooit stilzwijgend worden afgekapt. Wanneer de volledige tekst niet binnen de
 Runtime-promptlimiet past, maakt de backend eerst gevalideerde bronnotities per document/chunk en

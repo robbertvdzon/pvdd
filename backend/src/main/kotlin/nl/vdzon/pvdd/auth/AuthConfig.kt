@@ -10,6 +10,8 @@ class AuthConfig(
     @param:Value("\${pvdd.auth.google-client-id:}") val googleClientId: String,
     @param:Value("\${pvdd.environment:local}") val environment: String = "local",
     @param:Value("\${pvdd.auth.mode:google}") mode: String = "google",
+    @param:Value("\${pvdd.auth.tooling-enabled:false}") val toolingEnabled: Boolean = false,
+    @param:Value("\${pvdd.auth.tooling-token:}") val toolingToken: String = "",
 ) {
     val mode: AuthMode = when (mode.trim().lowercase()) {
         "google" -> AuthMode.GOOGLE
@@ -24,6 +26,12 @@ class AuthConfig(
         }
         if (environment != "local" && this.mode == AuthMode.GOOGLE && googleClientId.isBlank()) {
             error("Google authentication must be configured outside local development")
+        }
+        if (toolingEnabled && (this.mode != AuthMode.GOOGLE || toolingToken.isBlank())) {
+            error("Tooling authentication requires Google mode and a configured token")
+        }
+        if (environment == "acceptance" && (toolingEnabled || toolingToken.isNotBlank())) {
+            error("Acceptance must not contain tooling authentication")
         }
     }
 

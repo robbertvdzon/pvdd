@@ -23,6 +23,7 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
   bool _checking = false;
   String? _error;
   Timer? _timer;
+  Timer? _durationTimer;
 
   @override
   void initState() {
@@ -32,11 +33,15 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
       const Duration(seconds: 15),
       (_) => unawaited(_load(silent: true)),
     );
+    _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _durationTimer?.cancel();
     super.dispose();
   }
 
@@ -294,29 +299,58 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
         }
       },
       leading: CircleAvatar(child: Text(widget.item.category)),
-      title: Text(
-        '${widget.item.displayNumber ?? ''} ${widget.item.title}'.trim(),
-      ),
-      subtitle: Text(
-        [
-          _statusLabel(
-            widget.item.sourceState == 'PREVIEW'
-                ? 'PREVIEW'
-                : widget.item.sourceState == 'WITHDRAWN'
-                ? 'WITHDRAWN'
-                : (widget.item.adviceActuality == 'STALE'
-                      ? 'STALE'
-                      : widget.item.analysisStatus ?? widget.item.importStatus),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${widget.item.displayNumber ?? ''} ${widget.item.displayTitle ?? widget.item.title}'
+                .trim(),
           ),
-          if (widget.item.sourceState == 'PREVIEW')
-            _statusLabel(
-              widget.item.adviceActuality == 'STALE'
-                  ? 'STALE'
-                  : widget.item.analysisStatus ?? widget.item.importStatus,
+          if (widget.item.displayTitle != null)
+            Text(
+              'Officiële titel: ${widget.item.title}',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
-          if (widget.item.changeTypes.isNotEmpty)
-            widget.item.changeTypes.map(_changeLabel).join(', '),
-        ].join(' · '),
+        ],
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            [
+              _statusLabel(
+                widget.item.sourceState == 'PREVIEW'
+                    ? 'PREVIEW'
+                    : widget.item.sourceState == 'WITHDRAWN'
+                    ? 'WITHDRAWN'
+                    : (widget.item.adviceActuality == 'STALE'
+                          ? 'STALE'
+                          : widget.item.analysisStatus ??
+                                widget.item.importStatus),
+              ),
+              if (widget.item.sourceState == 'PREVIEW')
+                _statusLabel(
+                  widget.item.adviceActuality == 'STALE'
+                      ? 'STALE'
+                      : widget.item.analysisStatus ?? widget.item.importStatus,
+                ),
+              if (widget.item.changeTypes.isNotEmpty)
+                widget.item.changeTypes.map(_changeLabel).join(', '),
+            ].join(' · '),
+          ),
+          if (widget.item.shortConclusion != null) ...[
+            const SizedBox(height: 4),
+            Text(widget.item.shortConclusion!),
+          ],
+          const SizedBox(height: 4),
+          Text(
+            widget.item.lastDetectedChangeAt == null
+                ? 'Geen wijziging sinds eerste import'
+                : 'Laatste wijziging: ${_dateTime(widget.item.lastDetectedChangeAt!)}',
+          ),
+          if (widget.item.lastAnalysisRun != null)
+            Text(_analysisRunLabel(widget.item.lastAnalysisRun!)),
+        ],
       ),
       children: [
         if (_detail != null)
@@ -503,6 +537,23 @@ String _changeLabel(String change) => switch (change) {
   'DOCUMENT_CONTENT_CHANGED' => 'documentinhoud gewijzigd',
   _ => change.toLowerCase().replaceAll('_', ' '),
 };
+
+String _analysisRunLabel(AnalysisRunInfo run) {
+  final active = const {
+    'PENDING',
+    'QUEUED',
+    'WAITING_FOR_WORKER',
+    'RUNNING',
+  }.contains(run.status);
+  final end = run.completedAt ?? DateTime.now();
+  final duration = end.difference(run.createdAt);
+  final label = duration.inHours > 0
+      ? '${duration.inHours}u ${duration.inMinutes.remainder(60)}m'
+      : '${duration.inMinutes}m ${duration.inSeconds.remainder(60)}s';
+  return active
+      ? 'Laatste AI-analyse: ${_statusLabel(run.status)} · $label bezig'
+      : 'Laatste AI-analyse: ${_statusLabel(run.status)} · $label';
+}
 
 String _checkOutcomeLabel(
   MeetingCheckOutcome outcome,

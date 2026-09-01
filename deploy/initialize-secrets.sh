@@ -19,9 +19,11 @@ acceptance_runtime_token="$(value_for "$runtime_source" AR_PVDD_ACCEPTANCE_TOKEN
 if [[ -f "$target" ]]; then
   existing_production_password="$(value_for "$target" PVDD_PRODUCTION_DATABASE_PASSWORD)"
   existing_acceptance_password="$(value_for "$target" PVDD_ACCEPTANCE_DATABASE_PASSWORD)"
+  existing_tooling_token="$(value_for "$target" PVDD_PRODUCTION_TOOLING_TOKEN)"
 else
   existing_production_password=""
   existing_acceptance_password=""
+  existing_tooling_token=""
 fi
 
 tmp="$(mktemp)"
@@ -30,6 +32,7 @@ chmod 600 "$tmp"
 {
   printf 'PVDD_GOOGLE_CLIENT_ID=%s\n' "$google_client_id"
   printf 'PVDD_PRODUCTION_AGENT_RUNTIME_TOKEN=%s\n' "$production_runtime_token"
+  printf 'PVDD_PRODUCTION_TOOLING_TOKEN=%s\n' "${existing_tooling_token:-$(random_secret)}"
   printf 'PVDD_ACCEPTANCE_AGENT_RUNTIME_TOKEN=%s\n' "$acceptance_runtime_token"
   printf 'PVDD_PRODUCTION_DATABASE_PASSWORD=%s\n' "${existing_production_password:-$(random_secret)}"
   printf 'PVDD_ACCEPTANCE_DATABASE_PASSWORD=%s\n' "${existing_acceptance_password:-$(random_secret)}"

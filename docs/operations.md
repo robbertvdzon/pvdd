@@ -53,3 +53,8 @@ verwijdert uitsluitend die tijdelijke testdatabase.
 Applicatierollback en secretrotatie staan in [`deploy/README.md`](../deploy/README.md). Een
 imagerollback verandert de database niet. Migreer daarom in fase 2 uitsluitend voorwaarts
 compatibel en maak vóór iedere destructieve handmatige datamigratie een bewezen backup.
+
+Het productie-toolingtoken wordt lokaal als `PVDD_PRODUCTION_TOOLING_TOKEN` in het genegeerde
+`secrets.env` beheerd. Rotatie: vervang de waarde, draai `./deploy/seal-secrets.sh`, commit het
+nieuwe productie-Sealed Secret en wacht tot Argo CD gezond is. Het token opent alleen een normale
+sessie via `/api/auth/tooling-session`; bestaande sessies kunnen afzonderlijk worden ingetrokken.

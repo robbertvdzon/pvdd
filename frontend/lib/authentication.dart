@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'csrf_token.dart';
+
 class AuthenticatedUser {
   const AuthenticatedUser(this.email);
   final String email;
@@ -53,8 +55,11 @@ class HttpAuthenticationGateway implements AuthenticationGateway {
 
   @override
   Future<void> signOut() async {
+    final csrf = readCsrfToken();
+    final headers = <String, String>{};
+    if (csrf != null) headers['X-CSRF-Token'] = csrf;
     final response = await _client
-        .delete(Uri.parse('/api/auth/session'))
+        .delete(Uri.parse('/api/auth/session'), headers: headers)
         .timeout(const Duration(seconds: 8));
     if (response.statusCode != 204) throw const AuthenticationUnavailable();
   }

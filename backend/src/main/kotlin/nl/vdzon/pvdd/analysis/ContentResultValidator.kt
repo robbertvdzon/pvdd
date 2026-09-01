@@ -11,12 +11,28 @@ class ContentResultValidationException : RuntimeException("INVALID_AI_RESULT")
  */
 @Component
 class ContentResultValidator {
-    fun validate(output: JsonNode): String {
+    fun validateAdvice(output: JsonNode): String {
+        if (!output.isObject || output.propertyNames().toSet() != setOf("displayTitle", "shortConclusion", "content")) {
+            throw ContentResultValidationException()
+        }
+        text(output, "displayTitle", 160)
+        text(output, "shortConclusion", 280)
+        return text(output, "content", MAX_CONTENT_CHARACTERS)
+    }
+
+    fun validateNotes(output: JsonNode): String {
         if (!output.isObject || output.propertyNames().toSet() != setOf("content")) {
             throw ContentResultValidationException()
         }
-        val content = output.path("content").takeIf { it.isString }?.stringValue()?.trim().orEmpty()
-        if (content.isEmpty() || content.length > MAX_CONTENT_CHARACTERS) {
+        return text(output, "content", MAX_CONTENT_CHARACTERS)
+    }
+
+    /** Compatibility helper for tests and older callers: final advice is now the strict default. */
+    fun validate(output: JsonNode): String = validateAdvice(output)
+
+    private fun text(output: JsonNode, field: String, max: Int): String {
+        val content = output.path(field).takeIf { it.isString }?.stringValue()?.trim().orEmpty()
+        if (content.isEmpty() || content.length > max) {
             throw ContentResultValidationException()
         }
         return content

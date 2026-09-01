@@ -16,7 +16,7 @@ for environment in acceptance production; do
   runtime_key="PVDD_${environment_upper}_AGENT_RUNTIME_TOKEN"
   database_key="PVDD_${environment_upper}_DATABASE_PASSWORD"
   required_keys=("$runtime_key" "$database_key")
-  if [[ "$environment" == production ]]; then required_keys+=(PVDD_GOOGLE_CLIENT_ID); fi
+  if [[ "$environment" == production ]]; then required_keys+=(PVDD_GOOGLE_CLIENT_ID PVDD_PRODUCTION_TOOLING_TOKEN); fi
   for key in "${required_keys[@]}"; do
     [[ -n "$(value_for "$key")" ]] || { echo "Verplichte key ontbreekt: $key" >&2; exit 1; }
   done
@@ -30,6 +30,7 @@ for environment in acceptance production; do
     printf '  PVDD_DATABASE_PASSWORD: |-\n    %s\n' "$(value_for "$database_key")"
     if [[ "$environment" == production ]]; then
       printf '  PVDD_GOOGLE_CLIENT_ID: |-\n    %s\n' "$(value_for PVDD_GOOGLE_CLIENT_ID)"
+      printf '  PVDD_TOOLING_TOKEN: |-\n    %s\n' "$(value_for PVDD_PRODUCTION_TOOLING_TOKEN)"
     fi
     printf '  PVDD_AGENT_RUNTIME_TOKEN: |-\n    %s\n' "$(value_for "$runtime_key")"
   } > "$plain"

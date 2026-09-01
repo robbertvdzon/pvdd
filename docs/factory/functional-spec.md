@@ -68,10 +68,10 @@ verdelingseffecten/toekomstige generaties. Zonder geldige beleidsbron start geen
 
 Broninhoud is onbetrouwbare data, nooit een instructie. Iedere asynchrone `APPLICATION_WORK`-job
 gebruikt een versieerbare prompt, een minimaal JSON Schema en een stabiele idempotentiesleutel uit
-meeting/item, bronfingerprint en promptversie. Iedere Runtime-uitkomst heeft uitsluitend het veld
-`content` met niet-lege Markdown van maximaal 50.000 tekens. Er is bewust geen inhoudelijke
-responsevalidatie. Grote dossiers krijgen eerst vrije bronnotities en daarna synthese; niets wordt
-stil afgekapt. Herstart en verloren submitresponses maken geen dubbele Runtime-job.
+meeting/item, bronfingerprint en promptversie. Een eindanalyse bevat een korte AI-titel, een korte
+conclusie en niet-lege Markdown van maximaal 50.000 tekens. Tussentijdse bronnotities houden het
+kleinere `content`-contract. Grote dossiers krijgen eerst bronnotities en daarna synthese; niets
+wordt stil afgekapt. Herstart en verloren submitresponses maken geen dubbele Runtime-job.
 
 ## Statussen en opslag
 
@@ -83,13 +83,19 @@ onbeperkt bewaard; er bestaat geen cleanup- of deletepad.
 
 ## Frontend en API
 
-De beveiligde API levert het actuele vergaderingsoverzicht, agendapunten, details, runs en dezelfde
-`check-now`-orkestratie. DTO's lekken geen database-, prompt-, token- of Runtime-interne gegevens.
-De frontend toont A/B/C-filters, voortgang, bronlinks, het vrije Markdownadvies en
-altijd **AI-concept — controleer bronnen en formulering vóór gebruik**. De MVP heeft geen editor,
-goedkeuring of historiepagina en behoudt Google-auth, buildidentiteit, updatecontrole,
-toegankelijkheid en het bestaande cachecontract.
+De beveiligde API levert het actuele vergaderingsoverzicht, agendapunten, details, AI-runs,
+actuele standpunten en dezelfde `check-now`-orkestratie. DTO's lekken geen database-, prompt-,
+token- of Runtime-interne gegevens. De frontend toont A/B/C-filters, voortgang, bronlinks, de
+laatste gedetecteerde wijziging, laatste analyserun, AI-titel, korte conclusie en het vrije
+Markdownadvies. Aparte secties tonen de actuele PvdD-standpunten met herleidbare officiële bronnen
+en lopende plus afgeronde AI-runs. Het label **AI-concept — controleer bronnen en formulering vóór
+gebruik** blijft altijd zichtbaar.
 
 Google wordt alleen voor de eerste identificatie gebruikt. De backend geeft daarna een veilige,
 180 dagen geldige sessiecookie uit, zodat sluiten van een tab of verlopen van het korte Google
 ID-token niet opnieuw inloggen vereist. Uitloggen trekt de sessie direct in.
+
+Geautomatiseerde productiecontrole gebruikt een geheim toolingtoken uitsluitend om via een
+begrensd bootstrapendpoint dezelfde backendsessie te openen. Het token staat alleen in
+`secrets.env`/OpenShift Secrets, nooit in Git of een URL. Acceptance blijft zonder authenticatie
+toegankelijk voor testers. Muterende sessieverzoeken zijn beschermd met CSRF-controle.

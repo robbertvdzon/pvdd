@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pvdd.vdzonsoftware.nl/schemas/source-notes-v1.json",
+  "title": "Bronnotities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["content"],
+  "properties": {
+    "content": {"type": "string", "minLength": 1, "maxLength": 50000}
+  }
+}

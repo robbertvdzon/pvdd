@@ -46,6 +46,10 @@ data class AgendaItemSummaryDto(
     val currentFingerprint: String?,
     val adviceActuality: String?,
     val changeTypes: List<String>,
+    val lastDetectedChangeAt: Instant?,
+    val displayTitle: String?,
+    val shortConclusion: String?,
+    val lastAnalysisRun: AnalysisRunDto?,
 )
 
 data class SourceLinkDto(val name: String, val url: URI, val status: String)
@@ -109,13 +113,21 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             SELECT ai.id, ai.sequence_number, ai.display_number, ai.category, ai.title, ai.substantive,
                    ai.import_status, ai.source_state, ai.current_fingerprint,
                    latest.status AS analysis_status, advice.actuality AS advice_actuality,
-                   revision.difference_types
+                   revision.difference_types,
+                   CASE WHEN cardinality(revision.difference_types) > 0 THEN revision.created_at END last_detected_change_at,
+                   advice.advice->>'displayTitle' display_title,
+                   advice.advice->>'shortConclusion' short_conclusion,
+                   latest.id latest_run_id, latest.error_code latest_error_code,
+                   latest.created_at latest_created_at, latest.updated_at latest_updated_at,
+                   latest.completed_at latest_completed_at
             FROM agenda_item ai
             LEFT JOIN LATERAL (
-                SELECT status FROM analysis_run ar WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE' ORDER BY created_at DESC LIMIT 1
+                SELECT id, status, error_code, created_at, updated_at, completed_at
+                FROM analysis_run ar WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE'
+                ORDER BY created_at DESC LIMIT 1
             ) latest ON TRUE
             LEFT JOIN LATERAL (
-                SELECT actuality FROM agenda_item_advice aia
+                SELECT actuality, advice FROM agenda_item_advice aia
                 JOIN analysis_run ar ON ar.id = aia.analysis_run_id
                 WHERE aia.agenda_item_id = ai.id AND ar.status = 'SUCCEEDED'
                 ORDER BY CASE aia.actuality
@@ -138,10 +150,18 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
         val row = jdbc.query(
             """
             SELECT ai.*, latest.status AS analysis_status, advice.advice::text AS advice_json,
-                   advice.actuality AS advice_actuality, revision.difference_types
+                   advice.actuality AS advice_actuality, revision.difference_types,
+                   CASE WHEN cardinality(revision.difference_types) > 0 THEN revision.created_at END last_detected_change_at,
+                   advice.advice->>'displayTitle' display_title,
+                   advice.advice->>'shortConclusion' short_conclusion,
+                   latest.id latest_run_id, latest.error_code latest_error_code,
+                   latest.created_at latest_created_at, latest.updated_at latest_updated_at,
+                   latest.completed_at latest_completed_at
             FROM agenda_item ai
             LEFT JOIN LATERAL (
-                SELECT id, status FROM analysis_run ar WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE' ORDER BY created_at DESC LIMIT 1
+                SELECT id, status, error_code, created_at, updated_at, completed_at
+                FROM analysis_run ar WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE'
+                ORDER BY created_at DESC LIMIT 1
             ) latest ON TRUE
             LEFT JOIN LATERAL (
                 SELECT aia.advice, aia.actuality FROM agenda_item_advice aia
@@ -236,5 +256,19 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
         currentFingerprint = rs.getString("current_fingerprint"),
         adviceActuality = rs.getString("advice_actuality"),
         changeTypes = (rs.getArray("difference_types")?.array as? Array<*>)?.map(Any?::toString) ?: emptyList(),
+        lastDetectedChangeAt = rs.getTimestamp("last_detected_change_at")?.toInstant(),
+        displayTitle = rs.getString("display_title"),
+        shortConclusion = rs.getString("short_conclusion"),
+        lastAnalysisRun = rs.getObject("latest_run_id", UUID::class.java)?.let { runId ->
+            AnalysisRunDto(
+                runId,
+                rs.getObject("id", UUID::class.java),
+                rs.getString("analysis_status"),
+                rs.getString("latest_error_code"),
+                rs.getTimestamp("latest_created_at").toInstant(),
+                rs.getTimestamp("latest_updated_at").toInstant(),
+                rs.getTimestamp("latest_completed_at")?.toInstant(),
+            )
+        },
     )
 }

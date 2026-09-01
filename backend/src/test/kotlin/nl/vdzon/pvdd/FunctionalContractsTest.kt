@@ -17,10 +17,10 @@ class FunctionalContractsTest {
 
     @Test
     fun `AI result schema only requires processable Markdown`() {
-        val schema = jsonResource("/schemas/content-result-v1.json")
+        val schema = jsonResource("/schemas/content-result-v2.json")
         val required: Set<String> = schema.path("required").iterator().asSequence().map { it.asText() }.toSet()
-        assertEquals(setOf("content"), required)
-        assertEquals(setOf("content"), schema.path("properties").propertyNames().toSet())
+        assertEquals(setOf("displayTitle", "shortConclusion", "content"), required)
+        assertEquals(setOf("displayTitle", "shortConclusion", "content"), schema.path("properties").propertyNames().toSet())
     }
 
     @Test

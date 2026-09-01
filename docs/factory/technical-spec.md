@@ -10,8 +10,11 @@
 - Agent Runtime via het asynchrone v1-jobcontract;
 - containers, Kustomize, OpenShift, Argo CD en GitHub Actions.
 
-Er bestaat geen algemene productiebackdoor. Menselijke toegang gebruikt de backendsessie;
-servicecredentials zijn uitsluitend toegestaan voor één benoemde integratie en scope.
+Menselijke toegang gebruikt de backendsessie. Voor geautomatiseerde productiecontrole bestaat één
+begrensd tooling-bootstrapendpoint: een geheim uit `secrets.env` opent na identiteitscontrole een
+normale, intrekbare backendsessie. Het token staat nooit in Git, een URL of browseropslag en geeft
+geen rechtstreekse toegang tot functionele API-routes. Muterende requests vereisen daarnaast een
+CSRF-header die overeenkomt met de sessiecookie.
 
 De normatieve details en acceptatie-eisen staan in
 [stappenplan 1](../stappenplannen/01-technische-fundering.md). Er komt vóór de technische

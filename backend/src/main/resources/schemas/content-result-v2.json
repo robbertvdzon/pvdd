@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pvdd.vdzonsoftware.nl/schemas/content-result-v2.json",
+  "title": "Agenda-advies met samenvatting",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["displayTitle", "shortConclusion", "content"],
+  "properties": {
+    "displayTitle": {"type": "string", "minLength": 1, "maxLength": 160},
+    "shortConclusion": {"type": "string", "minLength": 1, "maxLength": 280},
+    "content": {"type": "string", "minLength": 1, "maxLength": 50000}
+  }
+}

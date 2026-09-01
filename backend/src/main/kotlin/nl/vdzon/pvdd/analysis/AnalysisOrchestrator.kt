@@ -13,6 +13,7 @@ import nl.vdzon.pvdd.meetings.MeetingRepository
 import nl.vdzon.pvdd.meetings.SourceState
 import nl.vdzon.pvdd.policy.PolicyImportService
 import nl.vdzon.pvdd.policy.PolicySelector
+import nl.vdzon.pvdd.policy.PolicySnapshotActivatedEvent
 import nl.vdzon.pvdd.runtime.AgentRuntimeGateway
 import nl.vdzon.pvdd.runtime.AgentRuntimeProperties
 import nl.vdzon.pvdd.runtime.RuntimeCreateRequest
@@ -48,6 +49,12 @@ class AnalysisOrchestrator(
     @EventListener
     fun meetingImported(event: MeetingImportedEvent) {
         repository.queueMeeting(event.meetingId)
+    }
+
+    @EventListener
+    fun policySnapshotActivated(event: PolicySnapshotActivatedEvent) {
+        val queued = repository.queueFutureMeetingsForPolicyRefresh()
+        log.info("Queued {} future meeting(s) after policy snapshot {}", queued, event.snapshotId)
     }
 
     @Scheduled(
@@ -161,11 +168,12 @@ class AnalysisOrchestrator(
     private fun complete(prepared: PreparedAnalysisRun, job: RuntimeJob) {
         try {
             val result = runtime.result(requireNotNull(prepared.run.runtimeJobId)).result
-            resultValidator.validate(result)
             if (prepared.runType == AnalysisRunType.SOURCE_NOTES) {
+                resultValidator.validateNotes(result)
                 repository.completeSourceNotes(prepared.run.id, result, clock.instant())
                 activateReadySynthesisRuns()
             } else {
+                resultValidator.validateAdvice(result)
                 repository.completeWithAdvice(
                     prepared,
                     result,

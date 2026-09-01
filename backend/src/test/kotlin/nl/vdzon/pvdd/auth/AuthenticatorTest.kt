@@ -50,6 +50,10 @@ class AuthenticatorTest {
         assertFailsWith<IllegalStateException> { AuthConfig("client-id", "unknown", "acceptance-bypass") }
         assertFailsWith<IllegalStateException> { AuthConfig("", "production", "google") }
         assertFailsWith<IllegalStateException> { AuthConfig("", "unknown", "google") }
+        assertFailsWith<IllegalStateException> { AuthConfig("client-id", "production", "google", true, "") }
+        assertFailsWith<IllegalStateException> {
+            AuthConfig("", "acceptance", "acceptance-bypass", false, "production-secret")
+        }
     }
 
     private fun assertStatus(status: HttpStatus, block: () -> Unit) {

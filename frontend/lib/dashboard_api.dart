@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'csrf_token.dart';
+
 abstract interface class DashboardGateway {
   Future<MeetingOverview> overview();
   Future<List<AgendaItemSummary>> agendaItems(String meetingId);
@@ -67,6 +69,8 @@ class HttpDashboardGateway implements DashboardGateway {
     if (idempotencyKey != null) {
       headers['Idempotency-Key'] = idempotencyKey;
     }
+    final csrf = readCsrfToken();
+    if (csrf != null) headers['X-CSRF-Token'] = csrf;
     return headers;
   }
 }
@@ -161,6 +165,10 @@ class AgendaItemSummary {
     required this.currentFingerprint,
     required this.adviceActuality,
     required this.changeTypes,
+    this.lastDetectedChangeAt,
+    this.displayTitle,
+    this.shortConclusion,
+    this.lastAnalysisRun,
   });
   factory AgendaItemSummary.fromJson(Map<String, dynamic> json) =>
       AgendaItemSummary(
@@ -176,6 +184,16 @@ class AgendaItemSummary {
         currentFingerprint: json['currentFingerprint'] as String?,
         adviceActuality: json['adviceActuality'] as String?,
         changeTypes: (json['changeTypes'] as List<dynamic>).cast<String>(),
+        lastDetectedChangeAt: DateTime.tryParse(
+          json['lastDetectedChangeAt'] as String? ?? '',
+        ),
+        displayTitle: json['displayTitle'] as String?,
+        shortConclusion: json['shortConclusion'] as String?,
+        lastAnalysisRun: json['lastAnalysisRun'] == null
+            ? null
+            : AnalysisRunInfo.fromJson(
+                json['lastAnalysisRun'] as Map<String, dynamic>,
+              ),
       );
   final String id;
   final int sequence;
@@ -189,6 +207,33 @@ class AgendaItemSummary {
   final String? currentFingerprint;
   final String? adviceActuality;
   final List<String> changeTypes;
+  final DateTime? lastDetectedChangeAt;
+  final String? displayTitle;
+  final String? shortConclusion;
+  final AnalysisRunInfo? lastAnalysisRun;
+}
+
+class AnalysisRunInfo {
+  const AnalysisRunInfo({
+    required this.id,
+    required this.status,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.completedAt,
+  });
+  factory AnalysisRunInfo.fromJson(Map<String, dynamic> json) =>
+      AnalysisRunInfo(
+        id: json['id'] as String,
+        status: json['status'] as String,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        updatedAt: DateTime.parse(json['updatedAt'] as String),
+        completedAt: DateTime.tryParse(json['completedAt'] as String? ?? ''),
+      );
+  final String id;
+  final String status;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? completedAt;
 }
 
 class AgendaItemDetail {

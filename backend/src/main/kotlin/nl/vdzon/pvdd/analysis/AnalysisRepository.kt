@@ -29,6 +29,14 @@ class AnalysisRepository(
     private val jdbc: JdbcTemplate,
     private val mapper: ObjectMapper,
 ) {
+    fun queueFutureMeetingsForPolicyRefresh(): Int = jdbc.update(
+        """
+        INSERT INTO analysis_meeting_queue(meeting_id, status)
+        SELECT id, 'PENDING' FROM meeting WHERE starts_at >= CURRENT_TIMESTAMP
+        ON CONFLICT (meeting_id) DO UPDATE SET status = 'PENDING', error_code = NULL, updated_at = CURRENT_TIMESTAMP
+        """.trimIndent(),
+    )
+
     fun queueMeetingsMissingPromptVersion(promptVersion: String): Int = jdbc.update(
         """
         INSERT INTO analysis_meeting_queue(meeting_id, status)

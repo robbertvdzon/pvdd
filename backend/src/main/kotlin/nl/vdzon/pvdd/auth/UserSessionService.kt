@@ -12,7 +12,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 import org.springframework.web.server.ResponseStatusException
 
-data class CreatedUserSession(val token: String, val expiresIn: Duration)
+data class CreatedUserSession(val token: String, val csrfToken: String, val expiresIn: Duration)
 
 @Component
 class UserSessionService(
@@ -29,6 +29,7 @@ class UserSessionService(
 
     fun create(email: String): CreatedUserSession {
         val token = ByteArray(32).also(random::nextBytes).let(encoder::encodeToString)
+        val csrfToken = ByteArray(32).also(random::nextBytes).let(encoder::encodeToString)
         if (!authConfig.isAllowed(email)) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, "Session account is no longer allowed")
         }
@@ -41,7 +42,7 @@ class UserSessionService(
             email,
             Timestamp.from(clock.instant().plus(lifetime)),
         )
-        return CreatedUserSession(token, lifetime)
+        return CreatedUserSession(token, csrfToken, lifetime)
     }
 
     fun authenticate(token: String): AuthenticatedUser {
@@ -72,6 +73,8 @@ class UserSessionService(
 
     companion object {
         const val COOKIE_NAME = "pvdd_session"
+        const val CSRF_COOKIE_NAME = "pvdd_csrf"
+        const val CSRF_HEADER_NAME = "X-CSRF-Token"
         private val random = SecureRandom()
         private val encoder = Base64.getUrlEncoder().withoutPadding()
     }

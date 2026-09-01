@@ -3,12 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'authentication.dart';
+import 'ai_runs_api.dart';
+import 'ai_runs_page.dart';
+import 'app_path.dart';
 import 'build_identity.dart';
 import 'configuration.dart';
 import 'dashboard_api.dart';
 import 'frontend_version_monitor.dart';
 import 'google_login_button.dart';
 import 'meeting_overview.dart';
+import 'policy_api.dart';
+import 'policy_page.dart';
 import 'page_reload.dart';
 import 'pvdd_theme.dart';
 
@@ -297,7 +302,7 @@ class TechnicalApplicationShell extends StatefulWidget {
 }
 
 class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
-  int _selected = 0;
+  late int _selected;
   bool _updateAvailable = false;
   Timer? _timer;
   final _current = BuildIdentity.frontend();
@@ -306,6 +311,12 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
   @override
   void initState() {
     super.initState();
+    _selected = switch (currentAppPath()) {
+      '/standpunten' => 1,
+      '/ai-runs' => 2,
+      '/versie' => 3,
+      _ => 0,
+    };
     unawaited(_checkUpdate());
     _timer = Timer.periodic(
       const Duration(minutes: 5),
@@ -334,9 +345,12 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final desktop = constraints.maxWidth >= 800;
-      final content = _selected == 0
-          ? MeetingOverviewPage(gateway: widget.dashboardGateway)
-          : _VersionPage(frontend: _current, gateway: widget.versionGateway);
+      final content = switch (_selected) {
+        0 => MeetingOverviewPage(gateway: widget.dashboardGateway),
+        1 => PolicyPage(gateway: HttpPolicyGateway()),
+        2 => AiRunsPage(gateway: HttpAiRunsGateway()),
+        _ => _VersionPage(frontend: _current, gateway: widget.versionGateway),
+      };
       return Scaffold(
         drawer: desktop
             ? null
@@ -437,8 +451,10 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
               ),
             ),
           ),
-          _destination(0, Icons.dashboard_outlined, 'Overzicht', close),
-          _destination(1, Icons.info_outline, 'Over deze versie', close),
+          _destination(0, Icons.dashboard_outlined, 'Agenda', close),
+          _destination(1, Icons.policy_outlined, 'Standpunten', close),
+          _destination(2, Icons.smart_toy_outlined, 'AI-runs', close),
+          _destination(3, Icons.info_outline, 'Over deze versie', close),
         ],
       ),
     ),
@@ -456,6 +472,12 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
           title: Text(label),
           onTap: () {
             setState(() => _selected = index);
+            navigateToAppPath(switch (index) {
+              1 => '/standpunten',
+              2 => '/ai-runs',
+              3 => '/versie',
+              _ => '/agenda',
+            });
             if (close) Navigator.of(context).pop();
           },
         ),
