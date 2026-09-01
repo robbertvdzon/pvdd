@@ -11,6 +11,9 @@ geblokkeerd totdat de technische acceptatiepoort T14 uit het stappenplan groen i
 
 - [Normatieve specificatie](docs/microservice-specificatie.md)
 - [Technische fundering](docs/stappenplannen/01-technische-fundering.md)
+- [Functionele MVP](docs/stappenplannen/02-functionele-mvp.md)
+- [Bronrevisies en gerichte heranalyse](docs/stappenplannen/04-bronrevisies-en-heranalyse.md)
+- [Software Factory-aansluiting](docs/stappenplannen/03-software-factory-aansluiting.md)
 - [Factory-overzicht](docs/factory/README.md)
 - [Architectuurbesluiten](docs/adr/README.md)
 - [Technische integraties](docs/technical-integrations.md)

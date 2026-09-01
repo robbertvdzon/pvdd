@@ -26,8 +26,8 @@ Nog niet bouwen in dit plan:
 ## Uitvoeringsregels
 
 - Voer iedere genummerde stap uit als een afzonderlijke, controleerbare wijziging of pull request.
-- Gebruik Software Factory nog niet; die aansluiting volgt pas na de functionele MVP in
-  [stappenplan 3](03-software-factory-aansluiting.md).
+- Gebruik Software Factory nog niet; die aansluiting volgt pas na de functionele MVP en het
+  bronrevisieplan in [stappenplan 3](03-software-factory-aansluiting.md).
 - Meng geen wijzigingen aan verschillende repositories in één wijziging of pull request.
 - Rond een stap af met tests, documentatie, review, merge en waar van toepassing deployment.
 - Begin niet aan een volgende stap wanneer de acceptatiecriteria van de huidige stap niet groen

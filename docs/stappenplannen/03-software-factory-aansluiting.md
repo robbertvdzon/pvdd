@@ -1,13 +1,14 @@
 # Stappenplan 3 — Software Factory-aansluiting
 
-Status: geblokkeerd tot functionele MVP-poort F13
+Status: geblokkeerd tot bronactualiteitspoort R7
 
 Bron: [microservice-specificatie](../microservice-specificatie.md)
 
 Afhankelijkheden:
 
 - [technische fundering](01-technische-fundering.md);
-- [functionele MVP](02-functionele-mvp.md).
+- [functionele MVP](02-functionele-mvp.md);
+- [bronrevisies en gerichte heranalyse](04-bronrevisies-en-heranalyse.md).
 
 ## Doel en harde grens
 
@@ -20,8 +21,10 @@ Start dit plan uitsluitend wanneer:
 1. de technische baseline de tag `technical-baseline-v1` heeft;
 2. `docs/functional-mvp-verification.md` alle F13-controles groen verklaart;
 3. de PvdD-repository de tag `functional-mvp-v1` heeft;
-4. productie in Argo CD `Synced` en `Healthy` is;
-5. er geen open productie-incident of mislukte functionele verwerking bestaat.
+4. `docs/source-revision-verification.md` alle R7-controles groen verklaart;
+5. de PvdD-repository de tag `source-revision-v1` heeft;
+6. productie in Argo CD `Synced` en `Healthy` is;
+7. er geen open productie-incident of mislukte functionele verwerking bestaat.
 
 Dit plan bouwt geen nieuwe vergader-, document-, AI- of frontendfunctionaliteit. Een bevinding die
 een productwijziging vereist, wordt eerst als gewone herstelwijziging in de eigenaarrepository

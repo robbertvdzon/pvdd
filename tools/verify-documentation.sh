@@ -7,6 +7,7 @@ required_files=(
   docs/stappenplannen/01-technische-fundering.md
   docs/stappenplannen/02-functionele-mvp.md
   docs/stappenplannen/03-software-factory-aansluiting.md
+  docs/stappenplannen/04-bronrevisies-en-heranalyse.md
   docs/factory/README.md
   docs/factory/functional-spec.md
   docs/factory/technical-spec.md

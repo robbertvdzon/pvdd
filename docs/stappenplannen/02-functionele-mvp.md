@@ -23,7 +23,7 @@ Start dit plan uitsluitend wanneer:
 ## Uitvoeringsregels
 
 - Voer iedere genummerde stap uit als een afzonderlijke, controleerbare wijziging of pull request.
-- Gebruik Software Factory nog niet; die aansluiting is bewust het afsluitende
+- Gebruik Software Factory nog niet; eerst volgt het bronrevisieplan en daarna pas het afsluitende
   [stappenplan 3](03-software-factory-aansluiting.md).
 - Werk primair in `pvdd`; wijzig andere repositories alleen met een aparte, expliciete wijziging.
 - Gebruik opgeslagen fixtures voor gewone tests; CI is niet afhankelijk van live iBabs of echte AI.
@@ -337,5 +337,7 @@ Functionele eindpoort:
 
 Alleen bij vijftien groene controles krijgt de release status **FUNCTIONELE MVP GEREED**. Tag de
 repository daarna met `functional-mvp-v1` en leg de definitieve commit-SHA’s vast in het
-acceptatiebewijs. Pas daarna mag
-[stappenplan 3 — Software Factory-aansluiting](03-software-factory-aansluiting.md) starten.
+acceptatiebewijs. Wanneer externe publicatie F13 tijdelijk blokkeert, mag het onafhankelijke
+[stappenplan 4 — bronrevisies en gerichte heranalyse](04-bronrevisies-en-heranalyse.md) na de
+groene F11-acceptatie en F12-bronspike al starten. De F13-poort en bestaande MVP-acceptatie blijven
+daarbij ongewijzigd en moeten alsnog groen worden voordat Software Factory start.

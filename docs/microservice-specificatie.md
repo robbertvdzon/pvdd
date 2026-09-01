@@ -523,10 +523,11 @@ clusterbrede/app-of-apps-koppeling en eventuele gedeelde RBAC.
 
 ## 9. Software Factory-aansluiting
 
-Deze aansluiting gebeurt bewust pas nadat de technische fundering én de functionele MVP volledig
-zijn geaccepteerd. De bouw van de eerste MVP is dus niet afhankelijk van Software Factory. Het
-afsluitende [stappenplan 3](stappenplannen/03-software-factory-aansluiting.md) registreert het dan
-reeds werkende project en bewijst de volledige story-, merge- en deploybewaking.
+Deze aansluiting gebeurt bewust pas nadat de technische fundering, de functionele MVP én het
+bronrevisieplan volledig zijn geaccepteerd. De bouw van de eerste MVP en de daaropvolgende
+actualiteitshardening zijn dus niet afhankelijk van Software Factory. Het afsluitende
+[stappenplan 3](stappenplannen/03-software-factory-aansluiting.md) registreert het dan reeds werkende
+project en bewijst de volledige story-, merge- en deploybewaking.
 
 De `pvdd`-repo wordt factory-ready opgezet naar het HKH-patroon:
 
@@ -670,7 +671,7 @@ inclusief de later uitgevoerde Software Factory-aansluiting, is gereed wanneer:
 
 ## 15. Implementatievolgorde
 
-De uitvoering is opgesplitst in drie normatieve stappenplannen, die strikt in deze volgorde worden
+De uitvoering is opgesplitst in vier normatieve stappenplannen, die strikt in deze volgorde worden
 uitgevoerd:
 
 1. [Technische fundering](stappenplannen/01-technische-fundering.md) — repositorybasis, auth,
@@ -679,14 +680,44 @@ uitgevoerd:
 2. [Functionele MVP](stappenplannen/02-functionele-mvp.md) — vergaderingontdekking, import,
    documentextractie, 05:00-workflow, beleidsbron, AI-analyse, A/B/C-interface en functionele
    acceptatie.
-3. [Software Factory-aansluiting](stappenplannen/03-software-factory-aansluiting.md) —
+3. [Bronrevisies en gerichte heranalyse](stappenplannen/04-bronrevisies-en-heranalyse.md) —
+   voorlopige C-stukken, wijzigingsdetectie, revisiehistorie en selectieve heranalyse.
+4. [Software Factory-aansluiting](stappenplannen/03-software-factory-aansluiting.md) —
    projectregistratie, automatische merge, GitOps-deploybewaking en gecontroleerde proefstories.
 
 Het functionele plan blijft geblokkeerd totdat de harde technische acceptatiepoort T14 volledig
 groen is en als `technical-baseline-v1` is vastgelegd. Het Software Factory-plan blijft vervolgens
-geblokkeerd totdat de functionele poort F13 groen is en als `functional-mvp-v1` is vastgelegd.
+geblokkeerd totdat de functionele poort F13 en bronactualiteitspoort R7 groen zijn en als
+`functional-mvp-v1` respectievelijk `source-revision-v1` zijn vastgelegd.
 
 ## 16. Resterende besluiten
+
+### 16.1 Bronrevisiecontract
+
+De identiteit van een vergadering is geen inhoudsversie. Iedere controle legt daarom een immutable
+bronsnapshot vast met publicatiestatus, canonieke fingerprint, controletijd en verschilsoorten.
+
+- `PREVIEW`: de bron kondigt latere publicatie aan. Alleen reeds zichtbare veilige C-metadata en
+  bronlinks zijn voorlopig beschikbaar; documenten en AI blijven geblokkeerd.
+- `CURRENT`: de volledig gepubliceerde, laatst succesvol vastgelegde bronversie.
+- `CHANGED`: een nieuwe canonieke bronversie verschilt inhoudelijk van `CURRENT`.
+- `REPROCESSING`: gewijzigde punten worden opnieuw verwerkt; de vorige succesvolle versie blijft
+  raadpleegbaar en ondubbelzinnig als verouderd gemarkeerd.
+- `SUPERSEDED`: een oudere immutable snapshot is door een nieuwere succesvolle versie vervangen.
+- `WITHDRAWN`: een eerder zichtbaar punt of document ontbreekt in de nieuwere bronversie en blijft
+  alleen historisch raadpleegbaar.
+
+De canonieke vergaderfingerprint bevat commissie, tijden, locatie en de geordende hiërarchie van
+punten. De puntfingerprint bevat bron-ID, positie, categorie, titel, toelichting,
+behandelvoorstel en geordende document-ID's plus document-SHA-256. URL-tracking, whitespace en
+presentatie-HTML tellen niet mee. Een advies is uitsluitend actueel bij exact dezelfde
+puntfingerprint, promptversie en beleidsbronversie.
+
+Een expliciete publicatiemelding wint altijd van zichtbare punten. Een preview kan nooit een
+documentdownload, prompt of Runtime-job veroorzaken. Na publicatie en bij iedere volgende
+05:00-/handmatige controle wordt hetzelfde vergadering-ID opnieuw vergeleken. Alleen gewijzigde of
+nieuwe punten krijgen een revisiegebonden idempotente analyse; oude resultaten kunnen een nieuwere
+revisie nooit actueel maken.
 
 Deze punten blokkeren het eerste specificatiedocument niet, maar moeten vóór de betreffende story
 worden besloten:
