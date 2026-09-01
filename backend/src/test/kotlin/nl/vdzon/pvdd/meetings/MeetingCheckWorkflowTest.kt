@@ -28,15 +28,17 @@ class MeetingCheckWorkflowTest {
     }
 
     @Test
-    fun `same successfully completed meeting stops before documents`() {
+    fun `same meeting is refetched and unchanged source does not start a new analysis`() {
         val found = DiscoveryOutcome.Found(DiscoveredMeeting("meeting-future", now.plusSeconds(3600), meetingUrl))
-        val discovery = StubDiscovery(found)
-        val fixture = fixture(discovery = discovery, lastSuccessful = "meeting-future")
+        val discovery = StubDiscovery(found, AgendaParser().parse(resource("agenda-full.html"), meetingUrl))
+        val fixture = fixture(discovery = discovery)
 
+        assertEquals(MeetingCheckStatus.IMPORTED, fixture.workflow.check().status)
         val result = fixture.workflow.check()
         assertEquals(MeetingCheckStatus.UNCHANGED, result.status)
-        assertEquals(0, discovery.fetchCount)
-        assertEquals(0, fixture.documents.calls)
+        assertEquals(2, discovery.fetchCount)
+        assertEquals(1, result.revisionNumber)
+        assertEquals(1, fixture.store.successful.size)
     }
 
     @Test
@@ -81,6 +83,8 @@ class MeetingCheckWorkflowTest {
             StubLock(lockAvailable),
             ApplicationEventPublisher { },
             Clock.fixed(now, ZoneOffset.UTC),
+            AgendaRevisionComparator(),
+            InMemoryRevisionStore(),
         )
         return WorkflowFixture(workflow, store, documents)
     }
@@ -141,5 +145,35 @@ class MeetingCheckWorkflowTest {
     private class StubLock(private val available: Boolean) : WorkflowLock {
         override fun tryAcquire(lockName: String, ownerId: UUID): Boolean = available
         override fun release(lockName: String, ownerId: UUID) = Unit
+    }
+
+    private class InMemoryRevisionStore : SourceRevisionStore {
+        private var current: RevisionBaseline? = null
+
+        override fun baseline(meetingSourceId: String): RevisionBaseline? = current
+
+        override fun record(
+            meetingId: UUID,
+            agenda: ParsedMeetingAgenda,
+            publicationStatus: PublicationStatus,
+            items: List<RevisionItem>,
+            comparison: RevisionComparison,
+            checkedAt: Instant,
+        ): StoredRevision {
+            val existing = current
+            if (existing != null && existing.publicationStatus == publicationStatus &&
+                existing.canonicalFingerprint == comparison.canonicalFingerprint
+            ) return StoredRevision(existing.revisionId, existing.revisionNumber, comparison)
+
+            val revision = RevisionBaseline(
+                UUID.randomUUID(),
+                (existing?.revisionNumber ?: 0) + 1,
+                publicationStatus,
+                comparison.canonicalFingerprint,
+                items.associateBy(RevisionItem::sourceId),
+            )
+            current = revision
+            return StoredRevision(revision.revisionId, revision.revisionNumber, comparison)
+        }
     }
 }

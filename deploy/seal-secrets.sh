@@ -15,7 +15,9 @@ for environment in acceptance production; do
   environment_upper="$(printf '%s' "$environment" | tr '[:lower:]' '[:upper:]')"
   runtime_key="PVDD_${environment_upper}_AGENT_RUNTIME_TOKEN"
   database_key="PVDD_${environment_upper}_DATABASE_PASSWORD"
-  for key in PVDD_GOOGLE_CLIENT_ID "$runtime_key" "$database_key"; do
+  required_keys=("$runtime_key" "$database_key")
+  if [[ "$environment" == production ]]; then required_keys+=(PVDD_GOOGLE_CLIENT_ID); fi
+  for key in "${required_keys[@]}"; do
     [[ -n "$(value_for "$key")" ]] || { echo "Verplichte key ontbreekt: $key" >&2; exit 1; }
   done
   plain="$(mktemp)"
@@ -26,7 +28,9 @@ for environment in acceptance production; do
     printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: pvdd-secrets\n  namespace: %s\ntype: Opaque\nstringData:\n' "$namespace"
     printf '  PVDD_DATABASE_USER: pvdd\n'
     printf '  PVDD_DATABASE_PASSWORD: |-\n    %s\n' "$(value_for "$database_key")"
-    printf '  PVDD_GOOGLE_CLIENT_ID: |-\n    %s\n' "$(value_for PVDD_GOOGLE_CLIENT_ID)"
+    if [[ "$environment" == production ]]; then
+      printf '  PVDD_GOOGLE_CLIENT_ID: |-\n    %s\n' "$(value_for PVDD_GOOGLE_CLIENT_ID)"
+    fi
     printf '  PVDD_AGENT_RUNTIME_TOKEN: |-\n    %s\n' "$(value_for "$runtime_key")"
   } > "$plain"
   kubeseal --cert "$cert_file" --format yaml < "$plain" > "$sealed"

@@ -12,6 +12,9 @@ class Authenticator(
     private val tokenVerifier: GoogleIdTokenVerifier,
 ) {
     fun authenticate(authorization: String?): AuthenticatedUser {
+        if (config.mode == AuthMode.ACCEPTANCE_BYPASS) {
+            return AuthenticatedUser(AuthConfig.ACCEPTANCE_EMAIL)
+        }
         if (!config.enabled) {
             throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Google login is not configured")
         }

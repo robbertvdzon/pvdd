@@ -7,6 +7,13 @@ resources:
 - mock.yaml
 - route.yaml
 - sealed-secret.yaml
+patches:
+- target:
+    kind: SealedSecret
+    name: pvdd-secrets
+  patch: |-
+    - op: remove
+      path: /spec/encryptedData/PVDD_GOOGLE_CLIENT_ID
 images:
 - digest: sha256:88f57bb722001b1b6199a569e90f8e81afa879a8942950600c1cf2f532ce67e2
   name: ghcr.io/robbertvdzon/pvdd-backend

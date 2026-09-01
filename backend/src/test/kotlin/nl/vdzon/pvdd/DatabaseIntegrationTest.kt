@@ -17,12 +17,20 @@ import nl.vdzon.pvdd.documents.DocumentRepository
 import nl.vdzon.pvdd.documents.ExtractedSection
 import nl.vdzon.pvdd.documents.ExtractionStatus
 import nl.vdzon.pvdd.documents.SourceDocument
+import nl.vdzon.pvdd.dashboard.DashboardRepository
 import nl.vdzon.pvdd.meetings.AgendaCategory
 import nl.vdzon.pvdd.meetings.AgendaItem
 import nl.vdzon.pvdd.meetings.ImportStatus
 import nl.vdzon.pvdd.meetings.Meeting
 import nl.vdzon.pvdd.meetings.MeetingRepository
 import nl.vdzon.pvdd.meetings.MeetingStatus
+import nl.vdzon.pvdd.meetings.AgendaParser
+import nl.vdzon.pvdd.meetings.AgendaRevisionComparator
+import nl.vdzon.pvdd.meetings.DifferenceType
+import nl.vdzon.pvdd.meetings.PublicationStatus
+import nl.vdzon.pvdd.meetings.RevisionDocument
+import nl.vdzon.pvdd.meetings.SourceRevisionRepository
+import nl.vdzon.pvdd.meetings.SourceState
 import nl.vdzon.pvdd.meetings.WorkflowLockRepository
 import nl.vdzon.pvdd.persistence.ApplicationMetadataRepository
 import nl.vdzon.pvdd.policy.PolicyChunk
@@ -33,6 +41,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.health.actuate.endpoint.HealthEndpoint
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
+import org.springframework.jdbc.core.JdbcTemplate
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -47,6 +56,10 @@ class DatabaseIntegrationTest(
     @param:Autowired private val analysisRepository: AnalysisRepository,
     @param:Autowired private val policySourceRepository: PolicySourceRepository,
     @param:Autowired private val workflowLockRepository: WorkflowLockRepository,
+    @param:Autowired private val sourceRevisionRepository: SourceRevisionRepository,
+    @param:Autowired private val revisionComparator: AgendaRevisionComparator,
+    @param:Autowired private val jdbc: JdbcTemplate,
+    @param:Autowired private val dashboardRepository: DashboardRepository,
     @param:Autowired private val healthEndpoint: HealthEndpoint,
 ) {
     @Test
@@ -106,7 +119,7 @@ class DatabaseIntegrationTest(
         assertTrue(documentRepository.insertVersion(document(itemId, "d".repeat(64), now.plusSeconds(1))))
         assertEquals(2, documentRepository.countVersions(itemId, "doc-a"))
         val passages = documentRepository.findPassagesForAnalysis(itemId)
-        assertEquals(2, passages.size)
+        assertEquals(1, passages.size)
         assertEquals(1, passages.first().pageNumber)
         assertEquals("Synthetische documenttekst", passages.first().text)
 
@@ -150,6 +163,8 @@ class DatabaseIntegrationTest(
             run = run.copy(
                 id = UUID.randomUUID(),
                 idempotencyKey = "pvdd-${"9".repeat(64)}",
+                createdAt = now.plusSeconds(1),
+                updatedAt = now.plusSeconds(1),
             ),
             meetingId = meetingId,
             category = "A",
@@ -235,6 +250,94 @@ class DatabaseIntegrationTest(
         meetingRepository.upsert(meeting.copy(id = failedId, sourceId = "meeting-failed", status = MeetingStatus.IMPORTING))
         meetingRepository.markFailed(failedId, "DOCUMENT_INVALID")
         assertEquals(meeting.sourceId, meetingRepository.lastSuccessfulSourceId())
+    }
+
+    @Test
+    fun `source revisions retain preview and published history without duplicating unchanged snapshots`() {
+        val now = Instant.parse("2026-09-01T05:00:00Z")
+        val sourceId = "meeting-source-revision-test"
+        val sourceUrl = URI("https://noordholland.bestuurlijkeinformatie.nl/Agenda/Index/$sourceId")
+        val parsed = AgendaParser().parse(
+            requireNotNull(javaClass.getResource("/fixtures/meetings/agenda-full.html")).readText(),
+            sourceUrl,
+        )
+        val meetingId = meetingRepository.upsert(
+            Meeting(
+                UUID.randomUUID(), sourceId, parsed.committee, parsed.startsAt, parsed.endsAt, parsed.location,
+                parsed.title, sourceUrl, parsed.sourceHash, MeetingStatus.AGENDA_UNPUBLISHED, now, null,
+                PublicationStatus.PREVIEW,
+            ),
+        )
+        val previewIds = parsed.items.filter { it.substantive && it.category == AgendaCategory.C }.associate { cItem ->
+            cItem.sourceId to meetingRepository.upsert(
+                AgendaItem(
+                    UUID.randomUUID(), meetingId, cItem.sourceId, cItem.parentSourceId, cItem.sequence,
+                    cItem.displayNumber, cItem.category, cItem.title, cItem.explanation, cItem.treatmentProposal,
+                    cItem.sourceUrl, cItem.sourceHash, true, ImportStatus.PENDING, SourceState.PREVIEW,
+                ),
+            )
+        }
+        val previewItems = revisionComparator.previewItems(parsed.copy(published = false), previewIds)
+        val previewComparison = revisionComparator.compare(parsed, PublicationStatus.PREVIEW, previewItems, null)
+        val preview = sourceRevisionRepository.record(
+            meetingId, parsed, PublicationStatus.PREVIEW, previewItems, previewComparison, now,
+        )
+        assertEquals(1, preview.number)
+
+        val currentItems = parsed.items.filter { it.substantive }.map { item ->
+            val itemId = meetingRepository.upsert(
+                AgendaItem(
+                    UUID.randomUUID(), meetingId, item.sourceId, item.parentSourceId, item.sequence,
+                    item.displayNumber, item.category, item.title, item.explanation, item.treatmentProposal,
+                    item.sourceUrl, item.sourceHash, true, ImportStatus.COMPLETE, SourceState.CURRENT,
+                ),
+            )
+            revisionComparator.currentItem(
+                item,
+                itemId,
+                listOf(
+                    SourceDocument(
+                        UUID.randomUUID(), itemId, "document-${item.sourceId}", "Stuk ${item.sourceId}",
+                        URI("https://noordholland.bestuurlijkeinformatie.nl/Document/View/${item.sourceId}"),
+                        "application/pdf", "application/pdf", "a".repeat(64), 42,
+                        ExtractionStatus.EXTRACTED, now, null, emptyList(),
+                    ),
+                ),
+            )
+        }
+        val publishedComparison = revisionComparator.compare(
+            parsed, PublicationStatus.CURRENT, currentItems, sourceRevisionRepository.baseline(sourceId),
+        )
+        assertTrue(DifferenceType.PUBLICATION_STATUS in publishedComparison.differences)
+        val published = sourceRevisionRepository.record(
+            meetingId, parsed, PublicationStatus.CURRENT, currentItems, publishedComparison, now.plusSeconds(60),
+        )
+        assertEquals(2, published.number)
+
+        val unchangedComparison = revisionComparator.compare(
+            parsed, PublicationStatus.CURRENT, currentItems, sourceRevisionRepository.baseline(sourceId),
+        )
+        assertTrue(unchangedComparison.unchanged)
+        assertEquals(
+            2,
+            sourceRevisionRepository.record(
+                meetingId, parsed, PublicationStatus.CURRENT, currentItems, unchangedComparison, now.plusSeconds(120),
+            ).number,
+        )
+        assertEquals(2, jdbc.queryForObject("SELECT COUNT(*) FROM meeting_revision WHERE meeting_id = ?", Int::class.java, meetingId))
+        assertEquals(3, jdbc.queryForObject("SELECT COUNT(*) FROM source_check WHERE meeting_id = ?", Int::class.java, meetingId))
+        assertEquals(previewItems.size, jdbc.queryForObject(
+            "SELECT COUNT(*) FROM agenda_item_revision WHERE meeting_revision_id = ? AND source_state = 'PREVIEW'",
+            Int::class.java,
+            preview.id,
+        ))
+        requireNotNull(dashboardRepository.overview().meeting)
+        val dashboardItems = requireNotNull(dashboardRepository.agendaItems(meetingId))
+        assertTrue(dashboardItems.any { it.sourceState == SourceState.CURRENT.name && it.changeTypes.isNotEmpty() })
+        assertEquals(
+            SourceState.CURRENT.name,
+            requireNotNull(dashboardRepository.item(dashboardItems.first().id)).item.sourceState,
+        )
     }
 
     @Test

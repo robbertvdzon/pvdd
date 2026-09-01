@@ -10,6 +10,7 @@ import nl.vdzon.pvdd.meetings.AgendaItem
 import nl.vdzon.pvdd.meetings.MeetingCheckStatus
 import nl.vdzon.pvdd.meetings.MeetingImportedEvent
 import nl.vdzon.pvdd.meetings.MeetingRepository
+import nl.vdzon.pvdd.meetings.SourceState
 import nl.vdzon.pvdd.policy.PolicyImportService
 import nl.vdzon.pvdd.policy.PolicySelector
 import nl.vdzon.pvdd.runtime.AgentRuntimeGateway
@@ -60,7 +61,10 @@ class AnalysisOrchestrator(
             policyImport.ensureImported()
             val meeting = requireNotNull(meetings.findMeeting(meetingId))
             val items = meetings.findAgendaItems(meetingId)
-                .filter { it.substantive && it.category in setOf(AgendaCategory.A, AgendaCategory.B, AgendaCategory.C) }
+                .filter {
+                    it.sourceState == SourceState.CURRENT && it.substantive &&
+                        it.category in setOf(AgendaCategory.A, AgendaCategory.B, AgendaCategory.C)
+                }
             require(items.isNotEmpty()) { "NO_ANALYSIS_ITEMS" }
             items.forEach { item ->
                 val sources = sources(item)

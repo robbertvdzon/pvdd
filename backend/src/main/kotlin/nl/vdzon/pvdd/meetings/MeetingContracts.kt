@@ -37,6 +37,9 @@ data class Meeting(
     val status: MeetingStatus,
     val checkedAt: Instant,
     val importedAt: Instant?,
+    val publicationStatus: PublicationStatus = PublicationStatus.CURRENT,
+    val currentRevisionNumber: Int = 0,
+    val canonicalFingerprint: String? = null,
 )
 
 data class AgendaItem(
@@ -54,6 +57,8 @@ data class AgendaItem(
     val sourceHash: String,
     val substantive: Boolean,
     val importStatus: ImportStatus,
+    val sourceState: SourceState = SourceState.CURRENT,
+    val currentFingerprint: String? = null,
 )
 
 sealed interface DiscoveryOutcome {

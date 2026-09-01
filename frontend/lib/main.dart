@@ -24,6 +24,7 @@ class PvddApp extends StatelessWidget {
     this.versionGateway,
     this.frontendVersionSource,
     this.dashboardGateway,
+    this.acceptanceBypass,
   });
 
   final AuthenticationGateway? authenticationGateway;
@@ -32,6 +33,7 @@ class PvddApp extends StatelessWidget {
   final VersionGateway? versionGateway;
   final FrontendVersionSource? frontendVersionSource;
   final DashboardGateway? dashboardGateway;
+  final bool? acceptanceBypass;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -45,6 +47,7 @@ class PvddApp extends StatelessWidget {
       versionGateway: versionGateway ?? HttpVersionGateway(),
       frontendVersionSource: frontendVersionSource,
       dashboardGateway: dashboardGateway,
+      acceptanceBypass: acceptanceBypass ?? AppConfiguration.acceptanceBypass,
     ),
   );
 }
@@ -59,6 +62,7 @@ class AuthenticationGate extends StatefulWidget {
     this.loginBuilder,
     this.frontendVersionSource,
     this.dashboardGateway,
+    required this.acceptanceBypass,
     super.key,
   });
   final AuthenticationGateway gateway;
@@ -67,6 +71,7 @@ class AuthenticationGate extends StatefulWidget {
   final VersionGateway versionGateway;
   final FrontendVersionSource? frontendVersionSource;
   final DashboardGateway? dashboardGateway;
+  final bool acceptanceBypass;
 
   @override
   State<AuthenticationGate> createState() => _AuthenticationGateState();
@@ -84,6 +89,15 @@ class _AuthenticationGateState extends State<AuthenticationGate> {
   }
 
   Future<void> _restore() async {
+    if (widget.acceptanceBypass) {
+      if (mounted) {
+        setState(() {
+          _email = 'acceptance-tester@pvdd.invalid';
+          _state = _AuthenticationState.authenticated;
+        });
+      }
+      return;
+    }
     final token = widget.tokenStore.read();
     if (token == null || token.isEmpty) {
       if (mounted) setState(() => _state = _AuthenticationState.login);
@@ -164,7 +178,11 @@ class _AuthenticationGateState extends State<AuthenticationGate> {
           widget.frontendVersionSource ?? HttpFrontendVersionSource(),
       dashboardGateway:
           widget.dashboardGateway ??
-          HttpDashboardGateway(widget.tokenStore.read),
+          HttpDashboardGateway(
+            widget.tokenStore.read,
+            requireAuthentication: !widget.acceptanceBypass,
+          ),
+      acceptanceBypass: widget.acceptanceBypass,
     ),
   };
 }
@@ -256,6 +274,7 @@ class TechnicalApplicationShell extends StatefulWidget {
     required this.versionGateway,
     required this.frontendVersionSource,
     required this.dashboardGateway,
+    required this.acceptanceBypass,
     super.key,
   });
   final String email;
@@ -263,6 +282,7 @@ class TechnicalApplicationShell extends StatefulWidget {
   final VersionGateway versionGateway;
   final FrontendVersionSource frontendVersionSource;
   final DashboardGateway dashboardGateway;
+  final bool acceptanceBypass;
   @override
   State<TechnicalApplicationShell> createState() =>
       _TechnicalApplicationShellState();
@@ -348,11 +368,12 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Center(child: Text(widget.email)),
               ),
-            IconButton(
-              tooltip: 'Uitloggen',
-              onPressed: widget.onLogout,
-              icon: const Icon(Icons.logout),
-            ),
+            if (!widget.acceptanceBypass)
+              IconButton(
+                tooltip: 'Uitloggen',
+                onPressed: widget.onLogout,
+                icon: const Icon(Icons.logout),
+              ),
           ],
         ),
         body: Row(
@@ -361,6 +382,14 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
             Expanded(
               child: Column(
                 children: [
+                  if (widget.acceptanceBypass)
+                    const MaterialBanner(
+                      leading: Icon(Icons.science_outlined),
+                      content: Text(
+                        'ACCEPTANCE — gemockte gegevens — geen authenticatie',
+                      ),
+                      actions: [SizedBox.shrink()],
+                    ),
                   if (_updateAvailable)
                     MaterialBanner(
                       content: const Text(

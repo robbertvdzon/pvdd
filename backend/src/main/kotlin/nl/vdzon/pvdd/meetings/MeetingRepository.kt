@@ -12,8 +12,9 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
         """
         INSERT INTO meeting(
             id, source_id, committee, starts_at, ends_at, location, title, source_url,
-            source_hash, status, checked_at, imported_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            source_hash, status, checked_at, imported_at, publication_status,
+            current_revision_number, canonical_fingerprint
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (source_id) DO UPDATE SET
             committee = EXCLUDED.committee,
             starts_at = EXCLUDED.starts_at,
@@ -25,6 +26,12 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
             status = EXCLUDED.status,
             checked_at = EXCLUDED.checked_at,
             imported_at = EXCLUDED.imported_at,
+            publication_status = EXCLUDED.publication_status,
+            current_revision_number = CASE
+                WHEN EXCLUDED.current_revision_number = 0 THEN meeting.current_revision_number
+                ELSE EXCLUDED.current_revision_number
+            END,
+            canonical_fingerprint = COALESCE(EXCLUDED.canonical_fingerprint, meeting.canonical_fingerprint),
             updated_at = CURRENT_TIMESTAMP
         RETURNING id
         """.trimIndent(),
@@ -41,6 +48,9 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
         meeting.status.name,
         Timestamp.from(meeting.checkedAt),
         meeting.importedAt?.let(Timestamp::from),
+        meeting.publicationStatus.name,
+        meeting.currentRevisionNumber,
+        meeting.canonicalFingerprint,
     ).single()
 
     override fun upsert(item: AgendaItem): UUID = jdbc.query(
@@ -48,8 +58,8 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
         INSERT INTO agenda_item(
             id, meeting_id, source_id, parent_source_id, sequence_number, display_number,
             category, title, explanation, treatment_proposal, source_url, source_hash,
-            substantive, import_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            substantive, import_status, source_state, current_fingerprint
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (meeting_id, source_id) DO UPDATE SET
             parent_source_id = EXCLUDED.parent_source_id,
             sequence_number = EXCLUDED.sequence_number,
@@ -62,6 +72,8 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
             source_hash = EXCLUDED.source_hash,
             substantive = EXCLUDED.substantive,
             import_status = EXCLUDED.import_status,
+            source_state = EXCLUDED.source_state,
+            current_fingerprint = COALESCE(EXCLUDED.current_fingerprint, agenda_item.current_fingerprint),
             updated_at = CURRENT_TIMESTAMP
         RETURNING id
         """.trimIndent(),
@@ -80,6 +92,8 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
         item.sourceHash,
         item.substantive,
         item.importStatus.name,
+        item.sourceState.name,
+        item.currentFingerprint,
     ).single()
 
     fun countMeetingsBySourceId(sourceId: String): Int = jdbc.queryForObject(
@@ -97,7 +111,8 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
     fun findMeeting(meetingId: UUID): Meeting? = jdbc.query(
         """
         SELECT id, source_id, committee, starts_at, ends_at, location, title, source_url,
-               source_hash, status, checked_at, imported_at
+               source_hash, status, checked_at, imported_at, publication_status,
+               current_revision_number, canonical_fingerprint
         FROM meeting WHERE id = ?
         """.trimIndent(),
         { rs, _ ->
@@ -114,6 +129,9 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
                 status = MeetingStatus.valueOf(rs.getString("status")),
                 checkedAt = rs.getTimestamp("checked_at").toInstant(),
                 importedAt = rs.getTimestamp("imported_at")?.toInstant(),
+                publicationStatus = PublicationStatus.valueOf(rs.getString("publication_status")),
+                currentRevisionNumber = rs.getInt("current_revision_number"),
+                canonicalFingerprint = rs.getString("canonical_fingerprint"),
             )
         },
         meetingId,
@@ -123,7 +141,7 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
         """
         SELECT id, meeting_id, source_id, parent_source_id, sequence_number, display_number,
                category, title, explanation, treatment_proposal, source_url, source_hash,
-               substantive, import_status
+               substantive, import_status, source_state, current_fingerprint
         FROM agenda_item WHERE meeting_id = ? ORDER BY sequence_number
         """.trimIndent(),
         { rs, _ ->
@@ -142,6 +160,8 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
                 sourceHash = rs.getString("source_hash"),
                 substantive = rs.getBoolean("substantive"),
                 importStatus = ImportStatus.valueOf(rs.getString("import_status")),
+                sourceState = SourceState.valueOf(rs.getString("source_state")),
+                currentFingerprint = rs.getString("current_fingerprint"),
             )
         },
         meetingId,
@@ -197,6 +217,19 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
         updateStatus(meetingId, MeetingStatus.PARTIAL, errorCode)
     }
 
+    override fun markMissingItemsWithdrawn(meetingId: UUID, currentSourceIds: Set<String>) {
+        if (currentSourceIds.isEmpty()) {
+            jdbc.update("UPDATE agenda_item SET source_state = 'WITHDRAWN', updated_at = CURRENT_TIMESTAMP WHERE meeting_id = ?", meetingId)
+            return
+        }
+        val placeholders = currentSourceIds.joinToString(",") { "?" }
+        jdbc.update(
+            "UPDATE agenda_item SET source_state = 'WITHDRAWN', updated_at = CURRENT_TIMESTAMP WHERE meeting_id = ? AND source_id NOT IN ($placeholders)",
+            meetingId,
+            *currentSourceIds.toTypedArray(),
+        )
+    }
+
     private fun updateStatus(meetingId: UUID, status: MeetingStatus, errorCode: String?) {
         check(
             jdbc.update(
@@ -220,4 +253,5 @@ interface MeetingStore {
     fun markFailed(meetingId: UUID, errorCode: String)
     fun markAnalysing(meetingId: UUID)
     fun markPartial(meetingId: UUID, errorCode: String)
+    fun markMissingItemsWithdrawn(meetingId: UUID, currentSourceIds: Set<String>) = Unit
 }

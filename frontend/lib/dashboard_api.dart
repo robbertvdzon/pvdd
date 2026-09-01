@@ -8,14 +8,18 @@ abstract interface class DashboardGateway {
   Future<MeetingOverview> overview();
   Future<List<AgendaItemSummary>> agendaItems(String meetingId);
   Future<AgendaItemDetail> agendaItem(String itemId);
-  Future<void> checkNow();
+  Future<MeetingCheckOutcome> checkNow();
 }
 
 class HttpDashboardGateway implements DashboardGateway {
-  HttpDashboardGateway(this._token, {http.Client? client})
-    : _client = client ?? http.Client();
+  HttpDashboardGateway(
+    this._token, {
+    this.requireAuthentication = true,
+    http.Client? client,
+  }) : _client = client ?? http.Client();
   final TokenProvider _token;
   final http.Client _client;
+  final bool requireAuthentication;
 
   @override
   Future<MeetingOverview> overview() async => MeetingOverview.fromJson(
@@ -35,7 +39,7 @@ class HttpDashboardGateway implements DashboardGateway {
       AgendaItemDetail.fromJson(await _get('/api/agenda-items/$itemId'));
 
   @override
-  Future<void> checkNow() async {
+  Future<MeetingCheckOutcome> checkNow() async {
     final response = await _client
         .post(
           Uri.parse('/api/meetings/check-now'),
@@ -48,6 +52,9 @@ class HttpDashboardGateway implements DashboardGateway {
     if (response.statusCode != 200 && response.statusCode != 409) {
       throw const DashboardUnavailable();
     }
+    return MeetingCheckOutcome.fromJson(
+      jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>,
+    );
   }
 
   Future<dynamic> _get(String path) async {
@@ -64,11 +71,13 @@ class HttpDashboardGateway implements DashboardGateway {
 
   Map<String, String> _headers({String? idempotencyKey}) {
     final token = _token();
-    if (token == null || token.isEmpty) throw const DashboardUnavailable();
-    final headers = {
-      'Authorization': 'Bearer $token',
-      'Cache-Control': 'no-cache',
-    };
+    if (requireAuthentication && (token == null || token.isEmpty)) {
+      throw const DashboardUnavailable();
+    }
+    final headers = <String, String>{'Cache-Control': 'no-cache'};
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
     if (idempotencyKey != null) {
       headers['Idempotency-Key'] = idempotencyKey;
     }
@@ -109,6 +118,10 @@ class MeetingInfo {
     required this.location,
     required this.sourceUrl,
     required this.status,
+    required this.publicationStatus,
+    required this.revisionNumber,
+    required this.canonicalFingerprint,
+    required this.revisionStatus,
   });
   factory MeetingInfo.fromJson(Map<String, dynamic> json) => MeetingInfo(
     id: json['id'] as String,
@@ -118,6 +131,10 @@ class MeetingInfo {
     location: json['location'] as String?,
     sourceUrl: Uri.parse(json['sourceUrl'] as String),
     status: json['status'] as String,
+    publicationStatus: json['publicationStatus'] as String,
+    revisionNumber: json['revisionNumber'] as int,
+    canonicalFingerprint: json['canonicalFingerprint'] as String?,
+    revisionStatus: json['revisionStatus'] as String?,
   );
   final String id;
   final String title;
@@ -126,6 +143,10 @@ class MeetingInfo {
   final String? location;
   final Uri sourceUrl;
   final String status;
+  final String publicationStatus;
+  final int revisionNumber;
+  final String? canonicalFingerprint;
+  final String? revisionStatus;
 }
 
 class Progress {
@@ -150,6 +171,10 @@ class AgendaItemSummary {
     required this.substantive,
     required this.importStatus,
     required this.analysisStatus,
+    required this.sourceState,
+    required this.currentFingerprint,
+    required this.adviceActuality,
+    required this.changeTypes,
   });
   factory AgendaItemSummary.fromJson(Map<String, dynamic> json) =>
       AgendaItemSummary(
@@ -161,6 +186,10 @@ class AgendaItemSummary {
         substantive: json['substantive'] as bool,
         importStatus: json['importStatus'] as String,
         analysisStatus: json['analysisStatus'] as String?,
+        sourceState: json['sourceState'] as String,
+        currentFingerprint: json['currentFingerprint'] as String?,
+        adviceActuality: json['adviceActuality'] as String?,
+        changeTypes: (json['changeTypes'] as List<dynamic>).cast<String>(),
       );
   final String id;
   final int sequence;
@@ -170,6 +199,10 @@ class AgendaItemSummary {
   final bool substantive;
   final String importStatus;
   final String? analysisStatus;
+  final String sourceState;
+  final String? currentFingerprint;
+  final String? adviceActuality;
+  final List<String> changeTypes;
 }
 
 class AgendaItemDetail {
@@ -179,6 +212,7 @@ class AgendaItemDetail {
     required this.treatmentProposal,
     required this.sourceUrl,
     required this.advice,
+    required this.adviceActuality,
     required this.sources,
     required this.warning,
   });
@@ -189,6 +223,7 @@ class AgendaItemDetail {
         treatmentProposal: json['treatmentProposal'] as String?,
         sourceUrl: Uri.parse(json['sourceUrl'] as String),
         advice: json['advice'] as Map<String, dynamic>?,
+        adviceActuality: json['adviceActuality'] as String?,
         sources: (json['sources'] as List<dynamic>)
             .map((value) => SourceLink.fromJson(value as Map<String, dynamic>))
             .toList(growable: false),
@@ -199,6 +234,7 @@ class AgendaItemDetail {
   final String? treatmentProposal;
   final Uri sourceUrl;
   final Map<String, dynamic>? advice;
+  final String? adviceActuality;
   final List<SourceLink> sources;
   final String warning;
 }
@@ -217,4 +253,22 @@ class SourceLink {
 
 class DashboardUnavailable implements Exception {
   const DashboardUnavailable();
+}
+
+class MeetingCheckOutcome {
+  const MeetingCheckOutcome({
+    required this.status,
+    required this.revisionNumber,
+    required this.differences,
+  });
+  factory MeetingCheckOutcome.fromJson(Map<String, dynamic> json) =>
+      MeetingCheckOutcome(
+        status: json['status'] as String,
+        revisionNumber: json['revisionNumber'] as int?,
+        differences: (json['differences'] as List<dynamic>? ?? const [])
+            .cast<String>(),
+      );
+  final String status;
+  final int? revisionNumber;
+  final List<String> differences;
 }

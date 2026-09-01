@@ -89,8 +89,12 @@ class DocumentRepository(
         FROM agenda_item target
         JOIN agenda_item source_item ON source_item.meeting_id = target.meeting_id
             AND (source_item.id = target.id OR source_item.source_id LIKE '%:meeting-documents')
-        JOIN source_document sd ON sd.agenda_item_id = source_item.id
-            AND sd.extraction_status = 'EXTRACTED'
+        JOIN LATERAL (
+            SELECT DISTINCT ON (version.source_id) version.*
+            FROM source_document version
+            WHERE version.agenda_item_id = source_item.id AND version.extraction_status = 'EXTRACTED'
+            ORDER BY version.source_id, version.fetched_at DESC, version.created_at DESC
+        ) sd ON TRUE
         CROSS JOIN LATERAL jsonb_array_elements(sd.extracted_sections) section
         WHERE target.id = ?
         ORDER BY source_item.sequence_number, sd.source_id, section_sequence

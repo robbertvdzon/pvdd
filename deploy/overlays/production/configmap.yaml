@@ -4,6 +4,7 @@ metadata:
   name: pvdd-config
 data:
   PVDD_ENVIRONMENT: production
+  PVDD_AUTH_MODE: google
   PVDD_DATABASE_URL: jdbc:postgresql://database:5432/pvdd
   PVDD_AGENT_RUNTIME_BASE_URL: http://agent-runtime-server.agent-runtime.svc.cluster.local
   PVDD_AGENT_RUNTIME_PROVIDER: CODEX

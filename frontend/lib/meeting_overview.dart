@@ -70,8 +70,13 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
     if (_checking) return;
     setState(() => _checking = true);
     try {
-      await widget.gateway.checkNow();
+      final outcome = await widget.gateway.checkNow();
       await _load(silent: true);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_checkOutcomeLabel(outcome))));
+      }
     } on Object {
       if (mounted) {
         setState(
@@ -180,6 +185,11 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
             runSpacing: 8,
             children: [
               _statusChip(meeting.status),
+              _statusChip(
+                meeting.publicationStatus == 'PREVIEW'
+                    ? 'PREVIEW'
+                    : (meeting.revisionStatus ?? 'CURRENT'),
+              ),
               Text(
                 '${_overview!.progress.complete}/${_overview!.progress.total} analyses gereed',
               ),
@@ -195,6 +205,9 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
           const SizedBox(height: 6),
           Text(
             '${_dateTime(meeting.startsAt)}${meeting.location == null ? '' : ' · ${meeting.location}'}',
+          ),
+          Text(
+            'Bronrevisie ${meeting.revisionNumber}${meeting.canonicalFingerprint == null ? '' : ' · ${meeting.canonicalFingerprint!.substring(0, 12)}'}',
           ),
           TextButton.icon(
             onPressed: meeting.sourceUrl.scheme == 'https'
@@ -265,7 +278,19 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
         '${widget.item.displayNumber ?? ''} ${widget.item.title}'.trim(),
       ),
       subtitle: Text(
-        _statusLabel(widget.item.analysisStatus ?? widget.item.importStatus),
+        [
+          _statusLabel(
+            widget.item.sourceState == 'PREVIEW'
+                ? 'PREVIEW'
+                : widget.item.sourceState == 'WITHDRAWN'
+                ? 'WITHDRAWN'
+                : (widget.item.adviceActuality == 'STALE'
+                      ? 'STALE'
+                      : widget.item.analysisStatus ?? widget.item.importStatus),
+          ),
+          if (widget.item.changeTypes.isNotEmpty)
+            widget.item.changeTypes.map(_changeLabel).join(', '),
+        ].join(' · '),
       ),
       children: [
         if (_detail != null)
@@ -299,6 +324,16 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (detail.explanation != null) Text(detail.explanation!),
+          if (detail.adviceActuality == 'STALE')
+            _actualityWarning(
+              context,
+              'Dit advies hoort bij een eerdere bronversie. De analyse wordt vernieuwd.',
+            ),
+          if (detail.item.sourceState == 'PREVIEW')
+            _actualityWarning(
+              context,
+              'Voorlopig C-stuk — de volledige agenda is nog niet gepubliceerd en er is nog geen AI-analyse gestart.',
+            ),
           if (advice == null)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
@@ -341,6 +376,19 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
       ),
     );
   }
+
+  Widget _actualityWarning(BuildContext context, String text) => Semantics(
+    liveRegion: true,
+    child: Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(text, style: const TextStyle(fontWeight: FontWeight.w700)),
+    ),
+  );
 
   List<Widget> _abAdvice(Map<String, dynamic> advice) => const [
     ('Waar gaat het over?', 'waarGaatHetOver'),
@@ -385,6 +433,12 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
 Widget _statusChip(String status) => Chip(label: Text(_statusLabel(status)));
 
 String _statusLabel(String status) => switch (status) {
+  'PREVIEW' => 'Voorlopige agenda',
+  'CURRENT' => 'Actueel',
+  'CHANGED' => 'Bron gewijzigd',
+  'REPROCESSING' => 'Analyse wordt vernieuwd',
+  'STALE' => 'Oud advies — analyse wordt vernieuwd',
+  'WITHDRAWN' => 'Ingetrokken',
   'AGENDA_UNPUBLISHED' => 'Agenda nog niet gepubliceerd',
   'IMPORTING' => 'Stukken worden ingelezen',
   'ANALYSING' ||
@@ -396,6 +450,35 @@ String _statusLabel(String status) => switch (status) {
   'FAILED' => 'Mislukt',
   'OCR_REQUIRED' => 'Scan — OCR nodig',
   _ => status.toLowerCase().replaceAll('_', ' '),
+};
+
+String _changeLabel(String change) => switch (change) {
+  'PUBLICATION_STATUS' => 'agenda gepubliceerd',
+  'ITEM_ADDED' => 'punt toegevoegd',
+  'ITEM_WITHDRAWN' => 'punt ingetrokken',
+  'ITEM_MOVED' => 'punt verplaatst',
+  'CATEGORY_CHANGED' => 'agenda-categorie gewijzigd',
+  'METADATA_CHANGED' => 'toelichting of behandelvoorstel gewijzigd',
+  'DOCUMENT_ADDED' => 'document toegevoegd',
+  'DOCUMENT_REMOVED' => 'document verwijderd',
+  'DOCUMENT_CONTENT_CHANGED' => 'documentinhoud gewijzigd',
+  _ => change.toLowerCase().replaceAll('_', ' '),
+};
+
+String _checkOutcomeLabel(
+  MeetingCheckOutcome outcome,
+) => switch (outcome.status) {
+  'UNCHANGED' => 'De bron is gecontroleerd en ongewijzigd.',
+  'AGENDA_UNPUBLISHED' =>
+    'De volledige agenda is nog niet gepubliceerd; voorlopige C-stukken zijn bijgewerkt.',
+  'IMPORTED' when outcome.differences.isNotEmpty =>
+    'Bronwijziging gevonden. De gerichte heranalyse is gestart.',
+  'IMPORTED' => 'De agenda is verwerkt.',
+  'SOURCE_FAILURE' || 'FAILED' =>
+    'De broncontrole is mislukt; de laatst geldige gegevens blijven bewaard.',
+  'ALREADY_RUNNING' => 'Er loopt al een broncontrole.',
+  'NO_FUTURE_MEETING' => 'Er is geen toekomstige vergadering gevonden.',
+  _ => 'De broncontrole is afgerond.',
 };
 
 String _dateTime(DateTime value) {

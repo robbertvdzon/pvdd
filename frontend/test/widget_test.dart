@@ -63,6 +63,29 @@ void main() {
     expect(find.text('Commissie Ruimte'), findsWidgets);
   });
 
+  testWidgets('acceptance bypass opens directly and is permanently labelled', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      PvddApp(
+        acceptanceBypass: true,
+        authenticationGateway: FakeAuthenticationGateway(),
+        tokenStore: MemoryTokenStore(),
+        versionGateway: FakeVersionGateway(),
+        frontendVersionSource: FakeFrontendVersionSource(),
+        dashboardGateway: FakeDashboardGateway(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text('ACCEPTANCE — gemockte gegevens — geen authenticatie'),
+      findsOneWidget,
+    );
+    expect(find.text('acceptance-tester@pvdd.invalid'), findsOneWidget);
+    expect(find.byTooltip('Uitloggen'), findsNothing);
+    expect(find.textContaining('Log in met'), findsNothing);
+  });
+
   testWidgets('shell remains usable at 320 pixels', (tester) async {
     tester.view.physicalSize = const Size(320, 700);
     tester.view.devicePixelRatio = 1;
@@ -166,6 +189,10 @@ class FakeDashboardGateway implements DashboardGateway {
             location: 'Statenzaal',
             sourceUrl: Uri.parse('https://example.test/agenda'),
             status: 'ANALYSING',
+            publicationStatus: 'CURRENT',
+            revisionNumber: 2,
+            canonicalFingerprint: List.filled(64, 'a').join(),
+            revisionStatus: 'REPROCESSING',
           )
         : null,
     lastCheckedAt: DateTime.utc(2026, 8, 31, 5),
@@ -183,6 +210,10 @@ class FakeDashboardGateway implements DashboardGateway {
       substantive: true,
       importStatus: 'COMPLETE',
       analysisStatus: 'SUCCEEDED',
+      sourceState: 'CURRENT',
+      currentFingerprint: null,
+      adviceActuality: 'CURRENT',
+      changeTypes: [],
     ),
     const AgendaItemSummary(
       id: 'item-b',
@@ -193,6 +224,10 @@ class FakeDashboardGateway implements DashboardGateway {
       substantive: true,
       importStatus: 'COMPLETE',
       analysisStatus: 'RUNNING',
+      sourceState: 'CURRENT',
+      currentFingerprint: null,
+      adviceActuality: 'STALE',
+      changeTypes: ['DOCUMENT_CONTENT_CHANGED'],
     ),
     const AgendaItemSummary(
       id: 'item-c',
@@ -203,6 +238,10 @@ class FakeDashboardGateway implements DashboardGateway {
       substantive: true,
       importStatus: 'COMPLETE',
       analysisStatus: 'QUEUED',
+      sourceState: 'CURRENT',
+      currentFingerprint: null,
+      adviceActuality: null,
+      changeTypes: [],
     ),
   ];
 
@@ -235,11 +274,16 @@ class FakeDashboardGateway implements DashboardGateway {
               'puntenVoorGedeputeerde': section('Punten'),
               'technischeVragen': section('Vragen'),
             },
+      adviceActuality: item.adviceActuality,
       sources: const [],
       warning: 'AI-concept — controleer bronnen en formulering vóór gebruik',
     );
   }
 
   @override
-  Future<void> checkNow() async {}
+  Future<MeetingCheckOutcome> checkNow() async => const MeetingCheckOutcome(
+    status: 'UNCHANGED',
+    revisionNumber: 2,
+    differences: [],
+  );
 }

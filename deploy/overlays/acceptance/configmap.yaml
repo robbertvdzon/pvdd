@@ -4,6 +4,7 @@ metadata:
   name: pvdd-config
 data:
   PVDD_ENVIRONMENT: acceptance
+  PVDD_AUTH_MODE: acceptance-bypass
   PVDD_ACCEPTANCE_RUN_ON_STARTUP: "true"
   PVDD_DATABASE_URL: jdbc:postgresql://database:5432/pvdd
   PVDD_AGENT_RUNTIME_BASE_URL: http://agent-runtime-server.agent-runtime-acceptance.svc.cluster.local

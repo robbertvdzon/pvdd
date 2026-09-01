@@ -13,17 +13,23 @@ ARG GIT_REVISION=0000000000000000000000000000000000000000
 ARG BUILD_TIME=1970-01-01T00:00:00Z
 ARG ENVIRONMENT=local
 ARG GOOGLE_CLIENT_ID=
+ARG AUTH_MODE=google
 RUN PVDD_APP_VERSION="${APP_VERSION}" \
     PVDD_GIT_REVISION="${GIT_REVISION}" \
     PVDD_BUILD_TIME="${BUILD_TIME}" \
     PVDD_ENVIRONMENT="${ENVIRONMENT}" \
     PVDD_GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
+    PVDD_AUTH_MODE="${AUTH_MODE}" \
     ./build-web.sh
 FROM nginxinc/nginx-unprivileged:1.27-alpine
+ARG ENVIRONMENT=local
 USER 0
 RUN chgrp -R 0 /etc/nginx /usr/share/nginx/html /var/cache/nginx \
  && chmod -R g=u /etc/nginx /usr/share/nginx/html /var/cache/nginx
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx-acceptance.conf /tmp/nginx-acceptance.conf
+RUN if [ "${ENVIRONMENT}" = acceptance ]; then cp /tmp/nginx-acceptance.conf /etc/nginx/conf.d/default.conf; fi \
+ && rm /tmp/nginx-acceptance.conf
 COPY --from=build /src/build/web /usr/share/nginx/html
 USER 101
 EXPOSE 8080

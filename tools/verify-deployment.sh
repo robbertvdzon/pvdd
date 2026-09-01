@@ -14,12 +14,16 @@ acceptance="$temporary/acceptance.yaml"
 production="$temporary/production.yaml"
 grep -q 'name: pvdd-meeting-source-mock' "$acceptance"
 grep -q 'PVDD_AGENT_RUNTIME_PROVIDER: MOCKED' "$acceptance"
+grep -q 'PVDD_AUTH_MODE: acceptance-bypass' "$acceptance"
 grep -q 'PVDD_MEETING_SOURCE_BASE_URL: http://pvdd-meeting-source-mock:8080' "$acceptance"
 ! grep -Eq 'noordholland.bestuurlijkeinformatie.nl|gpt-5.6-sol|PRODUCTION_AGENT_RUNTIME' "$acceptance"
+! grep -q 'PVDD_GOOGLE_CLIENT_ID' "$acceptance"
 
 ! grep -Eq 'pvdd-meeting-source-mock|MOCKED|mock-model|ACCEPTANCE_AGENT_RUNTIME' "$production"
 grep -q 'host: pvdd.vdzonsoftware.nl' "$production"
 grep -q 'PVDD_AGENT_RUNTIME_PROVIDER: CODEX' "$production"
+grep -q 'PVDD_AUTH_MODE: google' "$production"
+grep -q 'PVDD_GOOGLE_CLIENT_ID' "$production"
 grep -q 'PVDD_MEETING_SOURCE_BASE_URL: https://noordholland.bestuurlijkeinformatie.nl' "$production"
 
 for manifest in "$acceptance" "$production"; do

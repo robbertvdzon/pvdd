@@ -35,7 +35,7 @@ class AnalysisRepository(
             INSERT INTO analysis_meeting_queue(meeting_id, status)
             VALUES (?, 'PENDING')
             ON CONFLICT (meeting_id) DO UPDATE SET
-                status = CASE WHEN analysis_meeting_queue.status = 'COMPLETE' THEN 'COMPLETE' ELSE 'PENDING' END,
+                status = 'PENDING', error_code = NULL,
                 updated_at = CURRENT_TIMESTAMP
             """.trimIndent(),
             meetingId,
@@ -282,17 +282,36 @@ class AnalysisRepository(
             Timestamp.from(completedAt),
             prepared.run.id,
         )
+        jdbc.update(
+            """
+            UPDATE agenda_item_advice advice SET actuality = CASE
+                WHEN (SELECT source_state FROM agenda_item WHERE id = ?) = 'WITHDRAWN' THEN 'WITHDRAWN'
+                WHEN advice.analysis_run_id = (
+                    SELECT id FROM analysis_run
+                    WHERE agenda_item_id = ? AND run_type = 'FINAL_ADVICE'
+                    ORDER BY created_at DESC, id DESC LIMIT 1
+                ) THEN 'CURRENT'
+                ELSE 'STALE'
+            END
+            WHERE advice.agenda_item_id = ?
+            """.trimIndent(),
+            prepared.run.agendaItemId,
+            prepared.run.agendaItemId,
+            prepared.run.agendaItemId,
+        )
     }
 
     fun allRequiredRunsSucceeded(meetingId: UUID): Boolean = jdbc.queryForObject(
         """
         SELECT COUNT(*) > 0 AND NOT EXISTS (
             SELECT 1 FROM agenda_item ai
-            WHERE ai.meeting_id = ? AND ai.substantive AND ai.category IN ('A', 'B', 'C')
-              AND NOT EXISTS (
-                  SELECT 1 FROM analysis_run ar
-                  WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE' AND ar.status = 'SUCCEEDED'
-              )
+            WHERE ai.meeting_id = ? AND ai.source_state = 'CURRENT'
+              AND ai.substantive AND ai.category IN ('A', 'B', 'C')
+              AND COALESCE((
+                  SELECT ar.status FROM analysis_run ar
+                  WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE'
+                  ORDER BY ar.created_at DESC, ar.id DESC LIMIT 1
+              ), 'MISSING') <> 'SUCCEEDED'
         )
         FROM analysis_run WHERE meeting_id = ?
         """.trimIndent(),

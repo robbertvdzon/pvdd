@@ -25,6 +25,10 @@ data class MeetingDto(
     val location: String?,
     val sourceUrl: URI,
     val status: String,
+    val publicationStatus: String,
+    val revisionNumber: Int,
+    val canonicalFingerprint: String?,
+    val revisionStatus: String?,
 )
 
 data class ProgressDto(val total: Int, val complete: Int, val failed: Int)
@@ -38,6 +42,10 @@ data class AgendaItemSummaryDto(
     val substantive: Boolean,
     val importStatus: String,
     val analysisStatus: String?,
+    val sourceState: String,
+    val currentFingerprint: String?,
+    val adviceActuality: String?,
+    val changeTypes: List<String>,
 )
 
 data class SourceLinkDto(val name: String, val url: URI, val status: String)
@@ -48,6 +56,7 @@ data class AgendaItemDetailDto(
     val treatmentProposal: String?,
     val sourceUrl: URI,
     val advice: JsonNode?,
+    val adviceActuality: String?,
     val sources: List<SourceLinkDto>,
     val warning: String = "AI-concept — controleer bronnen en formulering vóór gebruik",
 )
@@ -67,8 +76,14 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
     fun overview(): MeetingOverviewDto {
         val meeting = jdbc.query(
             """
-            SELECT id, source_id, title, committee, starts_at, ends_at, location, source_url, status, checked_at
-            FROM meeting
+            SELECT m.id, m.source_id, m.title, m.committee, m.starts_at, m.ends_at, m.location,
+                   m.source_url, m.status, m.checked_at, m.publication_status,
+                   m.current_revision_number, m.canonical_fingerprint, latest.revision_status
+            FROM meeting m
+            LEFT JOIN LATERAL (
+                SELECT revision_status FROM meeting_revision mr
+                WHERE mr.meeting_id = m.id ORDER BY revision_number DESC LIMIT 1
+            ) latest ON TRUE
             ORDER BY CASE WHEN starts_at >= CURRENT_TIMESTAMP THEN 0 ELSE 1 END, starts_at ASC
             LIMIT 1
             """.trimIndent(),
@@ -78,6 +93,8 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                     rs.getString("committee"), rs.getTimestamp("starts_at").toInstant(),
                     rs.getTimestamp("ends_at")?.toInstant(), rs.getString("location"),
                     URI(rs.getString("source_url")), rs.getString("status"),
+                    rs.getString("publication_status"), rs.getInt("current_revision_number"),
+                    rs.getString("canonical_fingerprint"), rs.getString("revision_status"),
                 ) to rs.getTimestamp("checked_at").toInstant()
             },
         ).singleOrNull() ?: return MeetingOverviewDto("NO_MEETING", null, null, ProgressDto(0, 0, 0))
@@ -90,11 +107,22 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
         return jdbc.query(
             """
             SELECT ai.id, ai.sequence_number, ai.display_number, ai.category, ai.title, ai.substantive,
-                   ai.import_status, latest.status AS analysis_status
+                   ai.import_status, ai.source_state, ai.current_fingerprint,
+                   latest.status AS analysis_status, advice.actuality AS advice_actuality,
+                   revision.difference_types
             FROM agenda_item ai
             LEFT JOIN LATERAL (
                 SELECT status FROM analysis_run ar WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE' ORDER BY created_at DESC LIMIT 1
             ) latest ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT actuality FROM agenda_item_advice aia
+                JOIN analysis_run ar ON ar.id = aia.analysis_run_id
+                WHERE aia.agenda_item_id = ai.id AND ar.status = 'SUCCEEDED'
+                ORDER BY ar.created_at DESC, ar.id DESC LIMIT 1
+            ) advice ON TRUE
+            LEFT JOIN meeting m ON m.id = ai.meeting_id
+            LEFT JOIN meeting_revision mr ON mr.meeting_id = m.id AND mr.revision_number = m.current_revision_number
+            LEFT JOIN agenda_item_revision revision ON revision.meeting_revision_id = mr.id AND revision.source_id = ai.source_id
             WHERE ai.meeting_id = ? ORDER BY ai.sequence_number
             """.trimIndent(),
             { rs, _ -> summary(rs) },
@@ -105,12 +133,21 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
     fun item(itemId: UUID): AgendaItemDetailDto? {
         val row = jdbc.query(
             """
-            SELECT ai.*, latest.status AS analysis_status, advice.advice::text AS advice_json
+            SELECT ai.*, latest.status AS analysis_status, advice.advice::text AS advice_json,
+                   advice.actuality AS advice_actuality, revision.difference_types
             FROM agenda_item ai
             LEFT JOIN LATERAL (
                 SELECT id, status FROM analysis_run ar WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE' ORDER BY created_at DESC LIMIT 1
             ) latest ON TRUE
-            LEFT JOIN agenda_item_advice advice ON advice.analysis_run_id = latest.id
+            LEFT JOIN LATERAL (
+                SELECT aia.advice, aia.actuality FROM agenda_item_advice aia
+                JOIN analysis_run ar ON ar.id = aia.analysis_run_id
+                WHERE aia.agenda_item_id = ai.id AND ar.status = 'SUCCEEDED'
+                ORDER BY ar.created_at DESC, ar.id DESC LIMIT 1
+            ) advice ON TRUE
+            LEFT JOIN meeting m ON m.id = ai.meeting_id
+            LEFT JOIN meeting_revision mr ON mr.meeting_id = m.id AND mr.revision_number = m.current_revision_number
+            LEFT JOIN agenda_item_revision revision ON revision.meeting_revision_id = mr.id AND revision.source_id = ai.source_id
             WHERE ai.id = ?
             """.trimIndent(),
             { rs, _ ->
@@ -120,6 +157,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                     treatmentProposal = rs.getString("treatment_proposal"),
                     sourceUrl = URI(rs.getString("source_url")),
                     advice = rs.getString("advice_json")?.let(mapper::readTree),
+                    adviceActuality = rs.getString("advice_actuality"),
                     sources = sources(itemId),
                 )
             },
@@ -152,7 +190,8 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
         LEFT JOIN LATERAL (
             SELECT status FROM analysis_run ar WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE' ORDER BY created_at DESC LIMIT 1
         ) latest ON TRUE
-        WHERE ai.meeting_id = ? AND ai.substantive AND ai.category IN ('A', 'B', 'C')
+        WHERE ai.meeting_id = ? AND ai.source_state = 'CURRENT'
+          AND ai.substantive AND ai.category IN ('A', 'B', 'C')
         """.trimIndent(),
         { rs, _ -> ProgressDto(rs.getInt("total"), rs.getInt("complete"), rs.getInt("failed")) },
         meetingId,
@@ -160,8 +199,11 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
 
     private fun sources(itemId: UUID): List<SourceLinkDto> = jdbc.query(
         """
-        SELECT DISTINCT name, source_url, extraction_status FROM source_document
-        WHERE agenda_item_id = ? ORDER BY name
+        SELECT name, source_url, extraction_status FROM (
+            SELECT DISTINCT ON (source_id) source_id, name, source_url, extraction_status, created_at
+            FROM source_document WHERE agenda_item_id = ?
+            ORDER BY source_id, created_at DESC
+        ) latest ORDER BY name
         """.trimIndent(),
         { rs, _ -> SourceLinkDto(rs.getString("name"), URI(rs.getString("source_url")), rs.getString("extraction_status")) },
         itemId,
@@ -182,5 +224,9 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
         substantive = rs.getBoolean("substantive"),
         importStatus = rs.getString("import_status"),
         analysisStatus = rs.getString("analysis_status"),
+        sourceState = rs.getString("source_state"),
+        currentFingerprint = rs.getString("current_fingerprint"),
+        adviceActuality = rs.getString("advice_actuality"),
+        changeTypes = (rs.getArray("difference_types")?.array as? Array<*>)?.map(Any?::toString) ?: emptyList(),
     )
 }

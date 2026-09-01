@@ -37,6 +37,21 @@ class AuthenticatorTest {
         }
     }
 
+    @Test
+    fun `acceptance bypass has one fixed identity and needs no token`() {
+        val authenticator = Authenticator(AuthConfig("", "acceptance", "acceptance-bypass")) { error("not called") }
+        assertEquals(AuthConfig.ACCEPTANCE_EMAIL, authenticator.authenticate(null).email)
+        assertEquals(AuthConfig.ACCEPTANCE_EMAIL, authenticator.authenticate("Bearer ignored").email)
+    }
+
+    @Test
+    fun `acceptance bypass cannot start outside acceptance and non-local Google fails without config`() {
+        assertFailsWith<IllegalStateException> { AuthConfig("client-id", "production", "acceptance-bypass") }
+        assertFailsWith<IllegalStateException> { AuthConfig("client-id", "unknown", "acceptance-bypass") }
+        assertFailsWith<IllegalStateException> { AuthConfig("", "production", "google") }
+        assertFailsWith<IllegalStateException> { AuthConfig("", "unknown", "google") }
+    }
+
     private fun assertStatus(status: HttpStatus, block: () -> Unit) {
         val failure = assertFailsWith<ResponseStatusException> { block() }
         assertEquals(status, failure.statusCode)

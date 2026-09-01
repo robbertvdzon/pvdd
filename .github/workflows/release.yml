@@ -100,6 +100,7 @@ jobs:
             GIT_REVISION=${{ needs.metadata.outputs.revision }}
             BUILD_TIME=${{ needs.metadata.outputs.build_time }}
             ENVIRONMENT=production
+            AUTH_MODE=google
             GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }}
           cache-from: type=gha,scope=pvdd-frontend
           cache-to: type=gha,mode=max,scope=pvdd-frontend
@@ -115,7 +116,8 @@ jobs:
             GIT_REVISION=${{ needs.metadata.outputs.revision }}
             BUILD_TIME=${{ needs.metadata.outputs.build_time }}
             ENVIRONMENT=acceptance
-            GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }}
+            AUTH_MODE=acceptance-bypass
+            GOOGLE_CLIENT_ID=
           cache-from: type=gha,scope=pvdd-frontend
           cache-to: type=gha,mode=max,scope=pvdd-frontend
 

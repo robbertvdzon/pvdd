@@ -6,11 +6,21 @@ git_revision="${PVDD_GIT_REVISION:-$(git rev-parse HEAD 2>/dev/null || printf '0
 build_time="${PVDD_BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 runtime_environment="${PVDD_ENVIRONMENT:-local}"
 google_client_id="${PVDD_GOOGLE_CLIENT_ID:-}"
+auth_mode="${PVDD_AUTH_MODE:-google}"
 
 [[ "$application_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Ongeldige applicatieversie.' >&2; exit 1; }
 [[ "$git_revision" =~ ^[0-9a-f]{40}$ ]] || { echo 'Ongeldige Git-revisie.' >&2; exit 1; }
 [[ "$build_time" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || { echo 'Ongeldige UTC-buildtijd.' >&2; exit 1; }
 [[ "$runtime_environment" =~ ^(local|acceptance|production)$ ]] || { echo 'Ongeldige omgeving.' >&2; exit 1; }
+[[ "$auth_mode" =~ ^(google|acceptance-bypass)$ ]] || { echo 'Ongeldige authenticatiemodus.' >&2; exit 1; }
+if [[ "$auth_mode" == acceptance-bypass && "$runtime_environment" != acceptance ]]; then
+  echo 'Acceptance-bypass is alleen toegestaan in acceptance.' >&2
+  exit 1
+fi
+if [[ "$runtime_environment" == production && "$auth_mode" != google ]]; then
+  echo 'Production vereist Google-authenticatie.' >&2
+  exit 1
+fi
 
 rm -f build/web/main.*.js build/web/flutter_service_worker.js
 flutter build web --release --pwa-strategy=none --no-web-resources-cdn \
@@ -18,7 +28,12 @@ flutter build web --release --pwa-strategy=none --no-web-resources-cdn \
   --dart-define="GIT_REVISION=$git_revision" \
   --dart-define="BUILD_TIME=$build_time" \
   --dart-define="ENVIRONMENT=$runtime_environment" \
-  --dart-define="GOOGLE_CLIENT_ID=$google_client_id"
+  --dart-define="GOOGLE_CLIENT_ID=$google_client_id" \
+  --dart-define="AUTH_MODE=$auth_mode"
+
+if [[ "$auth_mode" == acceptance-bypass ]]; then
+  perl -0pi -e 's#<head>#<head>\n  <meta name="robots" content="noindex, nofollow">#' build/web/index.html
+fi
 
 rm -f build/web/flutter_service_worker.js
 bundle_hash="$(shasum -a 256 build/web/main.dart.js | awk '{print substr($1, 1, 16)}')"

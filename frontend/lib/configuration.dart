@@ -4,6 +4,12 @@ class AppConfiguration {
     defaultValue: 'local',
   );
   static const googleClientId = String.fromEnvironment('GOOGLE_CLIENT_ID');
+  static const authMode = String.fromEnvironment(
+    'AUTH_MODE',
+    defaultValue: 'google',
+  );
+  static bool get acceptanceBypass =>
+      environment == 'acceptance' && authMode == 'acceptance-bypass';
   static const applicationVersion = String.fromEnvironment(
     'APP_VERSION',
     defaultValue: '0.1.0',
