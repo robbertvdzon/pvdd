@@ -4,6 +4,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.time.Clock
 import nl.vdzon.pvdd.documents.DocumentDownloadProperties
+import nl.vdzon.pvdd.documents.DocumentDownloadException
 import nl.vdzon.pvdd.documents.DocumentDownloader
 import nl.vdzon.pvdd.documents.DocumentExtractor
 import nl.vdzon.pvdd.documents.DocumentReference
@@ -52,22 +53,32 @@ class LiveSourceSpikeTest {
         val budget = DownloadBudget(documentProperties)
         val documents = agenda.items.filter { it.substantive }.flatMap { item ->
             item.documents.map { document ->
-                val downloaded = downloader.download(
-                    DocumentReference(document.sourceId, document.name, document.sourceUrl),
-                    budget,
-                )
-                val extracted = extractor.extract(downloaded, java.util.UUID.randomUUID(), Clock.systemUTC().instant())
-                mapOf(
-                    "agendaItemSourceId" to item.sourceId,
-                    "sourceId" to document.sourceId,
-                    "name" to document.name,
-                    "declaredMimeType" to downloaded.declaredMimeType,
-                    "detectedMimeType" to extracted.detectedMimeType,
-                    "sizeBytes" to downloaded.bytes.size,
-                    "extractionStatus" to extracted.extractionStatus.name,
-                    "sections" to extracted.sections.size,
-                    "characters" to extracted.sections.sumOf { it.text.length },
-                )
+                try {
+                    val downloaded = downloader.download(
+                        DocumentReference(document.sourceId, document.name, document.sourceUrl),
+                        budget,
+                    )
+                    val extracted = extractor.extract(downloaded, java.util.UUID.randomUUID(), Clock.systemUTC().instant())
+                    mapOf(
+                        "agendaItemSourceId" to item.sourceId,
+                        "sourceId" to document.sourceId,
+                        "name" to document.name,
+                        "declaredMimeType" to downloaded.declaredMimeType,
+                        "detectedMimeType" to extracted.detectedMimeType,
+                        "sizeBytes" to downloaded.bytes.size,
+                        "extractionStatus" to extracted.extractionStatus.name,
+                        "sections" to extracted.sections.size,
+                        "characters" to extracted.sections.sumOf { it.text.length },
+                    )
+                } catch (failure: DocumentDownloadException) {
+                    mapOf(
+                        "agendaItemSourceId" to item.sourceId,
+                        "sourceId" to document.sourceId,
+                        "name" to document.name,
+                        "extractionStatus" to "DOWNLOAD_FAILED",
+                        "errorCode" to failure.code.name,
+                    )
+                }
             }
         }
         val report = linkedMapOf<String, Any>(

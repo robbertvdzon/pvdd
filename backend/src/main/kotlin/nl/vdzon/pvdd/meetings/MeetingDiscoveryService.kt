@@ -13,6 +13,7 @@ import nl.vdzon.pvdd.source.MeetingSourceGateway
 import nl.vdzon.pvdd.source.MeetingSourceProperties
 import nl.vdzon.pvdd.source.SourceTransportCode
 import nl.vdzon.pvdd.source.SourceTransportException
+import org.slf4j.LoggerFactory
 import org.jsoup.Jsoup
 import org.springframework.stereotype.Service
 
@@ -53,7 +54,20 @@ class MeetingDiscoveryService(
         if (!enrichReports) return agenda
         val enrichedItems = agenda.items.map { item ->
             if (item.category == AgendaCategory.C && item.substantive && item.documents.isEmpty() && item.sourceUrl.fragment == null) {
-                parser.parseReportItem(source.fetch(item.sourceUrl).body, item.sourceUrl, item.sequence, item.parentSourceId ?: item.sourceId)
+                try {
+                    parser.parseReportItem(
+                        source.fetch(item.sourceUrl).body,
+                        item.sourceUrl,
+                        item.sequence,
+                        item.parentSourceId ?: item.sourceId,
+                    )
+                } catch (failure: SourceTransportException) {
+                    log.warn("Report enrichment for {} failed with {}", item.sourceId, failure.code)
+                    item
+                } catch (failure: AgendaParseException) {
+                    log.warn("Report enrichment for {} failed with {}", item.sourceId, failure.code)
+                    item
+                }
             } else {
                 item
             }
@@ -100,6 +114,7 @@ class MeetingDiscoveryService(
         private val DATE_FORMAT = DateTimeFormatter.ofPattern("EEEE d MMMM uuuu", DUTCH)
         private val DATE_PATTERN = Regex("(?:maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag) \\d{1,2} [a-z]+ \\d{4}")
         private val WHITESPACE = Regex("\\s+")
+        private val log = LoggerFactory.getLogger(MeetingDiscoveryService::class.java)
     }
 }
 

@@ -177,8 +177,11 @@ Werk:
 3. Markeer de vergadering en ieder previewitem ondubbelzinnig als voorlopig en mogelijk onvolledig.
 4. Start direct documentdownload, tekstextractie en AI-analyse voor ieder zichtbaar inhoudelijk
    previewitem; markeer het advies als voorlopig.
-5. Controleer de bron de volgende ochtend en via **Nu controleren** opnieuw.
-6. Koppel previewitems bij publicatie op stabiele bron-ID aan de definitieve agenda; behandel
+5. Laat een tijdelijk onbereikbare detailpagina of bijlage de overige voorlopige stukken niet
+   blokkeren; verwerk beschikbare inhoud en probeer het ontbrekende deel bij de volgende controle
+   opnieuw.
+6. Controleer de bron de volgende ochtend en via **Nu controleren** opnieuw.
+7. Koppel previewitems bij publicatie op stabiele bron-ID aan de definitieve agenda; behandel
    verdwenen previewitems als ingetrokken zonder ze historisch te wissen en analyseer de nieuwe
    publicatieversie opnieuw.
 

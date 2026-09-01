@@ -9,6 +9,7 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.interceptor.TransactionAspectSupport
+import org.slf4j.LoggerFactory
 
 enum class MeetingCheckStatus {
     NO_FUTURE_MEETING,
@@ -111,7 +112,8 @@ class MeetingCheckWorkflow(
                     importAgenda(meetingId, agenda, baseline)
                 }
             }
-        } catch (_: Exception) {
+        } catch (failure: Exception) {
+            log.warn("Meeting import failed with {}", safeCode(failure), failure)
             meetingId?.let { meetings.markFailed(it, "IMPORT_FAILED") }
             if (meetingId != null) markTransactionForRollback()
             MeetingCheckResult(MeetingCheckStatus.FAILED, errorCode = "IMPORT_FAILED")
@@ -184,7 +186,7 @@ class MeetingCheckWorkflow(
         if (agenda.agendaDocuments.isNotEmpty()) currentSourceIds += "${agenda.sourceId}:meeting-documents"
         meetings.markMissingItemsWithdrawn(meetingId, currentSourceIds)
 
-        return if (fullyRead) {
+        return if (fullyRead || publicationStatus == PublicationStatus.PREVIEW) {
             val comparison = comparator.compare(agenda, publicationStatus, revisionItems, baseline)
             val stored = revisions.record(
                 meetingId,
@@ -281,6 +283,9 @@ class MeetingCheckWorkflow(
     companion object {
         const val WORKFLOW_LOCK = "meeting-check"
         private val ANALYSIS_CATEGORIES = setOf(AgendaCategory.A, AgendaCategory.B, AgendaCategory.C)
+        private val log = LoggerFactory.getLogger(MeetingCheckWorkflow::class.java)
+
+        private fun safeCode(failure: Exception): String = failure::class.simpleName ?: "UNKNOWN"
     }
 
     private object TransientRevisionStore : SourceRevisionStore {

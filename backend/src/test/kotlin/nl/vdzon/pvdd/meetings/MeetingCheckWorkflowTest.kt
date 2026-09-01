@@ -135,6 +135,22 @@ class MeetingCheckWorkflowTest {
     }
 
     @Test
+    fun `preview analysis proceeds with available content when a document is temporarily unavailable`() {
+        val discovered = DiscoveredMeeting("meeting-future", now.plusSeconds(3600), meetingUrl)
+        val agenda = AgendaParser().parse(resource("agenda-full.html"), meetingUrl).copy(published = false)
+        val fixture = fixture(
+            discovery = StubDiscovery(DiscoveryOutcome.AgendaUnpublished(discovered), agenda),
+            documentsFullyRead = false,
+        )
+
+        val result = fixture.workflow.check()
+
+        assertEquals(MeetingCheckStatus.IMPORTED, result.status)
+        assertEquals(1, fixture.events.size)
+        assertTrue(fixture.documents.calls > 0)
+    }
+
+    @Test
     fun `published source change creates a new revision and starts reanalysis`() {
         val parsed = AgendaParser().parse(resource("agenda-full.html"), meetingUrl)
         val discovery = StubDiscovery(
@@ -174,9 +190,10 @@ class MeetingCheckWorkflowTest {
         discovery: StubDiscovery,
         lastSuccessful: String? = null,
         lockAvailable: Boolean = true,
+        documentsFullyRead: Boolean = true,
     ): WorkflowFixture {
         val store = StubStore(lastSuccessful)
-        val documents = CountingDocuments()
+        val documents = CountingDocuments(documentsFullyRead)
         val events = mutableListOf<MeetingImportedEvent>()
         val revisions = InMemoryRevisionStore()
         val workflow = MeetingCheckWorkflow(
@@ -239,11 +256,11 @@ class MeetingCheckWorkflowTest {
         override fun markPartial(meetingId: UUID, errorCode: String) = Unit
     }
 
-    private class CountingDocuments : DocumentIngestor {
+    private class CountingDocuments(private val fullyRead: Boolean) : DocumentIngestor {
         var calls = 0
         override fun ingest(agendaItemId: UUID, references: List<DocumentReference>): DocumentIngestionSummary {
             calls++
-            return DocumentIngestionSummary(emptyList(), true)
+            return DocumentIngestionSummary(emptyList(), fullyRead)
         }
     }
 

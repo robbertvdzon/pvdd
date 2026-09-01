@@ -700,6 +700,9 @@ bronsnapshot vast met publicatiestatus, canonieke fingerprint, controletijd en v
 - `PREVIEW`: de bron kondigt latere publicatie aan. Reeds zichtbare stukken, documenten en analyses
   worden direct verwerkt, maar blijven ondubbelzinnig voorlopig totdat een nieuwere bronversie is
   gecontroleerd.
+- Een tijdelijk onbereikbare detailpagina of bijlage blokkeert de overige previewstukken niet:
+  analyseer beschikbare inhoud en probeer het ontbrekende deel bij de volgende controle opnieuw.
+  Zodra dat beschikbaar komt, geldt het als nieuwe broninformatie en volgt heranalyse.
 - `CURRENT`: de volledig gepubliceerde, laatst succesvol vastgelegde bronversie.
 - `CHANGED`: een nieuwe canonieke bronversie verschilt inhoudelijk van `CURRENT`.
 - `REPROCESSING`: gewijzigde punten worden opnieuw verwerkt; de vorige succesvolle versie blijft

@@ -6,6 +6,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import nl.vdzon.pvdd.source.MeetingSourceGateway
 import nl.vdzon.pvdd.source.MeetingSourceProperties
 import nl.vdzon.pvdd.source.SourcePage
@@ -71,6 +72,22 @@ class MeetingDiscoveryServiceTest {
         val agenda = service.fetchAgenda(baseUrl.resolve("/Agenda/Index/meeting-future"))
         val nature = agenda.items.single { it.sourceId == "report-nature" }
         assertEquals("doc-nature", nature.documents.single().sourceId)
+    }
+
+    @Test
+    fun `keeps visible preview item when report enrichment times out`() {
+        val service = service { uri ->
+            if (uri.path.endsWith("report-nature") || uri.path.endsWith("report-air")) {
+                throw SourceTransportException(SourceTransportCode.READ_TIMEOUT)
+            }
+            SourcePage(uri, 200, "text/html", fixture("agenda-full.html"))
+        }
+
+        val agenda = service.fetchAgenda(baseUrl.resolve("/Agenda/Index/meeting-future"))
+        val previewItems = agenda.items.filter { it.substantive && it.category == AgendaCategory.C }
+
+        assertTrue(previewItems.isNotEmpty())
+        assertTrue(previewItems.all { it.documents.isEmpty() })
     }
 
     private fun service(fetch: (URI) -> SourcePage) = MeetingDiscoveryService(

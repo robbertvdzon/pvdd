@@ -48,7 +48,7 @@ class HttpDashboardGateway implements DashboardGateway {
                 'web-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}',
           ),
         )
-        .timeout(const Duration(seconds: 30));
+        .timeout(const Duration(seconds: 90));
     if (response.statusCode != 200 && response.statusCode != 409) {
       throw const DashboardUnavailable();
     }
