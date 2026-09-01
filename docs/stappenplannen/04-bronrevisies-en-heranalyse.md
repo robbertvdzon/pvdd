@@ -1,6 +1,6 @@
 # Stappenplan 4 — bronrevisies en gerichte heranalyse
 
-Status: in uitvoering na F11 en F12; de echte F13-inhoudsproef volgt na publicatie
+Status: **BRONACTUALITEIT GEREED**; de echte F13-inhoudsproef volgt na publicatie
 
 Bron: [microservice-specificatie](../microservice-specificatie.md)
 
@@ -278,26 +278,26 @@ Acceptatie:
 
 Alle onderstaande controles zijn verplicht:
 
-- [ ] Een expliciete toekomstige publicatiemelding wint van reeds zichtbare C-items.
-- [ ] Voorlopige C-items zijn herkenbaar zichtbaar en starten geen document- of AI-verwerking.
-- [ ] Publicatie met hetzelfde vergadering-ID wordt gedetecteerd en volledig verwerkt.
-- [ ] Alleen gelijk vergadering-ID plus gelijke canonieke fingerprint betekent ongewijzigd.
-- [ ] Toevoegen, intrekken, verplaatsen en categoriewijziging worden correct herkend.
-- [ ] Toegevoegde, verwijderde en op dezelfde URL vervangen documenten worden correct herkend.
-- [ ] Niet-inhoudelijke HTML-wijzigingen veroorzaken geen AI-job.
-- [ ] Alleen gewijzigde of nieuwe punten worden opnieuw geanalyseerd.
-- [ ] Ongewijzigde adviezen blijven behouden.
-- [ ] Een verouderd advies wordt nooit ongemarkeerd als actueel getoond.
-- [ ] Een ouder Runtime-resultaat kan een nieuwere revisie niet overschrijven.
-- [ ] Revisies en eerdere adviezen blijven auditbaar bewaard.
-- [ ] Geplande en handmatige controle delen dezelfde veilige orkestratie.
-- [ ] Bronfouten en herstarts beschadigen de laatst succesvolle snapshot niet.
-- [ ] De volledige acceptatieketen is groen met gemockte bron en AI.
-- [ ] Acceptance is in een schone browser zonder account of token direct bruikbaar.
-- [ ] Acceptance toont permanent dat gegevens gemockt zijn en authenticatie uitstaat.
-- [ ] De authbypass kan in production en onbekende omgevingen niet worden geactiveerd.
-- [ ] Acceptance bevat geen Google-configuratie, productiebrondata, echte AI of productietokens.
-- [ ] De productie-uitrol draait de bewezen SHA en Argo CD is gezond.
+- [x] Een expliciete toekomstige publicatiemelding wint van reeds zichtbare C-items.
+- [x] Voorlopige C-items zijn herkenbaar zichtbaar en starten geen document- of AI-verwerking.
+- [x] Publicatie met hetzelfde vergadering-ID wordt gedetecteerd en volledig verwerkt.
+- [x] Alleen gelijk vergadering-ID plus gelijke canonieke fingerprint betekent ongewijzigd.
+- [x] Toevoegen, intrekken, verplaatsen en categoriewijziging worden correct herkend.
+- [x] Toegevoegde, verwijderde en op dezelfde URL vervangen documenten worden correct herkend.
+- [x] Niet-inhoudelijke HTML-wijzigingen veroorzaken geen AI-job.
+- [x] Alleen gewijzigde of nieuwe punten worden opnieuw geanalyseerd.
+- [x] Ongewijzigde adviezen blijven behouden.
+- [x] Een verouderd advies wordt nooit ongemarkeerd als actueel getoond.
+- [x] Een ouder Runtime-resultaat kan een nieuwere revisie niet overschrijven.
+- [x] Revisies en eerdere adviezen blijven auditbaar bewaard.
+- [x] Geplande en handmatige controle delen dezelfde veilige orkestratie.
+- [x] Bronfouten en herstarts beschadigen de laatst succesvolle snapshot niet.
+- [x] De volledige acceptatieketen is groen met gemockte bron en AI.
+- [x] Acceptance is in een schone browser zonder account of token direct bruikbaar.
+- [x] Acceptance toont permanent dat gegevens gemockt zijn en authenticatie uitstaat.
+- [x] De authbypass kan in production en onbekende omgevingen niet worden geactiveerd.
+- [x] Acceptance bevat geen Google-configuratie, productiebrondata, echte AI of productietokens.
+- [x] De productie-uitrol draait de bewezen SHA en Argo CD is gezond.
 
 Poortbesluit:
 
