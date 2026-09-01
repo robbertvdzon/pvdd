@@ -8,19 +8,19 @@ resources:
 - route.yaml
 - sealed-secret.yaml
 patches:
-- target:
-    kind: SealedSecret
-    name: pvdd-secrets
-  patch: |-
+- patch: |-
     - op: remove
       path: /spec/encryptedData/PVDD_GOOGLE_CLIENT_ID
+  target:
+    kind: SealedSecret
+    name: pvdd-secrets
 images:
-- digest: sha256:88f57bb722001b1b6199a569e90f8e81afa879a8942950600c1cf2f532ce67e2
+- digest: sha256:a9939efe914a581431936f76e245b8bef7d54c742a48167df17ec129eaebee8b
   name: ghcr.io/robbertvdzon/pvdd-backend
   newName: ghcr.io/robbertvdzon/pvdd-backend
-- digest: sha256:ded3c234263b6a655ea3bb346eceece61753b6756555be591112306a43cd39bc
+- digest: sha256:b653719fafcac5d5f0894f93b25a1fb3faff580cd5f856cf0300649e629be8d0
   name: ghcr.io/robbertvdzon/pvdd-frontend
   newName: ghcr.io/robbertvdzon/pvdd-frontend
-- digest: sha256:a80f897b69849aa813e88b2d694640bd43abc90e9b82d4f6fe01bdff7527deed
+- digest: sha256:d7d668022f991d7eda8f61a68fa4ceec09077766958091138889676f689c467e
   name: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
   newName: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
