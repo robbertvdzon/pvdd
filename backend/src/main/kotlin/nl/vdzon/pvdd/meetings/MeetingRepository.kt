@@ -196,6 +196,17 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
             """.trimIndent(),
             sourceId,
         )
+        jdbc.update(
+            """
+            UPDATE meeting_revision SET revision_status = CASE
+                WHEN revision_number = (SELECT current_revision_number FROM meeting WHERE id = ?) THEN 'CURRENT'
+                ELSE 'SUPERSEDED'
+            END
+            WHERE meeting_id = ? AND revision_status <> 'FAILED'
+            """.trimIndent(),
+            meetingId,
+            meetingId,
+        )
     }
 
     override fun markFailed(meetingId: UUID, errorCode: String) {

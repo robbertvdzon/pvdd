@@ -30,8 +30,7 @@ CREATE TABLE meeting_revision (
     CONSTRAINT meeting_revision_status_check CHECK (
         revision_status IN ('PREVIEW', 'CURRENT', 'CHANGED', 'REPROCESSING', 'SUPERSEDED', 'FAILED')
     ),
-    CONSTRAINT meeting_revision_number_unique UNIQUE (meeting_id, revision_number),
-    CONSTRAINT meeting_revision_fingerprint_unique UNIQUE (meeting_id, publication_status, canonical_fingerprint)
+    CONSTRAINT meeting_revision_number_unique UNIQUE (meeting_id, revision_number)
 );
 CREATE INDEX meeting_revision_meeting_idx ON meeting_revision(meeting_id, revision_number DESC);
 

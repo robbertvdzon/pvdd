@@ -143,7 +143,21 @@ class SourceRevisionRepository(private val jdbc: JdbcTemplate) : SourceRevisionS
                     "UPDATE agenda_item_advice SET actuality = 'STALE' WHERE agenda_item_id = ? AND actuality = 'CURRENT'",
                     source.agendaItemId,
                 )
-                else -> jdbc.update("UPDATE agenda_item_advice SET actuality = 'CURRENT' WHERE agenda_item_id = ?", source.agendaItemId)
+                else -> jdbc.update(
+                    """
+                    UPDATE agenda_item_advice advice SET actuality = CASE
+                        WHEN advice.analysis_run_id = (
+                            SELECT id FROM analysis_run
+                            WHERE agenda_item_id = ? AND run_type = 'FINAL_ADVICE' AND status = 'SUCCEEDED'
+                            ORDER BY created_at DESC, id DESC LIMIT 1
+                        ) THEN 'CURRENT'
+                        ELSE 'STALE'
+                    END
+                    WHERE advice.agenda_item_id = ?
+                    """.trimIndent(),
+                    source.agendaItemId,
+                    source.agendaItemId,
+                )
             }
         }
         jdbc.update(
