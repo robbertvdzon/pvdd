@@ -43,6 +43,18 @@ def agenda_for(active: str) -> bytes:
     html = fixture("agenda.html").decode("utf-8")
     housing = re.search(r'<li><div class="agenda-item" id="item-a-housing">.*?</div></li>', html, re.S)
     mobility = re.search(r'<li><div class="agenda-item" id="item-b-mobility">.*?</div></li>', html, re.S)
+    housing_section = re.search(
+        r'<li><div class="agenda-item" id="section-a">.*?</div></li>\s*'
+        r'<li><div class="agenda-item" id="item-a-housing">.*?</div></li>',
+        html,
+        re.S,
+    )
+    mobility_section = re.search(
+        r'<li><div class="agenda-item" id="section-b">.*?</div></li>\s*'
+        r'<li><div class="agenda-item" id="item-b-mobility">.*?</div></li>',
+        html,
+        re.S,
+    )
     if active == "item-added":
         addition = """<li><div class="agenda-item" id="item-b-green">
           <div class="panel-heading"><span class="panel-id">2.b</span><span class="panel-title-label">Groene provinciale verbinding</span></div>
@@ -51,8 +63,14 @@ def agenda_for(active: str) -> bytes:
         html = html.replace('<li><div class="agenda-item" id="section-c">', addition + '<li><div class="agenda-item" id="section-c">')
     elif active == "item-withdrawn" and mobility:
         html = html.replace(mobility.group(0), "")
-    elif active == "item-moved" and housing and mobility:
-        html = html.replace(housing.group(0), "__HOUSING__").replace(mobility.group(0), housing.group(0)).replace("__HOUSING__", mobility.group(0))
+    elif active == "item-moved" and housing_section and mobility_section:
+        # Verplaats de twee volledige categoriesecties. De inhoudelijke punten
+        # krijgen zo een andere volgorde, terwijl hun A/B-categorie gelijk blijft.
+        html = (
+            html.replace(housing_section.group(0), "__HOUSING_SECTION__")
+            .replace(mobility_section.group(0), housing_section.group(0))
+            .replace("__HOUSING_SECTION__", mobility_section.group(0))
+        )
     elif active == "category-changed":
         html = html.replace("B-agenda Mobiliteit", "C-agenda Mobiliteit")
     elif active == "metadata-changed":

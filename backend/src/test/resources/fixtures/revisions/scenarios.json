@@ -4,7 +4,7 @@
     {"name":"preview-to-published","changes":["PUBLICATION_STATUS","ITEM_ADDED"],"reanalyze":["item-a","item-b","item-c"],"previewAiJobs":0},
     {"name":"item-added","changes":["ITEM_ADDED"],"reanalyze":["item-new"]},
     {"name":"item-withdrawn","changes":["ITEM_WITHDRAWN"],"reanalyze":[]},
-    {"name":"item-moved","changes":["ITEM_MOVED"],"reanalyze":["item-a"]},
+    {"name":"item-moved","changes":["ITEM_MOVED"],"reanalyze":[]},
     {"name":"category-changed","changes":["CATEGORY_CHANGED"],"reanalyze":["item-a"]},
     {"name":"metadata-changed","changes":["METADATA_CHANGED"],"reanalyze":["item-a"]},
     {"name":"document-added","changes":["DOCUMENT_ADDED"],"reanalyze":["item-a"]},
