@@ -66,6 +66,23 @@ class PromptBuilder(private val mapper: ObjectMapper) {
         return requireNotNull(javaClass.getResourceAsStream(resource)).use(mapper::readTree)
     }
 
+    fun sourceNotesSchema(): JsonNode = requireNotNull(javaClass.getResourceAsStream("/schemas/source-notes-v1.json"))
+        .use(mapper::readTree)
+
+    fun synthesisPrompt(
+        agendaItemSourceId: String,
+        category: String,
+        sourceNotes: List<JsonNode>,
+    ): String = buildString {
+        require(sourceNotes.isNotEmpty()) { "Synthesis requires validated source notes." }
+        append(SYSTEM_PROMPT)
+        append("\n\nMaak het definitieve advies voor agendapunt $agendaItemSourceId in categorie $category.")
+        append(" Gebruik uitsluitend de gevalideerde bronnotities en de daarin aanwezige citaties.")
+        append("\nBEGIN_UNTRUSTED_SOURCE_NOTES\n")
+        append(mapper.writeValueAsString(sourceNotes))
+        append("\nEND_UNTRUSTED_SOURCE_NOTES")
+    }
+
     private fun prompt(item: AnalysisAgendaItem, sources: List<AnalysisSource>): String = buildString {
         append(SYSTEM_PROMPT)
         append("\n\nAnalyseer agendapunt ${item.sourceId} in categorie ${item.category}.\n")

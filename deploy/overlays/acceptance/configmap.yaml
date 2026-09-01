@@ -9,3 +9,4 @@ data:
   PVDD_AGENT_RUNTIME_PROVIDER: MOCKED
   PVDD_AGENT_RUNTIME_MODEL: mock-model
   PVDD_MEETING_SOURCE_BASE_URL: http://pvdd-meeting-source-mock:8080
+  PVDD_POLICY_SOURCE_URL: http://pvdd-meeting-source-mock:8080/fixtures/policy.pdf

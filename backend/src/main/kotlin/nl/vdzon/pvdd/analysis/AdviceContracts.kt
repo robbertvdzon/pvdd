@@ -14,6 +14,8 @@ enum class AnalysisStatus {
     CANCELLED,
 }
 
+enum class AnalysisRunType { FINAL_ADVICE, SOURCE_NOTES }
+
 enum class Urgency { LOW, MEDIUM, HIGH }
 
 data class AnalysisRun(

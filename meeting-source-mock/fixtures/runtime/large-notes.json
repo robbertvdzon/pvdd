@@ -1,0 +1,7 @@
+{
+  "agendaItemSourceId": "item-large",
+  "notes": [{
+    "text": "De beleidsbron stelt de draagkracht van de planeet als grens.",
+    "citation": {"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"draagkracht van de planeet"}
+  }]
+}

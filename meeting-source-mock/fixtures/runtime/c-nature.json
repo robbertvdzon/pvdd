@@ -1,0 +1,17 @@
+{
+  "agendaItemSourceId": "report-nature",
+  "besprekenEnNaarB": true,
+  "motivering": {
+    "text": "Bespreking is nodig omdat verbonden leefgebieden een kernvoorwaarde zijn voor biodiversiteitsherstel.",
+    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"Biodiversiteit en leefgebieden worden verbonden"}]
+  },
+  "urgentie": "HOOG",
+  "commissieDoel": {
+    "text": "Verkrijg een concrete planning en bestuurlijke toezegging voor herstel van de natuurverbinding.",
+    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"Natuur en dieren hebben bescherming nodig"}]
+  },
+  "kernvraag": {
+    "text": "Wanneer is de natuurverbinding aantoonbaar hersteld en welke middelen zijn daarvoor gereserveerd?",
+    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"leefgebieden worden verbonden"}]
+  }
+}

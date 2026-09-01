@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pvdd.vdzonsoftware.nl/schemas/source-notes-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["agendaItemSourceId", "notes"],
+  "properties": {
+    "agendaItemSourceId": {"type": "string", "minLength": 1, "maxLength": 160},
+    "notes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "citation"],
+        "properties": {
+          "text": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "citation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sourceId", "sourceType", "quote"],
+            "properties": {
+              "sourceId": {"type": "string", "minLength": 1, "maxLength": 160},
+              "sourceType": {"enum": ["MEETING_DOCUMENT", "POLICY_PROGRAMME"]},
+              "pageNumber": {"type": ["integer", "null"], "minimum": 1},
+              "section": {"type": ["string", "null"], "maxLength": 200},
+              "quote": {"type": "string", "minLength": 1, "maxLength": 500}
+            }
+          }
+        }
+      }
+    }
+  }
+}

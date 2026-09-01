@@ -8,6 +8,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import nl.vdzon.pvdd.analysis.AnalysisRepository
 import nl.vdzon.pvdd.analysis.AnalysisRun
+import nl.vdzon.pvdd.analysis.AnalysisRunType
 import nl.vdzon.pvdd.analysis.AnalysisStatus
 import nl.vdzon.pvdd.analysis.AnalysisSource
 import nl.vdzon.pvdd.analysis.CitationSourceType
@@ -180,6 +181,33 @@ class DatabaseIntegrationTest(
             now.plusSeconds(2),
         )
         assertTrue(analysisRepository.allRequiredRunsSucceeded(meetingId))
+
+        val phasedFinal = prepared.copy(
+            run = prepared.run.copy(id = UUID.randomUUID(), idempotencyKey = "pvdd-${"7".repeat(64)}"),
+            prompt = null,
+        )
+        val noteRun = prepared.copy(
+            run = prepared.run.copy(id = UUID.randomUUID(), idempotencyKey = "pvdd-${"8".repeat(64)}-notes-1"),
+            prompt = "durable source notes prompt",
+            runType = AnalysisRunType.SOURCE_NOTES,
+            phaseIndex = 1,
+            parentRunId = phasedFinal.run.id,
+        )
+        analysisRepository.createPhasedRuns(phasedFinal, listOf(noteRun))
+        val claimedNote = requireNotNull(analysisRepository.claimPendingRun())
+        assertEquals(AnalysisRunType.SOURCE_NOTES, claimedNote.runType)
+        analysisRepository.markSubmitted(claimedNote.run.id, "runtime-notes-1", AnalysisStatus.RUNNING)
+        analysisRepository.completeSourceNotes(
+            claimedNote.run.id,
+            mapper.readTree("""{"agendaItemSourceId":"item-a","notes":[{"text":"feit","citation":{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Natuur","quote":"Synthetische beleidstekst"}}]}"""),
+            now.plusSeconds(3),
+        )
+        val readyFinal = analysisRepository.readySynthesisRuns().single { it.run.id == phasedFinal.run.id }
+        assertEquals(1, analysisRepository.sourceNoteResults(readyFinal.run.id).size)
+        analysisRepository.activateSynthesis(readyFinal.run.id, "restart-safe synthesis prompt")
+        val claimedFinal = requireNotNull(analysisRepository.claimPendingRun())
+        assertEquals(phasedFinal.run.id, claimedFinal.run.id)
+        assertEquals(AnalysisRunType.FINAL_ADVICE, claimedFinal.runType)
 
         val policy = PolicyChunk(
             id = UUID.randomUUID(),

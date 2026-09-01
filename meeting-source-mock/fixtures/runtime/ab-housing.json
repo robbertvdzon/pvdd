@@ -1,0 +1,23 @@
+{
+  "agendaItemSourceId": "item-a-housing",
+  "waarGaatHetOver": {
+    "text": "Het voorstel gaat over betaalbare, natuurinclusieve woningen binnen bestaand stedelijk gebied.",
+    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"Betaalbare woningen komen eerst in bestaande bebouwing"}]
+  },
+  "watVindenWeErvan": {
+    "text": "Dit past bij zorgvuldig ruimtegebruik, mits natuur en betaalbaarheid aantoonbaar worden geborgd.",
+    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"draagkracht van de planeet"}]
+  },
+  "commissieInzet": {
+    "text": "Vraag om meetbare randvoorwaarden voor betaalbaarheid, circulariteit en natuurinclusief bouwen.",
+    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"natuurinclusief en circulair gebouwd"}]
+  },
+  "puntenVoorGedeputeerde": {
+    "text": "Laat zien hoe bestaande bebouwing eerst wordt benut en hoe groenverlies wordt voorkomen.",
+    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"bestaande bebouwing"}]
+  },
+  "technischeVragen": {
+    "text": "Welk aandeel blijft structureel betaalbaar en welke natuurinclusieve eisen zijn juridisch geborgd?",
+    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"Betaalbare woningen"}]
+  }
+}

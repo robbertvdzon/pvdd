@@ -110,11 +110,37 @@ class AdviceValidationTest {
     @Test
     fun `runtime schemas are closed and self contained`() {
         val builder = PromptBuilder(mapper)
-        listOf(builder.schema("A"), builder.schema("C")).forEach { schema ->
+        listOf(builder.schema("A"), builder.schema("C"), builder.sourceNotesSchema()).forEach { schema ->
             assertEquals(false, schema.path("additionalProperties").booleanValue())
             assertTrue(schema.toString().contains("\"required\""))
         }
         assertTrue(builder.schema("C").findValues("\$ref").all { it.stringValue().startsWith("#/") })
+    }
+
+    @Test
+    fun `source notes preserve only verifiable citations for later synthesis`() {
+        val notes = mapper.readTree(
+            """{
+              "agendaItemSourceId":"item-a",
+              "notes":[{
+                "text":"De draagkracht van de planeet is het toetsingskader.",
+                "citation":{"sourceId":"policy-p3-c1","sourceType":"POLICY_PROGRAMME","pageNumber":3,
+                  "section":"Inleiding","quote":"draagkracht van de planeet"}
+              }]
+            }""",
+        )
+        SourceNotesValidator().validate("item-a", notes, listOf(policy))
+        val synthesis = PromptBuilder(mapper).synthesisPrompt("item-a", "A", listOf(notes))
+        assertTrue(synthesis.contains("BEGIN_UNTRUSTED_SOURCE_NOTES"))
+        assertTrue(synthesis.contains("policy-p3-c1"))
+
+        val invented = notes.deepCopy() as tools.jackson.databind.node.ObjectNode
+        invented.path("notes").first().path("citation")
+            .let { it as tools.jackson.databind.node.ObjectNode }
+            .put("quote", "verzonnen citaat")
+        assertFailsWith<AdviceValidationException> {
+            SourceNotesValidator().validate("item-a", invented, listOf(policy))
+        }
     }
 
     private fun validAb() = """{

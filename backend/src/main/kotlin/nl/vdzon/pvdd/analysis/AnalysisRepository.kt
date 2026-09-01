@@ -14,9 +14,12 @@ data class PreparedAnalysisRun(
     val meetingId: UUID,
     val category: String,
     val agendaItemSourceId: String,
-    val prompt: String,
+    val prompt: String?,
     val responseSchema: JsonNode,
     val allowedSources: List<AnalysisSource>,
+    val runType: AnalysisRunType = AnalysisRunType.FINAL_ADVICE,
+    val phaseIndex: Int = 0,
+    val parentRunId: UUID? = null,
 )
 
 data class RunControl(val id: UUID, val meetingId: UUID, val runtimeJobId: String?, val status: AnalysisStatus)
@@ -103,7 +106,8 @@ class AnalysisRepository(
         jdbc.update(
             """
             UPDATE analysis_run SET category = ?, agenda_item_source_id = ?, prompt_text = ?,
-                response_schema = CAST(? AS jsonb), allowed_sources = CAST(? AS jsonb), updated_at = CURRENT_TIMESTAMP
+                response_schema = CAST(? AS jsonb), allowed_sources = CAST(? AS jsonb),
+                run_type = ?, phase_index = ?, parent_run_id = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND prompt_text IS NULL
             """.trimIndent(),
             prepared.category,
@@ -111,9 +115,20 @@ class AnalysisRepository(
             prepared.prompt,
             mapper.writeValueAsString(prepared.responseSchema),
             mapper.writeValueAsString(prepared.allowedSources),
+            prepared.runType.name,
+            prepared.phaseIndex,
+            prepared.parentRunId,
             runId,
         )
         return runId
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    fun createPhasedRuns(finalRun: PreparedAnalysisRun, noteRuns: List<PreparedAnalysisRun>) {
+        require(finalRun.runType == AnalysisRunType.FINAL_ADVICE && finalRun.prompt == null)
+        require(noteRuns.isNotEmpty() && noteRuns.all { it.runType == AnalysisRunType.SOURCE_NOTES && it.parentRunId == finalRun.run.id })
+        val persistedFinalId = createPreparedRun(finalRun)
+        noteRuns.forEach { createPreparedRun(it.copy(parentRunId = persistedFinalId)) }
     }
 
     fun claimPendingRun(): PreparedAnalysisRun? = jdbc.query(
@@ -170,6 +185,65 @@ class AnalysisRepository(
         limit,
     )
 
+    fun completeSourceNotes(runId: UUID, result: JsonNode, completedAt: Instant) {
+        jdbc.update(
+            """
+            UPDATE analysis_run SET status = 'SUCCEEDED', outbox_status = 'COMPLETE', phase_result = CAST(? AS jsonb),
+                error_code = NULL, completed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND run_type = 'SOURCE_NOTES'
+            """.trimIndent(),
+            mapper.writeValueAsString(result),
+            Timestamp.from(completedAt),
+            runId,
+        )
+    }
+
+    fun readySynthesisRuns(limit: Int = 10): List<PreparedAnalysisRun> = jdbc.query(
+        """
+        SELECT final.* FROM analysis_run final
+        WHERE final.run_type = 'FINAL_ADVICE' AND final.prompt_text IS NULL AND final.status = 'PENDING'
+          AND EXISTS (SELECT 1 FROM analysis_run note WHERE note.parent_run_id = final.id)
+          AND NOT EXISTS (
+              SELECT 1 FROM analysis_run note WHERE note.parent_run_id = final.id AND note.status <> 'SUCCEEDED'
+          )
+        ORDER BY final.created_at LIMIT ?
+        """.trimIndent(),
+        preparedRowMapper,
+        limit,
+    )
+
+    fun sourceNoteResults(parentRunId: UUID): List<JsonNode> = jdbc.query(
+        """
+        SELECT phase_result::text FROM analysis_run
+        WHERE parent_run_id = ? AND run_type = 'SOURCE_NOTES' AND status = 'SUCCEEDED'
+        ORDER BY phase_index
+        """.trimIndent(),
+        { rs, _ -> mapper.readTree(rs.getString(1)) },
+        parentRunId,
+    )
+
+    fun activateSynthesis(runId: UUID, prompt: String) {
+        jdbc.update(
+            """
+            UPDATE analysis_run SET prompt_text = ?, outbox_status = 'PENDING', updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND run_type = 'FINAL_ADVICE' AND prompt_text IS NULL AND status = 'PENDING'
+            """.trimIndent(),
+            prompt,
+            runId,
+        )
+    }
+
+    fun failParentFinal(parentRunId: UUID, errorCode: String) {
+        jdbc.update(
+            """
+            UPDATE analysis_run SET status = 'FAILED', outbox_status = 'FAILED', error_code = ?,
+                completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND run_type = 'FINAL_ADVICE' AND status = 'PENDING'
+            """.trimIndent(),
+            errorCode,
+            parentRunId,
+        )
+    }
+
     fun updateRuntimeStatus(runId: UUID, status: AnalysisStatus, errorCode: String? = null) {
         jdbc.update(
             """
@@ -217,7 +291,7 @@ class AnalysisRepository(
             WHERE ai.meeting_id = ? AND ai.substantive AND ai.category IN ('A', 'B', 'C')
               AND NOT EXISTS (
                   SELECT 1 FROM analysis_run ar
-                  WHERE ar.agenda_item_id = ai.id AND ar.status = 'SUCCEEDED'
+                  WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE' AND ar.status = 'SUCCEEDED'
               )
         )
         FROM analysis_run WHERE meeting_id = ?
@@ -298,6 +372,9 @@ class AnalysisRepository(
             prompt = rs.getString("prompt_text"),
             responseSchema = mapper.readTree(rs.getString("response_schema")),
             allowedSources = mapper.readValue(rs.getString("allowed_sources"), object : TypeReference<List<AnalysisSource>>() {}),
+            runType = AnalysisRunType.valueOf(rs.getString("run_type")),
+            phaseIndex = rs.getInt("phase_index"),
+            parentRunId = rs.getObject("parent_run_id", UUID::class.java),
         )
     }
 }

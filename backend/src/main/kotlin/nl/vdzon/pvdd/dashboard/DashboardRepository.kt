@@ -93,7 +93,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                    ai.import_status, latest.status AS analysis_status
             FROM agenda_item ai
             LEFT JOIN LATERAL (
-                SELECT status FROM analysis_run ar WHERE ar.agenda_item_id = ai.id ORDER BY created_at DESC LIMIT 1
+                SELECT status FROM analysis_run ar WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE' ORDER BY created_at DESC LIMIT 1
             ) latest ON TRUE
             WHERE ai.meeting_id = ? ORDER BY ai.sequence_number
             """.trimIndent(),
@@ -108,7 +108,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             SELECT ai.*, latest.status AS analysis_status, advice.advice::text AS advice_json
             FROM agenda_item ai
             LEFT JOIN LATERAL (
-                SELECT id, status FROM analysis_run ar WHERE ar.agenda_item_id = ai.id ORDER BY created_at DESC LIMIT 1
+                SELECT id, status FROM analysis_run ar WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE' ORDER BY created_at DESC LIMIT 1
             ) latest ON TRUE
             LEFT JOIN agenda_item_advice advice ON advice.analysis_run_id = latest.id
             WHERE ai.id = ?
@@ -150,7 +150,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                COUNT(*) FILTER (WHERE latest.status IN ('FAILED', 'CANCELLED')) AS failed
         FROM agenda_item ai
         LEFT JOIN LATERAL (
-            SELECT status FROM analysis_run ar WHERE ar.agenda_item_id = ai.id ORDER BY created_at DESC LIMIT 1
+            SELECT status FROM analysis_run ar WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE' ORDER BY created_at DESC LIMIT 1
         ) latest ON TRUE
         WHERE ai.meeting_id = ? AND ai.substantive AND ai.category IN ('A', 'B', 'C')
         """.trimIndent(),
