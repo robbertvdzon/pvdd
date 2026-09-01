@@ -54,7 +54,7 @@ class SourceNotesValidator {
         if (source.section != null && section != source.section) errors += "note_${index}_section_mismatch"
         val quote = citation.path("quote").takeIf { it.isString }?.stringValue()?.trim().orEmpty()
         if (quote.length !in 1..500 ||
-            !normalizeCitationText(source.text).contains(normalizeCitationText(quote))
+            !citationAppearsInSource(source.text, quote)
         ) {
             errors += "note_${index}_invalid_quote"
         }

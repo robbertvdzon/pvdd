@@ -153,7 +153,7 @@ class AdviceValidator {
         val section = sectionNode?.takeIf { it.isString }?.stringValue()
         if (sectionNode != null && !sectionNode.isNull && !sectionNode.isString) errors += "${path}_invalid_section"
         if (source.section != null && source.section != section) errors += "${path}_section_mismatch"
-        if (!normalizeCitationText(source.text).contains(normalizeCitationText(quote))) {
+        if (!citationAppearsInSource(source.text, quote)) {
             errors += "${path}_quote_not_in_source"
         }
         return Citation(sourceId, source.sourceType, source.sourceUrl, page, section, quote)
@@ -216,4 +216,35 @@ class AdviceValidator {
 internal fun normalizeCitationText(value: String): String =
     value.lowercase().replace(NON_ALPHANUMERIC, "")
 
+internal fun citationAppearsInSource(source: String, quote: String): Boolean {
+    if (normalizeCitationText(source).contains(normalizeCitationText(quote))) return true
+
+    val sourceTokens = citationTokens(source)
+    val quoteTokens = citationTokens(quote)
+    if (quoteTokens.size < MIN_FUZZY_QUOTE_TOKENS) return false
+
+    // PDFBox can interleave text from two printed columns. An LCS keeps the quoted word
+    // order strict while allowing unrelated column text between words and a few OCR errors.
+    val previous = IntArray(sourceTokens.size + 1)
+    quoteTokens.forEach { quoteToken ->
+        var diagonal = 0
+        sourceTokens.forEachIndexed { index, sourceToken ->
+            val old = previous[index + 1]
+            previous[index + 1] = if (quoteToken == sourceToken) {
+                diagonal + 1
+            } else {
+                maxOf(previous[index + 1], previous[index])
+            }
+            diagonal = old
+        }
+    }
+    val requiredMatches = maxOf(MIN_FUZZY_QUOTE_TOKENS, (quoteTokens.size * 4 + 4) / 5)
+    return previous.last() >= requiredMatches
+}
+
+private fun citationTokens(value: String): List<String> =
+    TOKEN.findAll(value.lowercase()).map(MatchResult::value).toList()
+
 private val NON_ALPHANUMERIC = Regex("[^\\p{L}\\p{N}]")
+private val TOKEN = Regex("[\\p{L}\\p{N}]+")
+private const val MIN_FUZZY_QUOTE_TOKENS = 5

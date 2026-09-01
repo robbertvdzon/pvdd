@@ -101,6 +101,21 @@ class AdviceValidationTest {
     }
 
     @Test
+    fun `accepts citations when PDF columns are interleaved and one OCR token differs`() {
+        val interleavedPolicy = policy.copy(
+            text = "De Partij voor de Dieren RECHTER KOLOM zet zich in voor een brede TWEEDE KOLOM " +
+                "welzijnseconomie waarbij het uitgangspunt is voorzien in welzijn voor mensen en dieren " +
+                "binnen de ecologische grenzen van de aarde.",
+        )
+        val quote = "De Partij voor de Dieren zet zich in voor een brede welzijnseconomie waarbij het " +
+            "uitgangspunt is voorzien in welzijn voor mens en dieren binnen de ecologische grenzen van de aarde"
+        val output = validAb().replace("draagkracht van de planeet", quote)
+        assertIs<ValidatedAdvice.Ab>(
+            validator.validate("A", "item-a", mapper.readTree(output), listOf(interleavedPolicy, document)),
+        )
+    }
+
+    @Test
     fun `rejects free text oversized fields and C yes without key question`() {
         assertFailsWith<Exception> { mapper.readTree("Hier is mijn advies zonder JSON") }
         val oversized = validAb().replace("Feitelijke samenvatting", "x".repeat(6_001))
@@ -138,7 +153,7 @@ class AdviceValidationTest {
     @Test
     fun `runtime schemas are closed and self contained`() {
         val builder = PromptBuilder(mapper)
-        assertEquals("pvdd-advice-v5", PromptBuilder.PROMPT_VERSION)
+        assertEquals("pvdd-advice-v6", PromptBuilder.PROMPT_VERSION)
         listOf(builder.schema("A"), builder.schema("C"), builder.sourceNotesSchema()).forEach { schema ->
             assertEquals(false, schema.path("additionalProperties").booleanValue())
             assertTrue(schema.toString().contains("\"required\""))
