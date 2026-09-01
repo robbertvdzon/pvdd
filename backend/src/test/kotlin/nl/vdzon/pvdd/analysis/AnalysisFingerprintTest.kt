@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test
 
 class AnalysisFingerprintTest {
     @Test
-    fun `only semantic content category and ordered sources affect fingerprint`() {
+    fun `only semantic content and category affect fingerprint`() {
         val item = AgendaItem(
             UUID.randomUUID(), UUID.randomUUID(), "item-1", null, 1, "1",
             AgendaCategory.B, "Titel", "Toelichting", "Bespreken",
@@ -24,7 +24,7 @@ class AnalysisFingerprintTest {
         assertEquals(original, analysisFingerprint(item.copy(sequence = 99, displayNumber = "99", sourceHash = "other-html"), listOf(agenda, policy)))
         assertNotEquals(original, analysisFingerprint(item.copy(category = AgendaCategory.C), listOf(agenda, policy)))
         assertNotEquals(original, analysisFingerprint(item.copy(title = "Gewijzigde titel"), listOf(agenda, policy)))
-        assertNotEquals(original, analysisFingerprint(item, listOf(policy, agenda)))
+        assertEquals(original, analysisFingerprint(item, listOf(policy, agenda)))
         assertNotEquals(original, analysisFingerprint(item, listOf(agenda.copy(text = "Gewijzigde agenda"), policy)))
     }
 

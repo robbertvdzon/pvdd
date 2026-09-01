@@ -301,7 +301,7 @@ internal fun analysisFingerprint(item: AgendaItem, sources: List<AnalysisSource>
             appendFingerprintPart(item.title)
             appendFingerprintPart(item.explanation.orEmpty())
             appendFingerprintPart(item.treatmentProposal.orEmpty())
-            sources.forEach { source ->
+            sources.sortedBy(AnalysisSource::sourceId).forEach { source ->
                 val sourceHash = MessageDigest.getInstance("SHA-256")
                     .digest(source.text.toByteArray())
                     .joinToString("") { "%02x".format(it) }
