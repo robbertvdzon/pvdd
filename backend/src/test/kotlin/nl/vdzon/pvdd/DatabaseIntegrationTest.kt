@@ -201,6 +201,43 @@ class DatabaseIntegrationTest(
         )
         assertTrue(analysisRepository.allRequiredRunsSucceeded(meetingId))
 
+        val newer = prepared.copy(
+            run = prepared.run.copy(
+                id = UUID.randomUUID(),
+                idempotencyKey = "pvdd-${"6".repeat(64)}",
+                createdAt = now.plusSeconds(4),
+                updatedAt = now.plusSeconds(4),
+            ),
+            prompt = "newer synthetic prompt",
+        )
+        analysisRepository.createPreparedRun(newer)
+        analysisRepository.completeWithAdvice(
+            recoveredClaim,
+            mapper.readTree("""{"validated":"late-old-result"}"""),
+            mapper.createArrayNode(),
+            "MOCKED",
+            "mock-model",
+            now.plusSeconds(5),
+        )
+        assertEquals("STALE", jdbc.queryForObject(
+            "SELECT actuality FROM agenda_item_advice WHERE analysis_run_id = ?",
+            String::class.java,
+            preparedId,
+        ))
+        analysisRepository.completeWithAdvice(
+            newer,
+            mapper.readTree("""{"validated":"new-result"}"""),
+            mapper.createArrayNode(),
+            "MOCKED",
+            "mock-model",
+            now.plusSeconds(6),
+        )
+        assertEquals("CURRENT", jdbc.queryForObject(
+            "SELECT actuality FROM agenda_item_advice WHERE analysis_run_id = ?",
+            String::class.java,
+            newer.run.id,
+        ))
+
         val phasedFinal = prepared.copy(
             run = prepared.run.copy(id = UUID.randomUUID(), idempotencyKey = "pvdd-${"7".repeat(64)}"),
             prompt = null,

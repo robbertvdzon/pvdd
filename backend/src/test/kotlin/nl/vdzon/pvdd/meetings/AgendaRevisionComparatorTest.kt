@@ -65,6 +65,35 @@ class AgendaRevisionComparatorTest {
     }
 
     @Test
+    fun `classifies document additions and removals`() {
+        val original = item("item-a", sequence = 1)
+        val baseline = baseline(original)
+        val added = original.copy(
+            documents = original.documents + original.documents.single().copy(sourceId = "doc-extra"),
+            fingerprint = AgendaParser.sha256("document-added"),
+        )
+        val addedResult = comparator.compare(agenda, PublicationStatus.CURRENT, listOf(added), baseline)
+        assertTrue(DifferenceType.DOCUMENT_ADDED in addedResult.differences)
+
+        val removed = original.copy(documents = emptyList(), fingerprint = AgendaParser.sha256("document-removed"))
+        val removedResult = comparator.compare(agenda, PublicationStatus.CURRENT, listOf(removed), baseline)
+        assertTrue(DifferenceType.DOCUMENT_REMOVED in removedResult.differences)
+    }
+
+    @Test
+    fun `equivalent parsed formatting creates no revision differences`() {
+        val current = item("item-a", sequence = 1)
+        val result = comparator.compare(
+            agenda.copy(committee = "  Commissie   Ruimte "),
+            PublicationStatus.CURRENT,
+            listOf(current),
+            baseline(current),
+        )
+        assertTrue(result.unchanged)
+        assertFalse(result.requiresAnalysis)
+    }
+
+    @Test
     fun `all documented revision scenarios are present`() {
         val root = requireNotNull(javaClass.getResourceAsStream("/fixtures/revisions/scenarios.json")).use {
             jacksonObjectMapper().readTree(it)
@@ -109,6 +138,14 @@ class AgendaRevisionComparatorTest {
             ),
         ),
         fingerprint = AgendaParser.sha256("$sourceId|$sequence|$category|$hash"),
+    )
+
+    private fun baseline(vararg items: RevisionItem) = RevisionBaseline(
+        UUID.randomUUID(),
+        1,
+        PublicationStatus.CURRENT,
+        comparator.meetingFingerprint(agenda, PublicationStatus.CURRENT, items.toList()),
+        items.associateBy(RevisionItem::sourceId),
     )
 
     private fun resource(name: String): String = requireNotNull(

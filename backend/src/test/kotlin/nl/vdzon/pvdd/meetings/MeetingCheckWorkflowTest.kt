@@ -7,6 +7,7 @@ import java.time.ZoneOffset
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import nl.vdzon.pvdd.documents.DocumentIngestionSummary
 import nl.vdzon.pvdd.documents.DocumentIngestor
 import nl.vdzon.pvdd.documents.DocumentReference
@@ -59,6 +60,31 @@ class MeetingCheckWorkflowTest {
     }
 
     @Test
+    fun `published source change creates a new revision and starts reanalysis`() {
+        val parsed = AgendaParser().parse(resource("agenda-full.html"), meetingUrl)
+        val discovery = StubDiscovery(
+            DiscoveryOutcome.Found(DiscoveredMeeting("meeting-future", now.plusSeconds(3600), meetingUrl)),
+            parsed,
+        )
+        val fixture = fixture(discovery = discovery)
+        assertEquals(MeetingCheckStatus.IMPORTED, fixture.workflow.check().status)
+
+        discovery.agenda = parsed.copy(
+            items = parsed.items.map { item ->
+                if (item.sourceId == parsed.items.first { it.substantive }.sourceId) {
+                    item.copy(treatmentProposal = "Gewijzigd behandelvoorstel")
+                } else item
+            },
+        )
+        val changed = fixture.workflow.check()
+
+        assertEquals(MeetingCheckStatus.IMPORTED, changed.status)
+        assertEquals(2, changed.revisionNumber)
+        assertTrue(DifferenceType.METADATA_CHANGED in changed.differences)
+        assertEquals(2, fixture.events.size)
+    }
+
+    @Test
     fun `durable lock rejects a second active check`() {
         val discovery = StubDiscovery(DiscoveryOutcome.NoFutureMeeting)
         val fixture = fixture(discovery = discovery, lockAvailable = false)
@@ -76,17 +102,18 @@ class MeetingCheckWorkflowTest {
     ): WorkflowFixture {
         val store = StubStore(lastSuccessful)
         val documents = CountingDocuments()
+        val events = mutableListOf<MeetingImportedEvent>()
         val workflow = MeetingCheckWorkflow(
             discovery,
             store,
             documents,
             StubLock(lockAvailable),
-            ApplicationEventPublisher { },
+            ApplicationEventPublisher { event -> if (event is MeetingImportedEvent) events += event },
             Clock.fixed(now, ZoneOffset.UTC),
             AgendaRevisionComparator(),
             InMemoryRevisionStore(),
         )
-        return WorkflowFixture(workflow, store, documents)
+        return WorkflowFixture(workflow, store, documents, events)
     }
 
     private fun resource(name: String): String = requireNotNull(
@@ -97,11 +124,12 @@ class MeetingCheckWorkflowTest {
         val workflow: MeetingCheckWorkflow,
         val store: StubStore,
         val documents: CountingDocuments,
+        val events: List<MeetingImportedEvent>,
     )
 
     private class StubDiscovery(
         private val outcome: DiscoveryOutcome,
-        private val agenda: ParsedMeetingAgenda? = null,
+        var agenda: ParsedMeetingAgenda? = null,
     ) : MeetingDiscoveryGateway {
         var fetchCount = 0
         var discoverCalled = false

@@ -1,8 +1,8 @@
-FROM nginxinc/nginx-unprivileged:1.27-alpine
-USER 0
-RUN chgrp -R 0 /etc/nginx /usr/share/nginx/html /var/cache/nginx \
- && chmod -R g=u /etc/nginx /usr/share/nginx/html /var/cache/nginx
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY fixtures /usr/share/nginx/html/fixtures
-USER 101
+FROM python:3.13-alpine
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY server.py /app/server.py
+COPY fixtures /app/fixtures
+USER 1001
 EXPOSE 8080
+CMD ["python", "/app/server.py"]
