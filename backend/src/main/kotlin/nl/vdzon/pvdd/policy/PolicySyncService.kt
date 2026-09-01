@@ -98,9 +98,12 @@ class PolicySyncService(
             if (!candidate.changed) return
             val job = runtime.create(
                 RuntimeCreateRequest(
-                    idempotencyKey = "pvdd-policy-${candidate.fingerprint}",
+                    // A failed Runtime job must not permanently poison retries for the same
+                    // source fingerprint. The snapshot keeps retries distinct while the Runtime
+                    // client still safely retries a lost response with the exact same key.
+                    idempotencyKey = "pvdd-policy-${requireNotNull(candidate.id)}-${candidate.fingerprint}",
                     prompt = prompt(requireNotNull(candidate.id), candidate.sources),
-                    responseSchema = schema(),
+                    responseSchema = positionResponseSchema(mapper),
                     executionTimeoutSeconds = 600,
                 ),
             )
@@ -165,8 +168,6 @@ class PolicySyncService(
             END_UNTRUSTED_POLICY_SOURCES
         """.trimIndent()
     }
-
-    private fun schema(): JsonNode = mapper.readTree(POSITION_SCHEMA)
 
     private fun validate(result: JsonNode, snapshotId: UUID): List<PolicyPositionInput> {
         if (!result.isObject || result.path("positions").isArray.not()) throw PolicySourceException("INVALID_POLICY_RESULT")
@@ -240,7 +241,7 @@ class PolicySyncService(
               "type":"object","additionalProperties":false,"required":["positions"],
               "properties":{"positions":{"type":"array","minItems":1,"maxItems":100,"items":{
                 "type":"object","additionalProperties":false,
-                "required":["title","summary","themes","direction","status","references"],
+                "required":["title","summary","themes","direction","status","sourceDate","references"],
                 "properties":{
                   "title":{"type":"string","minLength":1,"maxLength":160},
                   "summary":{"type":"string","minLength":1,"maxLength":400},
@@ -249,10 +250,12 @@ class PolicySyncService(
                   "status":{"type":"string","enum":["CURRENT","CHANGED","POTENTIAL_CONFLICT","EXPIRED"]},
                   "sourceDate":{"type":["string","null"],"format":"date"},
                   "references":{"type":"array","minItems":1,"items":{"type":"object","additionalProperties":false,
-                    "required":["sourceId"],"properties":{"sourceId":{"type":"string"},"pageNumber":{"type":["integer","null"]},"section":{"type":["string","null"]}}}}
+                    "required":["sourceId","pageNumber","section"],"properties":{"sourceId":{"type":"string"},"pageNumber":{"type":["integer","null"]},"section":{"type":["string","null"]}}}}
                 }
               }}}
             }
         """.trimIndent()
+
+        internal fun positionResponseSchema(mapper: ObjectMapper): JsonNode = mapper.readTree(POSITION_SCHEMA)
     }
 }
