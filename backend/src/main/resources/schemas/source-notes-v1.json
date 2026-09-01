@@ -19,7 +19,7 @@
           "citation": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["sourceId", "sourceType", "quote"],
+            "required": ["sourceId", "sourceType", "pageNumber", "section", "quote"],
             "properties": {
               "sourceId": {"type": "string", "minLength": 1, "maxLength": 160},
               "sourceType": {"enum": ["MEETING_DOCUMENT", "POLICY_PROGRAMME"]},

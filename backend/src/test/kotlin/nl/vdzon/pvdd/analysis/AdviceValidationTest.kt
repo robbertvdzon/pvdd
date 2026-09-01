@@ -6,6 +6,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
+import tools.jackson.databind.JsonNode
 import tools.jackson.module.kotlin.jacksonObjectMapper
 
 class AdviceValidationTest {
@@ -110,10 +111,11 @@ class AdviceValidationTest {
     @Test
     fun `runtime schemas are closed and self contained`() {
         val builder = PromptBuilder(mapper)
-        assertEquals("pvdd-advice-v2", PromptBuilder.PROMPT_VERSION)
+        assertEquals("pvdd-advice-v3", PromptBuilder.PROMPT_VERSION)
         listOf(builder.schema("A"), builder.schema("C"), builder.sourceNotesSchema()).forEach { schema ->
             assertEquals(false, schema.path("additionalProperties").booleanValue())
             assertTrue(schema.toString().contains("\"required\""))
+            assertStrictObjectSchemas(schema)
         }
         val unsupported = setOf("\$ref", "allOf", "anyOf", "oneOf", "not", "if", "then", "else")
         listOf(builder.schema("A"), builder.schema("C"), builder.sourceNotesSchema()).forEach { schema ->
@@ -174,4 +176,18 @@ class AdviceValidationTest {
         "section":"Inleiding","quote":"draagkracht van de planeet"
       }]
     }"""
+
+    private fun assertStrictObjectSchemas(node: JsonNode) {
+        val properties = node.path("properties")
+        if (node.isObject && properties.isObject && !node.path("additionalProperties").booleanValue()) {
+            val declared: Set<String> = properties.propertyNames().toSet()
+            val required: Set<String> = node.path("required").iterator().asSequence().map { it.asText() }.toSet()
+            assertEquals(
+                declared,
+                required,
+                "A closed structured-output object must require every declared property.",
+            )
+        }
+        node.forEach(::assertStrictObjectSchemas)
+    }
 }

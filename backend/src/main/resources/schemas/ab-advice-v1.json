@@ -12,7 +12,7 @@
       "properties": {
         "text": {"type": "string", "minLength": 1, "maxLength": 6000},
         "citations": {"type": "array", "minItems": 1, "maxItems": 20, "items": {
-          "type": "object", "additionalProperties": false, "required": ["sourceId", "sourceType", "quote"],
+          "type": "object", "additionalProperties": false, "required": ["sourceId", "sourceType", "pageNumber", "section", "quote"],
           "properties": {
             "sourceId": {"type": "string", "minLength": 1, "maxLength": 160},
             "sourceType": {"enum": ["MEETING_DOCUMENT", "POLICY_PROGRAMME"]},
@@ -28,7 +28,7 @@
       "properties": {
         "text": {"type": "string", "minLength": 1, "maxLength": 6000},
         "citations": {"type": "array", "minItems": 1, "maxItems": 20, "items": {
-          "type": "object", "additionalProperties": false, "required": ["sourceId", "sourceType", "quote"],
+          "type": "object", "additionalProperties": false, "required": ["sourceId", "sourceType", "pageNumber", "section", "quote"],
           "properties": {
             "sourceId": {"type": "string", "minLength": 1, "maxLength": 160},
             "sourceType": {"enum": ["MEETING_DOCUMENT", "POLICY_PROGRAMME"]},
@@ -44,7 +44,7 @@
       "properties": {
         "text": {"type": "string", "minLength": 1, "maxLength": 6000},
         "citations": {"type": "array", "minItems": 1, "maxItems": 20, "items": {
-          "type": "object", "additionalProperties": false, "required": ["sourceId", "sourceType", "quote"],
+          "type": "object", "additionalProperties": false, "required": ["sourceId", "sourceType", "pageNumber", "section", "quote"],
           "properties": {
             "sourceId": {"type": "string", "minLength": 1, "maxLength": 160},
             "sourceType": {"enum": ["MEETING_DOCUMENT", "POLICY_PROGRAMME"]},
@@ -60,7 +60,7 @@
       "properties": {
         "text": {"type": "string", "minLength": 1, "maxLength": 6000},
         "citations": {"type": "array", "minItems": 1, "maxItems": 20, "items": {
-          "type": "object", "additionalProperties": false, "required": ["sourceId", "sourceType", "quote"],
+          "type": "object", "additionalProperties": false, "required": ["sourceId", "sourceType", "pageNumber", "section", "quote"],
           "properties": {
             "sourceId": {"type": "string", "minLength": 1, "maxLength": 160},
             "sourceType": {"enum": ["MEETING_DOCUMENT", "POLICY_PROGRAMME"]},
@@ -76,7 +76,7 @@
       "properties": {
         "text": {"type": "string", "minLength": 1, "maxLength": 6000},
         "citations": {"type": "array", "minItems": 1, "maxItems": 20, "items": {
-          "type": "object", "additionalProperties": false, "required": ["sourceId", "sourceType", "quote"],
+          "type": "object", "additionalProperties": false, "required": ["sourceId", "sourceType", "pageNumber", "section", "quote"],
           "properties": {
             "sourceId": {"type": "string", "minLength": 1, "maxLength": 160},
             "sourceType": {"enum": ["MEETING_DOCUMENT", "POLICY_PROGRAMME"]},
