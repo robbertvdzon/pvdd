@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
 import 'dashboard_api.dart';
 import 'external_link.dart';
@@ -344,6 +345,19 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
               child: Text('De analyse is nog niet beschikbaar.'),
+            )
+          else if (advice['content'] is String)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: MarkdownBody(
+                data: advice['content'] as String,
+                selectable: true,
+                imageBuilder: (_, _, alt) => Text(
+                  alt?.isNotEmpty == true
+                      ? '[Afbeelding niet geladen: $alt]'
+                      : '[Afbeelding niet geladen]',
+                ),
+              ),
             )
           else if (widget.item.category == 'C')
             ..._cAdvice(advice)

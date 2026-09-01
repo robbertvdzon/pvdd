@@ -1,17 +1,3 @@
 {
-  "agendaItemSourceId": "item-b-mobility",
-  "besprekenEnNaarB": true,
-  "motivering": {
-    "text": "Bespreking is nodig om natuur, leefomgeving en duurzaam vervoer in samenhang af te wegen.",
-    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"draagkracht van de planeet"}]
-  },
-  "urgentie": "HOOG",
-  "commissieDoel": {
-    "text": "Verkrijg concrete randvoorwaarden voor een veilige en natuurvriendelijke verbinding.",
-    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"Natuur en dieren hebben bescherming nodig"}]
-  },
-  "kernvraag": {
-    "text": "Welke natuurdoelen en duurzame vervoersdoelen worden aantoonbaar gehaald?",
-    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"Biodiversiteit en leefgebieden worden verbonden"}]
-  }
+  "content": "# Advies: verplaatsen naar B\n\nBespreking heeft politieke meerwaarde omdat natuur, leefomgeving en duurzaam vervoer in samenhang moeten worden afgewogen. Vraag welke natuur- en vervoersdoelen aantoonbaar worden gehaald."
 }

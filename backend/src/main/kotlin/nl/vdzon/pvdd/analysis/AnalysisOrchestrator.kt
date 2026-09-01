@@ -18,6 +18,7 @@ import nl.vdzon.pvdd.runtime.AgentRuntimeProperties
 import nl.vdzon.pvdd.runtime.RuntimeCreateRequest
 import nl.vdzon.pvdd.runtime.RuntimeJob
 import org.slf4j.LoggerFactory
+import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -32,13 +33,18 @@ class AnalysisOrchestrator(
     private val policyImport: PolicyImportService,
     private val policySelector: PolicySelector,
     private val prompts: PromptBuilder,
-    private val validator: AdviceValidator,
-    private val notesValidator: SourceNotesValidator,
+    private val resultValidator: ContentResultValidator,
     private val runtime: AgentRuntimeGateway,
     private val runtimeProperties: AgentRuntimeProperties,
     private val mapper: ObjectMapper,
     private val clock: Clock,
 ) {
+    @EventListener(ApplicationReadyEvent::class)
+    fun queuePromptUpgrade() {
+        val queued = repository.queueMeetingsMissingPromptVersion(PromptBuilder.PROMPT_VERSION)
+        if (queued > 0) log.info("Queued {} meeting(s) for prompt {}", queued, PromptBuilder.PROMPT_VERSION)
+    }
+
     @EventListener
     fun meetingImported(event: MeetingImportedEvent) {
         repository.queueMeeting(event.meetingId)
@@ -81,7 +87,7 @@ class AnalysisOrchestrator(
                     key = key,
                     now = now,
                     prompt = plan.phases.singleOrNull()?.takeIf { it.type == PromptPhaseType.DIRECT_ADVICE }?.prompt,
-                    schema = prompts.schema(item.category.name),
+                    schema = prompts.schema(),
                     sources = sources,
                 )
                 val notePhases = plan.phases.filter { it.type == PromptPhaseType.SOURCE_NOTES }
@@ -155,28 +161,23 @@ class AnalysisOrchestrator(
     private fun complete(prepared: PreparedAnalysisRun, job: RuntimeJob) {
         try {
             val result = runtime.result(requireNotNull(prepared.run.runtimeJobId)).result
+            resultValidator.validate(result)
             if (prepared.runType == AnalysisRunType.SOURCE_NOTES) {
-                notesValidator.validate(prepared.agendaItemSourceId, result, prepared.allowedSources)
                 repository.completeSourceNotes(prepared.run.id, result, clock.instant())
                 activateReadySynthesisRuns()
             } else {
-                validator.validate(prepared.category, prepared.agendaItemSourceId, result, prepared.allowedSources)
                 repository.completeWithAdvice(
                     prepared,
                     result,
-                    citations(result),
+                    mapper.createArrayNode(),
                     job.provider,
                     job.model,
                     clock.instant(),
                 )
                 if (repository.allRequiredRunsSucceeded(prepared.meetingId)) meetings.markSuccessful(prepared.meetingId)
             }
-        } catch (failure: AdviceValidationException) {
-            log.warn(
-                "AI result validation failed for analysis {} with {}",
-                prepared.run.id,
-                failure.errors.joinToString(","),
-            )
+        } catch (failure: ContentResultValidationException) {
+            log.warn("AI result validation failed for analysis {}", prepared.run.id)
             fail(prepared, AnalysisStatus.FAILED, "INVALID_RESULT")
         }
     }
@@ -276,10 +277,6 @@ class AnalysisOrchestrator(
         sources: List<AnalysisSource>,
         publicationStatus: String,
     ): String = analysisFingerprint(item, sources, publicationStatus)
-
-    private fun citations(result: JsonNode): JsonNode = mapper.createArrayNode().also { target ->
-        result.findValues("citations").filter { it.isArray }.forEach { array -> array.forEach(target::add) }
-    }
 
     private fun AgendaItem.toAnalysisItem() = AnalysisAgendaItem(sourceId, category.name, title, explanation, treatmentProposal)
 

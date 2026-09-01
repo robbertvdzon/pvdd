@@ -10,4 +10,8 @@ Benodigde categorieën:
 - afzonderlijk PvdD Agent Runtime-token voor acceptance en productie;
 - build- en runtimeconfiguratie zoals URLs, provider en model.
 
+Gebruikerssessies hebben geen gedeeld sessiesecret: de backend genereert een willekeurige sleutel,
+zet alleen de SHA-256-hash in PostgreSQL en geeft de oorspronkelijke waarde uitsluitend als
+`HttpOnly`-cookie aan de browser.
+
 Scripts lezen env-bestanden als data en voeren ze nooit uit met `source`. Tokens worden niet gelogd.

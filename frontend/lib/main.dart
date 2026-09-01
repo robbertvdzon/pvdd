@@ -11,7 +11,6 @@ import 'google_login_button.dart';
 import 'meeting_overview.dart';
 import 'page_reload.dart';
 import 'pvdd_theme.dart';
-import 'token_store.dart';
 
 void main() => runApp(const PvddApp());
 
@@ -19,7 +18,6 @@ class PvddApp extends StatelessWidget {
   const PvddApp({
     super.key,
     this.authenticationGateway,
-    this.tokenStore,
     this.loginBuilder,
     this.versionGateway,
     this.frontendVersionSource,
@@ -28,7 +26,6 @@ class PvddApp extends StatelessWidget {
   });
 
   final AuthenticationGateway? authenticationGateway;
-  final TokenStore? tokenStore;
   final Widget Function(ValueChanged<String>)? loginBuilder;
   final VersionGateway? versionGateway;
   final FrontendVersionSource? frontendVersionSource;
@@ -42,7 +39,6 @@ class PvddApp extends StatelessWidget {
     theme: pvddTheme(),
     home: AuthenticationGate(
       gateway: authenticationGateway ?? HttpAuthenticationGateway(),
-      tokenStore: tokenStore ?? BrowserTokenStore(),
       loginBuilder: loginBuilder,
       versionGateway: versionGateway ?? HttpVersionGateway(),
       frontendVersionSource: frontendVersionSource,
@@ -57,7 +53,6 @@ enum _AuthenticationState { loading, login, authenticated, error }
 class AuthenticationGate extends StatefulWidget {
   const AuthenticationGate({
     required this.gateway,
-    required this.tokenStore,
     required this.versionGateway,
     this.loginBuilder,
     this.frontendVersionSource,
@@ -66,7 +61,6 @@ class AuthenticationGate extends StatefulWidget {
     super.key,
   });
   final AuthenticationGateway gateway;
-  final TokenStore tokenStore;
   final Widget Function(ValueChanged<String>)? loginBuilder;
   final VersionGateway versionGateway;
   final FrontendVersionSource? frontendVersionSource;
@@ -81,6 +75,7 @@ class _AuthenticationGateState extends State<AuthenticationGate> {
   _AuthenticationState _state = _AuthenticationState.loading;
   String? _email;
   String? _message;
+  bool _explicitlySignedOut = false;
 
   @override
   void initState() {
@@ -98,22 +93,34 @@ class _AuthenticationGateState extends State<AuthenticationGate> {
       }
       return;
     }
-    final token = widget.tokenStore.read();
-    if (token == null || token.isEmpty) {
+    try {
+      final user = await widget.gateway.restore();
+      if (mounted) {
+        setState(() {
+          _email = user.email;
+          _explicitlySignedOut = false;
+          _state = _AuthenticationState.authenticated;
+        });
+      }
+    } on AuthenticationRejected {
       if (mounted) setState(() => _state = _AuthenticationState.login);
-      return;
+    } on Object {
+      if (mounted) {
+        setState(() {
+          _state = _AuthenticationState.error;
+          _message = 'De beveiligde backend is tijdelijk niet bereikbaar.';
+        });
+      }
     }
-    await _authenticate(token, persist: false);
   }
 
-  Future<void> _authenticate(String token, {bool persist = true}) async {
+  Future<void> _authenticate(String token) async {
     setState(() {
       _state = _AuthenticationState.loading;
       _message = null;
     });
     try {
-      final user = await widget.gateway.me(token);
-      if (persist) widget.tokenStore.write(token);
+      final user = await widget.gateway.signIn(token);
       if (mounted) {
         setState(() {
           _email = user.email;
@@ -121,7 +128,6 @@ class _AuthenticationGateState extends State<AuthenticationGate> {
         });
       }
     } on AuthenticationRejected {
-      widget.tokenStore.clear();
       if (mounted) {
         setState(() {
           _state = _AuthenticationState.login;
@@ -138,11 +144,17 @@ class _AuthenticationGateState extends State<AuthenticationGate> {
     }
   }
 
-  void _logout() {
-    widget.tokenStore.clear();
+  Future<void> _logout() async {
+    try {
+      await widget.gateway.signOut();
+    } on Object {
+      // The local session is cleared in the UI even when the backend is unavailable.
+    }
+    if (!mounted) return;
     setState(() {
       _email = null;
       _message = null;
+      _explicitlySignedOut = true;
       _state = _AuthenticationState.login;
     });
   }
@@ -168,20 +180,16 @@ class _AuthenticationGateState extends State<AuthenticationGate> {
           GoogleLoginButton(
             clientId: AppConfiguration.googleClientId,
             onIdToken: (token) => unawaited(_authenticate(token)),
+            attemptLightweightAuthentication: !_explicitlySignedOut,
           ),
     ),
     _AuthenticationState.authenticated => TechnicalApplicationShell(
       email: _email!,
-      onLogout: _logout,
+      onLogout: () => unawaited(_logout()),
       versionGateway: widget.versionGateway,
       frontendVersionSource:
           widget.frontendVersionSource ?? HttpFrontendVersionSource(),
-      dashboardGateway:
-          widget.dashboardGateway ??
-          HttpDashboardGateway(
-            widget.tokenStore.read,
-            requireAuthentication: !widget.acceptanceBypass,
-          ),
+      dashboardGateway: widget.dashboardGateway ?? HttpDashboardGateway(),
       acceptanceBypass: widget.acceptanceBypass,
     ),
   };

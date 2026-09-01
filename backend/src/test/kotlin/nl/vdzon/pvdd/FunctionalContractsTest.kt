@@ -16,27 +16,11 @@ class FunctionalContractsTest {
     private val mapper = jacksonObjectMapper()
 
     @Test
-    fun `advice schemas require the complete AB and C contracts`() {
-        val ab = jsonResource("/schemas/ab-advice-v1.json")
-        val c = jsonResource("/schemas/c-advice-v1.json")
-        val abRequired: Set<String> = ab.path("required").iterator().asSequence().map { it.asText() }.toSet()
-        val cRequired: Set<String> = c.path("required").iterator().asSequence().map { it.asText() }.toSet()
-
-        assertEquals(
-            setOf(
-                "agendaItemSourceId",
-                "waarGaatHetOver",
-                "watVindenWeErvan",
-                "commissieInzet",
-                "puntenVoorGedeputeerde",
-                "technischeVragen",
-            ),
-            abRequired,
-        )
-        assertEquals(
-            setOf("agendaItemSourceId", "besprekenEnNaarB", "motivering", "urgentie", "commissieDoel", "kernvraag"),
-            cRequired,
-        )
+    fun `AI result schema only requires processable Markdown`() {
+        val schema = jsonResource("/schemas/content-result-v1.json")
+        val required: Set<String> = schema.path("required").iterator().asSequence().map { it.asText() }.toSet()
+        assertEquals(setOf("content"), required)
+        assertEquals(setOf("content"), schema.path("properties").propertyNames().toSet())
     }
 
     @Test

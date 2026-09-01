@@ -8,7 +8,9 @@ class AuthenticatedUser {
 }
 
 abstract interface class AuthenticationGateway {
-  Future<AuthenticatedUser> me(String idToken);
+  Future<AuthenticatedUser> restore();
+  Future<AuthenticatedUser> signIn(String idToken);
+  Future<void> signOut();
 }
 
 class HttpAuthenticationGateway implements AuthenticationGateway {
@@ -16,16 +18,28 @@ class HttpAuthenticationGateway implements AuthenticationGateway {
     : _client = client ?? http.Client();
   final http.Client _client;
   @override
-  Future<AuthenticatedUser> me(String idToken) async {
-    final response = await _client
-        .get(
-          Uri.parse('/api/auth/me'),
-          headers: {
-            'Authorization': 'Bearer $idToken',
-            'Cache-Control': 'no-cache',
-          },
-        )
-        .timeout(const Duration(seconds: 8));
+  Future<AuthenticatedUser> restore() => _authenticate(
+    () => _client.get(
+      Uri.parse('/api/auth/me'),
+      headers: const {'Cache-Control': 'no-cache'},
+    ),
+  );
+
+  @override
+  Future<AuthenticatedUser> signIn(String idToken) => _authenticate(
+    () => _client.post(
+      Uri.parse('/api/auth/session'),
+      headers: {
+        'Authorization': 'Bearer $idToken',
+        'Cache-Control': 'no-cache',
+      },
+    ),
+  );
+
+  Future<AuthenticatedUser> _authenticate(
+    Future<http.Response> Function() request,
+  ) async {
+    final response = await request().timeout(const Duration(seconds: 8));
     if (response.statusCode == 401 || response.statusCode == 403) {
       throw const AuthenticationRejected();
     }
@@ -35,6 +49,14 @@ class HttpAuthenticationGateway implements AuthenticationGateway {
       throw const AuthenticationUnavailable();
     }
     return AuthenticatedUser(value['email']! as String);
+  }
+
+  @override
+  Future<void> signOut() async {
+    final response = await _client
+        .delete(Uri.parse('/api/auth/session'))
+        .timeout(const Duration(seconds: 8));
+    if (response.statusCode != 204) throw const AuthenticationUnavailable();
   }
 }
 

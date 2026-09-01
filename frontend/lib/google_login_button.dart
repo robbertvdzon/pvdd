@@ -8,10 +8,12 @@ class GoogleLoginButton extends StatefulWidget {
   const GoogleLoginButton({
     required this.clientId,
     required this.onIdToken,
+    this.attemptLightweightAuthentication = true,
     super.key,
   });
   final String clientId;
   final ValueChanged<String> onIdToken;
+  final bool attemptLightweightAuthentication;
   @override
   State<GoogleLoginButton> createState() => _GoogleLoginButtonState();
 }
@@ -51,7 +53,9 @@ class _GoogleLoginButtonState extends State<GoogleLoginButton> {
         onError: (_) => setState(() => _error = 'Google-login is niet gelukt.'),
       );
       setState(() => _initialized = true);
-      unawaited(signIn.attemptLightweightAuthentication());
+      if (widget.attemptLightweightAuthentication) {
+        unawaited(signIn.attemptLightweightAuthentication());
+      }
     } on Object {
       if (mounted) {
         setState(() => _error = 'Google-login kon niet worden gestart.');

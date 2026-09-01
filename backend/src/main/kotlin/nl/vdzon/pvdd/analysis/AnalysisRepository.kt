@@ -29,6 +29,28 @@ class AnalysisRepository(
     private val jdbc: JdbcTemplate,
     private val mapper: ObjectMapper,
 ) {
+    fun queueMeetingsMissingPromptVersion(promptVersion: String): Int = jdbc.update(
+        """
+        INSERT INTO analysis_meeting_queue(meeting_id, status)
+        SELECT DISTINCT meeting.id, 'PENDING'
+        FROM meeting
+        JOIN agenda_item item ON item.meeting_id = meeting.id
+        WHERE meeting.starts_at >= CURRENT_TIMESTAMP
+          AND item.source_state <> 'WITHDRAWN'
+          AND item.substantive
+          AND item.category IN ('A', 'B', 'C')
+          AND NOT EXISTS (
+              SELECT 1 FROM analysis_run run
+              WHERE run.agenda_item_id = item.id
+                AND run.run_type = 'FINAL_ADVICE'
+                AND run.prompt_version = ?
+          )
+        ON CONFLICT (meeting_id) DO UPDATE SET
+            status = 'PENDING', error_code = NULL, updated_at = CURRENT_TIMESTAMP
+        """.trimIndent(),
+        promptVersion,
+    )
+
     fun queueMeeting(meetingId: UUID) {
         jdbc.update(
             """

@@ -39,7 +39,7 @@ gedeeltelijk of onleesbaar dossier heet nooit volledig ingelezen.
 
 ## A- en B-advies
 
-Ieder inhoudelijk A/B-punt bevat exact:
+De AI krijgt voor ieder inhoudelijk A/B-punt deze richtinggevende vragen mee:
 
 1. **Waar gaat het over?** — feitelijke samenvatting;
 2. **Wat vinden we ervan?** — politieke beoordeling met programmapassages;
@@ -47,14 +47,13 @@ Ieder inhoudelijk A/B-punt bevat exact:
 4. **Welke punten willen we maken en wat willen we van de gedeputeerde?** — concrete verzoeken;
 5. **Welke technische vragen gaan we stellen?** — feitelijke vragen over ontbrekende informatie.
 
-Elk onderdeel heeft citaties naar uitsluitend meegegeven vergaderstukken en beleidspassages.
+Het eindresultaat is één vrij Markdowndocument. Deze indeling en eventuele bronverwijzingen worden
+niet technisch afgedwongen; voor de MVP vertrouwen we op de AI-uitvoering.
 
 ## C-advies
 
-Ieder C-punt bevat een binair besluit **bespreken en verplaatsen naar B**, een korte motivering,
-urgentie laag/middel/hoog, het gewenste commissiedoel, bij een positief advies een kernvraag, en
-citaties. Bespreken wordt alleen geadviseerd bij politieke meerwaarde; niet ieder C-stuk gaat
-automatisch naar B.
+Voor ieder C-punt vraagt de prompt of bespreking en verplaatsing naar B wenselijk is, met een
+bruikbare motivering. De AI is vrij in de Markdownindeling; er is geen apart C-responseschema.
 
 ## Politiek kader
 
@@ -68,11 +67,11 @@ verdelingseffecten/toekomstige generaties. Zonder geldige beleidsbron start geen
 ## AI en validatie
 
 Broninhoud is onbetrouwbare data, nooit een instructie. Iedere asynchrone `APPLICATION_WORK`-job
-gebruikt een versieerbare prompt, strikt JSON Schema en een stabiele idempotentiesleutel uit
-meeting/item, bronfingerprint en promptversie. De backend valideert vereiste velden, lengtes,
-lokale item-ID's, bron-ID's en pagina's. Vrije tekst, onbekende bronnen en gedeeltelijke resultaten
-worden niet getoond. Grote dossiers krijgen eerst bronnotities en daarna synthese; niets wordt stil
-afgekapt. Herstart en verloren submitresponses maken geen dubbele Runtime-job.
+gebruikt een versieerbare prompt, een minimaal JSON Schema en een stabiele idempotentiesleutel uit
+meeting/item, bronfingerprint en promptversie. Iedere Runtime-uitkomst heeft uitsluitend het veld
+`content` met niet-lege Markdown van maximaal 50.000 tekens. Er is bewust geen inhoudelijke
+responsevalidatie. Grote dossiers krijgen eerst vrije bronnotities en daarna synthese; niets wordt
+stil afgekapt. Herstart en verloren submitresponses maken geen dubbele Runtime-job.
 
 ## Statussen en opslag
 
@@ -86,7 +85,11 @@ onbeperkt bewaard; er bestaat geen cleanup- of deletepad.
 
 De beveiligde API levert het actuele vergaderingsoverzicht, agendapunten, details, runs en dezelfde
 `check-now`-orkestratie. DTO's lekken geen database-, prompt-, token- of Runtime-interne gegevens.
-De frontend toont A/B/C-filters, voortgang, bronlinks, vijfdelige A/B-details, C-bespreekadvies en
+De frontend toont A/B/C-filters, voortgang, bronlinks, het vrije Markdownadvies en
 altijd **AI-concept — controleer bronnen en formulering vóór gebruik**. De MVP heeft geen editor,
 goedkeuring of historiepagina en behoudt Google-auth, buildidentiteit, updatecontrole,
 toegankelijkheid en het bestaande cachecontract.
+
+Google wordt alleen voor de eerste identificatie gebruikt. De backend geeft daarna een veilige,
+180 dagen geldige sessiecookie uit, zodat sluiten van een tab of verlopen van het korte Google
+ID-token niet opnieuw inloggen vereist. Uitloggen trekt de sessie direct in.

@@ -13,6 +13,7 @@ import nl.vdzon.pvdd.analysis.AnalysisStatus
 import nl.vdzon.pvdd.analysis.AnalysisSource
 import nl.vdzon.pvdd.analysis.CitationSourceType
 import nl.vdzon.pvdd.analysis.PreparedAnalysisRun
+import nl.vdzon.pvdd.auth.UserSessionService
 import nl.vdzon.pvdd.documents.DocumentRepository
 import nl.vdzon.pvdd.documents.ExtractedSection
 import nl.vdzon.pvdd.documents.ExtractionStatus
@@ -37,6 +38,7 @@ import nl.vdzon.pvdd.policy.PolicyChunk
 import nl.vdzon.pvdd.policy.PolicySourceRepository
 import nl.vdzon.pvdd.policy.PolicyTheme
 import org.junit.jupiter.api.Test
+import org.springframework.web.server.ResponseStatusException
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.health.actuate.endpoint.HealthEndpoint
 import org.springframework.boot.test.context.SpringBootTest
@@ -61,6 +63,7 @@ class DatabaseIntegrationTest(
     @param:Autowired private val jdbc: JdbcTemplate,
     @param:Autowired private val dashboardRepository: DashboardRepository,
     @param:Autowired private val healthEndpoint: HealthEndpoint,
+    @param:Autowired private val userSessionService: UserSessionService,
 ) {
     @Test
     fun `empty PostgreSQL is migrated and metadata survives writes`() {
@@ -68,6 +71,24 @@ class DatabaseIntegrationTest(
         metadataRepository.put("integration-test", "works")
         assertEquals("works", metadataRepository.get("integration-test"))
         assertEquals("UP", healthEndpoint.health().status.code)
+    }
+
+    @Test
+    fun `user session stores only a hash and can be revoked`() {
+        val session = userSessionService.create("robbertvdzon@gmail.com")
+        assertEquals("robbertvdzon@gmail.com", userSessionService.authenticate(session.token).email)
+        assertEquals(
+            0,
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM user_session WHERE token_hash = ?",
+                Int::class.java,
+                session.token,
+            ),
+        )
+        userSessionService.revoke(session.token)
+        org.junit.jupiter.api.assertThrows<ResponseStatusException> {
+            userSessionService.authenticate(session.token)
+        }
     }
 
     @Test
@@ -282,7 +303,7 @@ class DatabaseIntegrationTest(
         analysisRepository.markSubmitted(claimedNote.run.id, "runtime-notes-1", AnalysisStatus.RUNNING)
         analysisRepository.completeSourceNotes(
             claimedNote.run.id,
-            mapper.readTree("""{"agendaItemSourceId":"item-a","notes":[{"text":"feit","citation":{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Natuur","quote":"Synthetische beleidstekst"}}]}"""),
+            mapper.readTree("""{"content":"Synthetische feitelijke bronnotitie."}"""),
             now.plusSeconds(3),
         )
         val readyFinal = analysisRepository.readySynthesisRuns().single { it.run.id == phasedFinal.run.id }

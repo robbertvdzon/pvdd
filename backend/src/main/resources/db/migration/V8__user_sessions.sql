@@ -1,0 +1,9 @@
+CREATE TABLE user_session (
+    token_hash VARCHAR(64) PRIMARY KEY,
+    email VARCHAR(320) NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX user_session_expiry_idx ON user_session(expires_at);

@@ -1,23 +1,3 @@
 {
-  "agendaItemSourceId": "item-b-mobility",
-  "waarGaatHetOver": {
-    "text": "Het voorstel vergelijkt een regionale fietsverbinding met extra ruimte voor autoverkeer.",
-    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"De fietser en het openbaar vervoer gaan voor"}]
-  },
-  "watVindenWeErvan": {
-    "text": "De fietsvariant sluit het beste aan bij duurzaam en zuinig ruimtegebruik.",
-    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"Geen nieuwe wegen"}]
-  },
-  "commissieInzet": {
-    "text": "Stuur aan op keuze voor de fietsverbinding en toets effecten op natuur en luchtkwaliteit.",
-    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"minder luchtvaart voor gezonde lucht"}]
-  },
-  "puntenVoorGedeputeerde": {
-    "text": "Vraag welke ruimtewinst en emissiereductie de fietsvariant oplevert.",
-    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"De fietser"}]
-  },
-  "technischeVragen": {
-    "text": "Welke reizigersaantallen, kosten en natuureffecten zijn per variant berekend?",
-    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"openbaar vervoer"}]
-  }
+  "content": "# Regionale fietsverbinding\n\nDe fietsvariant sluit het beste aan bij duurzaam en zuinig ruimtegebruik. Stuur aan op de fietsverbinding en vraag naar reizigersaantallen, kosten, emissiereductie en effecten op natuur en luchtkwaliteit."
 }

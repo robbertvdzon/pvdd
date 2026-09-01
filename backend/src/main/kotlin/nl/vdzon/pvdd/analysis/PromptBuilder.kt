@@ -61,13 +61,10 @@ class PromptBuilder(private val mapper: ObjectMapper) {
         return PromptPlan(phases)
     }
 
-    fun schema(category: String): JsonNode {
-        val resource = if (category.uppercase() in setOf("A", "B")) "/schemas/ab-advice-v1.json" else "/schemas/c-advice-v1.json"
-        return requireNotNull(javaClass.getResourceAsStream(resource)).use(mapper::readTree)
-    }
-
-    fun sourceNotesSchema(): JsonNode = requireNotNull(javaClass.getResourceAsStream("/schemas/source-notes-v1.json"))
+    fun schema(): JsonNode = requireNotNull(javaClass.getResourceAsStream("/schemas/content-result-v1.json"))
         .use(mapper::readTree)
+
+    fun sourceNotesSchema(): JsonNode = schema()
 
     fun synthesisPrompt(
         agendaItemSourceId: String,
@@ -77,7 +74,7 @@ class PromptBuilder(private val mapper: ObjectMapper) {
         require(sourceNotes.isNotEmpty()) { "Synthesis requires validated source notes." }
         append(SYSTEM_PROMPT)
         append("\n\nMaak het definitieve advies voor agendapunt $agendaItemSourceId in categorie $category.")
-        append(" Gebruik uitsluitend de gevalideerde bronnotities en de daarin aanwezige citaties.")
+        append(" Gebruik uitsluitend de meegegeven bronnotities.")
         append("\nBEGIN_UNTRUSTED_SOURCE_NOTES\n")
         append(mapper.writeValueAsString(sourceNotes))
         append("\nEND_UNTRUSTED_SOURCE_NOTES")
@@ -100,7 +97,7 @@ class PromptBuilder(private val mapper: ObjectMapper) {
     }
 
     companion object {
-        const val PROMPT_VERSION = "pvdd-advice-v6"
+        const val PROMPT_VERSION = "pvdd-advice-v7"
         const val SELECTION_VERSION = "policy-selection-v1"
         private const val MAX_DIRECT_PROMPT_CHARACTERS = 80_000
         private const val NOTES_BATCH_CHARACTERS = 35_000

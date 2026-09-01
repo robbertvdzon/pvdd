@@ -5,17 +5,14 @@ import 'package:pvdd_frontend/build_identity.dart';
 import 'package:pvdd_frontend/dashboard_api.dart';
 import 'package:pvdd_frontend/frontend_version_monitor.dart';
 import 'package:pvdd_frontend/main.dart';
-import 'package:pvdd_frontend/token_store.dart';
 
 void main() {
   testWidgets('restores session and shows secured technical shell', (
     tester,
   ) async {
-    final store = MemoryTokenStore()..write('valid-token');
     await tester.pumpWidget(
       PvddApp(
         authenticationGateway: FakeAuthenticationGateway(),
-        tokenStore: store,
         versionGateway: FakeVersionGateway(),
         frontendVersionSource: FakeFrontendVersionSource(),
         dashboardGateway: FakeDashboardGateway(),
@@ -42,8 +39,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       PvddApp(
-        authenticationGateway: FakeAuthenticationGateway(),
-        tokenStore: MemoryTokenStore(),
+        authenticationGateway: FakeAuthenticationGateway(authenticated: false),
         loginBuilder: (onToken) => FilledButton(
           onPressed: () => onToken('new-token'),
           child: const Text('Test Google-login'),
@@ -70,7 +66,6 @@ void main() {
       PvddApp(
         acceptanceBypass: true,
         authenticationGateway: FakeAuthenticationGateway(),
-        tokenStore: MemoryTokenStore(),
         versionGateway: FakeVersionGateway(),
         frontendVersionSource: FakeFrontendVersionSource(),
         dashboardGateway: FakeDashboardGateway(),
@@ -93,7 +88,6 @@ void main() {
     await tester.pumpWidget(
       PvddApp(
         authenticationGateway: FakeAuthenticationGateway(),
-        tokenStore: MemoryTokenStore()..write('valid-token'),
         versionGateway: FakeVersionGateway(),
         frontendVersionSource: FakeFrontendVersionSource(),
         dashboardGateway: FakeDashboardGateway(),
@@ -104,7 +98,7 @@ void main() {
     expect(find.byTooltip('Menu openen'), findsOneWidget);
   });
 
-  testWidgets('shows A B C progress and exactly five A B advice sections', (
+  testWidgets('shows A B C progress and one free Markdown analysis', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(800, 1200);
@@ -113,7 +107,6 @@ void main() {
     await tester.pumpWidget(
       PvddApp(
         authenticationGateway: FakeAuthenticationGateway(),
-        tokenStore: MemoryTokenStore()..write('valid-token'),
         versionGateway: FakeVersionGateway(),
         frontendVersionSource: FakeFrontendVersionSource(),
         dashboardGateway: FakeDashboardGateway(withMeeting: true),
@@ -128,15 +121,11 @@ void main() {
     await tester.ensureVisible(find.text('1.a Natuurinclusief wonen'));
     await tester.tap(find.text('1.a Natuurinclusief wonen'));
     await tester.pumpAndSettle();
-    for (final heading in [
-      'Waar gaat het over?',
-      'Wat vinden we ervan?',
-      'Wat kunnen/willen we ermee in de commissie?',
-      'Welke punten willen we maken en wat willen we van de gedeputeerde?',
-      'Welke technische vragen gaan we stellen?',
-    ]) {
-      expect(find.text(heading), findsOneWidget);
-    }
+    expect(find.text('Vrije Markdown-analyse'), findsOneWidget);
+    expect(
+      find.text('Een bruikbaar politiek advies zonder vast format.'),
+      findsOneWidget,
+    );
     expect(find.textContaining('AI-concept'), findsOneWidget);
   });
 
@@ -150,7 +139,6 @@ void main() {
       PvddApp(
         acceptanceBypass: true,
         authenticationGateway: FakeAuthenticationGateway(),
-        tokenStore: MemoryTokenStore(),
         versionGateway: FakeVersionGateway(),
         frontendVersionSource: FakeFrontendVersionSource(),
         dashboardGateway: FakeDashboardGateway(
@@ -169,24 +157,28 @@ void main() {
       find.textContaining('dit beschikbare stuk is geanalyseerd'),
       findsOneWidget,
     );
-    expect(find.text('Waar gaat het over?'), findsOneWidget);
+    expect(find.text('Vrije Markdown-analyse'), findsOneWidget);
   });
 }
 
-class MemoryTokenStore implements TokenStore {
-  String? value;
-  @override
-  void clear() => value = null;
-  @override
-  String? read() => value;
-  @override
-  void write(String value) => this.value = value;
-}
-
 class FakeAuthenticationGateway implements AuthenticationGateway {
+  FakeAuthenticationGateway({this.authenticated = true});
+  bool authenticated;
+
   @override
-  Future<AuthenticatedUser> me(String idToken) async =>
-      const AuthenticatedUser('robbertvdzon@gmail.com');
+  Future<AuthenticatedUser> restore() async {
+    if (!authenticated) throw const AuthenticationRejected();
+    return const AuthenticatedUser('robbertvdzon@gmail.com');
+  }
+
+  @override
+  Future<AuthenticatedUser> signIn(String idToken) async {
+    authenticated = true;
+    return const AuthenticatedUser('robbertvdzon@gmail.com');
+  }
+
+  @override
+  Future<void> signOut() async => authenticated = false;
 }
 
 class FakeVersionGateway implements VersionGateway {
@@ -283,30 +275,15 @@ class FakeDashboardGateway implements DashboardGateway {
     final item = (await agendaItems(
       'meeting-id',
     )).firstWhere((value) => value.id == itemId);
-    Map<String, dynamic> section(String text) => {
-      'text': text,
-      'citations': <dynamic>[],
-    };
     return AgendaItemDetail(
       item: item,
       explanation: 'Synthetische toelichting',
       treatmentProposal: 'Bespreken',
       sourceUrl: Uri.parse('https://example.test/item'),
-      advice: item.category == 'C'
-          ? {
-              'besprekenEnNaarB': true,
-              'urgentie': 'HOOG',
-              'motivering': section('Politieke meerwaarde'),
-              'commissieDoel': section('Natuur beschermen'),
-              'kernvraag': section('Wat doet de gedeputeerde?'),
-            }
-          : {
-              'waarGaatHetOver': section('Samenvatting'),
-              'watVindenWeErvan': section('Beoordeling'),
-              'commissieInzet': section('Inzet'),
-              'puntenVoorGedeputeerde': section('Punten'),
-              'technischeVragen': section('Vragen'),
-            },
+      advice: const {
+        'content':
+            '# Vrije Markdown-analyse\n\nEen bruikbaar politiek advies zonder vast format.',
+      },
       adviceActuality: item.adviceActuality,
       sources: const [],
       warning: 'AI-concept — controleer bronnen en formulering vóór gebruik',

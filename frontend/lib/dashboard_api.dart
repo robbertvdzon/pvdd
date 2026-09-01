@@ -2,8 +2,6 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-typedef TokenProvider = String? Function();
-
 abstract interface class DashboardGateway {
   Future<MeetingOverview> overview();
   Future<List<AgendaItemSummary>> agendaItems(String meetingId);
@@ -12,14 +10,9 @@ abstract interface class DashboardGateway {
 }
 
 class HttpDashboardGateway implements DashboardGateway {
-  HttpDashboardGateway(
-    this._token, {
-    this.requireAuthentication = true,
-    http.Client? client,
-  }) : _client = client ?? http.Client();
-  final TokenProvider _token;
+  HttpDashboardGateway({http.Client? client})
+    : _client = client ?? http.Client();
   final http.Client _client;
-  final bool requireAuthentication;
 
   @override
   Future<MeetingOverview> overview() async => MeetingOverview.fromJson(
@@ -70,14 +63,7 @@ class HttpDashboardGateway implements DashboardGateway {
   }
 
   Map<String, String> _headers({String? idempotencyKey}) {
-    final token = _token();
-    if (requireAuthentication && (token == null || token.isEmpty)) {
-      throw const DashboardUnavailable();
-    }
     final headers = <String, String>{'Cache-Control': 'no-cache'};
-    if (token != null && token.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $token';
-    }
     if (idempotencyKey != null) {
       headers['Idempotency-Key'] = idempotencyKey;
     }

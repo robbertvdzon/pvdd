@@ -61,8 +61,8 @@ duidelijk waarop een conclusie is gebaseerd.
 De webapp is alleen beschikbaar voor expliciet toegestane gebruikers.
 
 - De login gebruikt **Google SSO**, gelijk aan de beheerfrontend van `hkh-autopilot`.
-- De Flutter-webfrontend verkrijgt een Google ID-token en stuurt dat als bearer-token naar de
-  backend.
+- De Flutter-webfrontend gebruikt het Google ID-token alleen om één keer een eigen backendsessie
+  te openen. Daarna gebruikt de browser een `HttpOnly`, `Secure`, `SameSite=Lax`-cookie.
 - De backend verifieert minimaal de RS256-handtekening via Google JWKS, audience, issuer,
   vervaltijd, `email_verified` en een case-insensitive e-mailallowlist.
 - De productieallowlist staat voor de eenvoudige MVP bewust hard gecodeerd in de backend en bevat
@@ -73,14 +73,19 @@ De webapp is alleen beschikbaar voor expliciet toegestane gebruikers.
   en zijn beveiligde API-routes niet toegankelijk.
 - De Google client-ID is build-/runtimeconfiguratie; er is voor deze browserflow geen Google client
   secret nodig.
+- Een sessie is standaard 180 dagen geldig, wordt uitsluitend gehasht opgeslagen en kan door
+  uitloggen direct worden ingetrokken. Een verlopen of onbekende sessie faalt gesloten.
 - Autorisatie vindt altijd in de backend plaats. Een verborgen frontendknop is geen
   beveiligingsgrens.
+- Productie heeft geen algemene backdoor of API-key die gebruikersauthenticatie omzeilt. Een
+  toekomstige machinekoppeling krijgt alleen expliciet benodigde, minimaal gescopeerde routes.
 
 Configuratie:
 
 | Variabele | Betekenis |
 | --- | --- |
 | `PVDD_GOOGLE_CLIENT_ID` | Bestaande Google Web OAuth-client-ID |
+| `PVDD_AUTH_SESSION_DAYS` | Geldigheidsduur van de eigen sessie; productie gebruikt 180 dagen |
 | `PVDD_CORS_ALLOWED_ORIGINS` | Alleen nodig als niet alles same-origin draait |
 
 De origin `https://pvdd.vdzonsoftware.nl` moet handmatig worden toegevoegd aan **Authorized
@@ -160,7 +165,8 @@ zo’n document niet stilzwijgend als volledig gelezen markeren.
 
 ### 4.4 Analyse van A- en B-agendapunten
 
-Voor ieder inhoudelijk punt op de A- of B-agenda geeft het resultaat exact deze vijf onderdelen:
+De AI maakt voor ieder inhoudelijk punt op de A- of B-agenda een vrij Markdownadvies. De volgende
+vragen sturen de opdracht, maar zijn bewust geen technisch afgedwongen responsevelden:
 
 1. **Waar gaat het over?** — feitelijke, neutrale samenvatting van voorstel, besluit, geld,
    planning, betrokken gebieden en gevolgen.
@@ -174,20 +180,20 @@ Voor ieder inhoudelijk punt op de A- of B-agenda geeft het resultaat exact deze 
    zijn om ontbrekende informatie, aannames, effecten, financiën, juridische ruimte, monitoring en
    alternatieven helder te krijgen.
 
-Elk onderdeel bevat bronverwijzingen naar de gebruikte vergaderstukken en relevante pagina’s van
-het verkiezingsprogramma. Feiten, politieke waardering en voorgestelde actie moeten zichtbaar van
-elkaar te onderscheiden zijn.
+De AI krijgt de vergaderstukken en relevante delen van het verkiezingsprogramma mee. De backend
+vertrouwt voor de MVP op de inhoudelijke uitvoering en weigert een advies niet vanwege vorm,
+ontbrekende citaten of een andere nuttige indeling.
 
 ### 4.5 Beoordeling van C-agendapunten
 
-Voor ieder C-agendapunt geeft de app:
+Voor ieder C-agendapunt vraagt de opdracht om:
 
 - **bespreken en verplaatsen naar B: ja/nee**;
 - een korte, concrete motivering vanuit het PvdD-standpunt;
 - urgentie: laag, middel of hoog;
 - wat bespreking in de commissie moet opleveren;
 - de belangrijkste politieke en/of technische vraag wanneer bespreking wordt geadviseerd;
-- bronverwijzingen.
+- waar nuttig een verwijzing naar de gebruikte bron.
 
 “Ja” wordt alleen geadviseerd wanneer bespreking politieke meerwaarde heeft, bijvoorbeeld bij
 mogelijke schade aan natuur, dieren, klimaat, gezondheid of kwetsbare inwoners, strijd met het
@@ -216,23 +222,14 @@ Minimaal terugkerende toetsingsassen zijn:
 - transparantie, bescherming van privacy en betrokkenheid van inwoners;
 - verdelingseffecten en bescherming van kwetsbare mensen en toekomstige generaties.
 
-### 4.7 Kwaliteit van AI-uitvoer
+### 4.7 Technisch contract van AI-uitvoer
 
-De Agent Runtime-job gebruikt een streng JSON-responseschema. De backend accepteert geen vrije tekst
-als eindresultaat en valideert aanvullend:
-
-- alle vereiste onderdelen aanwezig en niet leeg;
-- de agenda-ID’s bestaan in de lokale import;
-- elke bronverwijzing verwijst naar een meegegeven bron;
-- A/B-uitvoer bevat vijf onderdelen;
-- C-uitvoer bevat een binaire bespreekbeslissing en motivering;
-- tekst- en lijstlengtes zijn begrensd;
-- onzekerheden en ontbrekende informatie zijn expliciet;
-- er staan geen verzonnen citaten, paginanummers of URL’s in.
-
-Een ongeldige uitkomst wordt niet als advies getoond. De app toont een veilige foutstatus en laat een
-nieuwe technische poging over aan Agent Runtime; de gebruiker kan dezelfde veilige controle via
-“Nu controleren” opnieuw starten.
+De Agent Runtime-job gebruikt één minimaal JSON-responseschema voor A, B, C en interne
+bronnotities: `{"content":"<Markdown>"}`. De backend controleert uitsluitend dat het resultaat
+geldige JSON is, exact dit technische veld bevat, dat `content` een niet-lege string is en niet
+groter is dan 50.000 tekens. Er is geen inhoudelijke validatie op onderdelen, citaten, bron-ID's,
+pagina's, urgentie of politieke conclusies. Een technisch onbruikbaar resultaat wordt niet getoond;
+een inhoudelijk onvolmaakt resultaat wel, met de vaste waarschuwing dat het een AI-concept is.
 
 Grote dossiers mogen nooit stilzwijgend worden afgekapt. Wanneer de volledige tekst niet binnen de
 Runtime-promptlimiet past, maakt de backend eerst gevalideerde bronnotities per document/chunk en
@@ -262,8 +259,8 @@ promptversie.
 2. **Overzicht** — eerstvolgende vergadering, bronstatus, laatst gecontroleerd, laatst geanalyseerd,
    buildinformatie en knop “Nu controleren”.
 3. **Agenda** — tabs of filters A, B en C; status per punt; zoeken op titel.
-4. **A/B-detail** — bronstukken en de vijf analyseonderdelen.
-5. **C-detail** — ja/nee-advies, urgentie, motivering en vraag.
+4. **A/B-detail** — bronstukken en het vrije Markdownadvies.
+5. **C-detail** — bronstukken en het vrije Markdownadvies met de gevraagde bespreekafweging.
 6. **Bronnen** — klikbare bronlinks, documenthash/ophaaldatum en programmapassages.
 7. **Runstatus** — voortgang en een veilige foutmelding; opnieuw proberen gebeurt via “Nu
    controleren” of de volgende 05:00-run.
@@ -352,8 +349,9 @@ Minimaal datamodel:
 | `agenda_item` | bron-ID, meeting-ID, volgorde, categorie A/B/C, titel, toelichting, URL, hash |
 | `source_document` | bron-ID, agenda-item, naam, URL, MIME-type, SHA-256, tekststatus, opgehaald op |
 | `analysis_run` | bronfingerprint, promptversie, status, Runtime-job-ID, idempotentiesleutel, fout, tijden |
-| `agenda_item_advice` | run, item, vijf A/B-onderdelen of C-besluit, urgentie, citaties, modelmetadata |
+| `agenda_item_advice` | run, item, vrij Markdownresultaat in JSON en modelmetadata |
 | `policy_source` | programma-URL, SHA-256, ophaaldatum, pagina-/sectiechunks |
+| `user_session` | hash van sessiesleutel, toegestane gebruiker, verval- en gebruikstijd |
 
 Voor de eenvoudige MVP worden vergaderingen, documenten, geëxtraheerde tekst, runs en resultaten
 voor onbepaalde tijd bewaard. Er is geen bewaartermijn, cleanupjob of automatische verwijdering.
@@ -362,7 +360,8 @@ auditbaar. Technische download- en requestgroottelimieten blijven wel gelden.
 
 ### 6.3 Voorgestelde backend-API
 
-Alle routes behalve probes en versiemetadata vereisen een geldig Google bearer-token.
+Alle routes behalve probes, versiemetadata en het openen/sluiten van een sessie vereisen een
+geldige backend-sessiecookie. Het openen van een sessie vereist een geldig Google ID-token.
 
 | Methode en route | Doel |
 | --- | --- |
@@ -611,10 +610,10 @@ niet gecommit. Scripts lezen env-bestanden als data en voeren ze niet uit met `s
 - wijzigingsdetectie en idempotentie;
 - documenttype-, grootte-, host- en time-outgrenzen;
 - prompt-injectionfixture;
-- JSON-schema- en bronverwijzingsvalidatie;
+- minimaal JSON-schema en niet-lege Markdownvalidatie;
 - Agent Runtime HTTP-contracttest en verloren-submitresponse;
 - reconciliatie na applicatieherstart;
-- Google-tokenvalidatie en allowlist, inclusief fail-closed configuratie;
+- Google-tokenvalidatie, allowlist, gehashte duurzame sessies en intrekken bij uitloggen;
 - repositorytests met echte PostgreSQL via Testcontainers;
 - Spring Modulith-architectuurverificatie.
 
@@ -623,9 +622,9 @@ smoketest mag gecontroleerd de publieke bronnen lezen.
 
 ### 13.2 Frontend
 
-- loginstatussen en verlopen token;
+- loginstatussen, duurzame sessie, uitloggen en verlopen sessie;
 - vergadering zonder gepubliceerde agenda;
-- A/B-vijfdelige weergave en C-ja/nee-weergave;
+- vrije Markdownweergave voor A, B en C;
 - voortgang, fout en “Nu controleren” zonder dubbele verwerking;
 - bronlinks en conceptwaarschuwing;
 - builddialoog en updatebeschikbaarheid;
@@ -654,8 +653,8 @@ inclusief de later uitgevoerde Software Factory-aansluiting, is gereed wanneer:
 3. een nog niet gepubliceerde agenda correct als zodanig wordt getoond;
 4. een gepubliceerde agenda inclusief gekoppelde openbare stukken reproduceerbaar wordt geïmporteerd;
 5. ieder geïmporteerd bronstuk een opgeslagen SHA-256 en herleidbare bronmetadata heeft;
-6. ieder A/B-punt de vijf gevraagde, niet-lege onderdelen met controleerbare bronnen heeft;
-7. ieder C-punt een gemotiveerd ja/nee-advies over verplaatsing naar B heeft;
+6. ieder A/B-punt een technisch geldig, niet-leeg Markdownadvies heeft;
+7. ieder C-punt een technisch geldig, niet-leeg Markdownadvies heeft;
 8. het verkiezingsprogramma aantoonbaar de primaire bron voor politieke waardering is;
 9. de AI-uitvoering asynchroon en idempotent via een eigen PvdD Agent Runtime-tenant verloopt;
 10. herstart van backend of browser geen lopende of afgeronde analyse verliest;
