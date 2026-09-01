@@ -17,6 +17,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Verify documentation and repository hygiene
         run: bash tools/verify-documentation.sh
+      - name: Verify synthetic source fixtures
+        run: python3 -m unittest discover -s meeting-source-mock
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:

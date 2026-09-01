@@ -138,4 +138,5 @@ class Handler(BaseHTTPRequestHandler):
         print("source-mock", message % args, flush=True)
 
 
-ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), Handler).serve_forever()
+if __name__ == "__main__":
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), Handler).serve_forever()
