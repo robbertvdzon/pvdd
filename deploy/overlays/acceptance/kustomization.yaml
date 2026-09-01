@@ -8,12 +8,12 @@ resources:
 - route.yaml
 - sealed-secret.yaml
 images:
-- digest: sha256:b83c7f8486cce9685f1ef78f9e2985361fb3b80cecc5d93a198841fbbe2bc87d
+- digest: sha256:ce93dfa1f5b573fdf143570c9767466ccd2c870b62e896aa78a65122e6c4b9bc
   name: ghcr.io/robbertvdzon/pvdd-backend
   newName: ghcr.io/robbertvdzon/pvdd-backend
-- digest: sha256:a55802f1ce915f578311f25457e24770c09c74ca5d4637e959622747bd14e4e1
+- digest: sha256:3f6598f870a1ac00aa221428875c09231f1330c87125d9bb012b735e1d38a6f0
   name: ghcr.io/robbertvdzon/pvdd-frontend
   newName: ghcr.io/robbertvdzon/pvdd-frontend
-- digest: sha256:6d8acb8069f125e7ea38c3b2ef0dc522b6decc8a8c63cd0a3691104879ed0683
+- digest: sha256:53980b90b60c691d9eef48e69c70ec57b59490a5352a5d35c630bfa3e016a76e
   name: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
   newName: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
