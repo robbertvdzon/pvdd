@@ -120,7 +120,27 @@ class AnalysisRepository(
             prepared.parentRunId,
             runId,
         )
+        reactivateSucceededAdvice(runId, prepared.run.agendaItemId)
         return runId
+    }
+
+    private fun reactivateSucceededAdvice(runId: UUID, agendaItemId: UUID) {
+        jdbc.update(
+            """
+            UPDATE agenda_item_advice advice SET actuality = CASE
+                WHEN advice.analysis_run_id = ? AND EXISTS (
+                    SELECT 1 FROM analysis_run run
+                    WHERE run.id = advice.analysis_run_id AND run.status = 'SUCCEEDED'
+                ) THEN 'CURRENT'
+                ELSE 'STALE'
+            END
+            WHERE advice.agenda_item_id = ?
+              AND (SELECT source_state FROM agenda_item WHERE id = ?) = 'CURRENT'
+            """.trimIndent(),
+            runId,
+            agendaItemId,
+            agendaItemId,
+        )
     }
 
     @org.springframework.transaction.annotation.Transactional
@@ -307,11 +327,12 @@ class AnalysisRepository(
             SELECT 1 FROM agenda_item ai
             WHERE ai.meeting_id = ? AND ai.source_state = 'CURRENT'
               AND ai.substantive AND ai.category IN ('A', 'B', 'C')
-              AND COALESCE((
-                  SELECT ar.status FROM analysis_run ar
-                  WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE'
-                  ORDER BY ar.created_at DESC, ar.id DESC LIMIT 1
-              ), 'MISSING') <> 'SUCCEEDED'
+              AND NOT EXISTS (
+                  SELECT 1 FROM agenda_item_advice advice
+                  JOIN analysis_run run ON run.id = advice.analysis_run_id
+                  WHERE advice.agenda_item_id = ai.id AND advice.actuality = 'CURRENT'
+                    AND run.run_type = 'FINAL_ADVICE' AND run.status = 'SUCCEEDED'
+              )
         )
         FROM analysis_run WHERE meeting_id = ?
         """.trimIndent(),

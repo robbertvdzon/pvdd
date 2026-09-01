@@ -238,6 +238,29 @@ class DatabaseIntegrationTest(
             newer.run.id,
         ))
 
+        val laterFailed = newer.copy(
+            run = newer.run.copy(
+                id = UUID.randomUUID(),
+                idempotencyKey = "pvdd-${"5".repeat(64)}",
+                createdAt = now.plusSeconds(7),
+                updatedAt = now.plusSeconds(7),
+            ),
+        )
+        analysisRepository.createPreparedRun(laterFailed)
+        jdbc.update(
+            "UPDATE analysis_run SET status = 'FAILED', outbox_status = 'FAILED' WHERE id = ?",
+            laterFailed.run.id,
+        )
+        assertFalse(analysisRepository.allRequiredRunsSucceeded(meetingId))
+
+        assertEquals(preparedId, analysisRepository.createPreparedRun(prepared))
+        assertTrue(analysisRepository.allRequiredRunsSucceeded(meetingId))
+        assertEquals("CURRENT", jdbc.queryForObject(
+            "SELECT actuality FROM agenda_item_advice WHERE analysis_run_id = ?",
+            String::class.java,
+            preparedId,
+        ))
+
         val phasedFinal = prepared.copy(
             run = prepared.run.copy(id = UUID.randomUUID(), idempotencyKey = "pvdd-${"7".repeat(64)}"),
             prompt = null,
