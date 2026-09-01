@@ -54,7 +54,7 @@ class PolicyWebCrawler(
             val (url, depth) = queue.removeFirst()
             if (!visited.add(url)) continue
             properties.validateUrl(url)
-            val response = fetch(url)
+            val response = fetch(url) ?: continue
             totalBytes += response.bytes.size
             if (totalBytes > properties.maxTotalBytes) throw PolicySourceException("POLICY_TOTAL_TOO_LARGE")
             val parsed = parse(url, response)
@@ -71,7 +71,7 @@ class PolicyWebCrawler(
         return result.sortedBy { it.canonicalUrl.toString() }
     }
 
-    private fun fetch(initialUrl: URI): FetchResponse {
+    private fun fetch(initialUrl: URI): FetchResponse? {
         var url = initialUrl
         for (redirectCount in 0..MAX_REDIRECTS) {
             properties.validateUrl(url)
@@ -100,6 +100,10 @@ class PolicyWebCrawler(
                 }
                 url = canonical(url.resolve(location))
                 continue
+            }
+            if (response.statusCode() in setOf(404, 410)) {
+                response.body().close()
+                return null
             }
             if (response.statusCode() !in 200..299) {
                 response.body().close()
