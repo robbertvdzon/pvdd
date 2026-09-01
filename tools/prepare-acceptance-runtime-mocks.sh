@@ -26,6 +26,12 @@ register_result() {
 register_result "$fixtures/ab-housing.json"
 register_result "$fixtures/ab-mobility.json"
 register_result "$fixtures/c-nature.json"
+# De bronrevisiereeks verwerkt wijzigingen één voor één. De centrale Runtime-mocks
+# zijn bewust eenmalig, dus registreer de verwachte nieuwe puntfingerprints in
+# dezelfde deterministische volgorde als de scenario-driver.
+register_result "$fixtures/ab-green.json"
+register_result "$fixtures/c-mobility.json"
+for _ in 1 2 3 4; do register_result "$fixtures/ab-housing.json"; done
 register_result "$fixtures/large-notes.json" 'pvdd-acceptance-large-notes-1'
 
 jq -n --arg tenantId pvdd --arg key 'pvdd-acceptance-error' --slurpfile failure "$fixtures/mock-error.json" \

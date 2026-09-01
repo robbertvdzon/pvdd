@@ -266,14 +266,7 @@ class AnalysisOrchestrator(
         text = passage.text,
     )
 
-    private fun fingerprint(item: AgendaItem, sources: List<AnalysisSource>): String = sha256(
-        buildString {
-            append(item.sourceHash)
-            sources.sortedBy { it.sourceId }.forEach { source ->
-                append('|').append(source.sourceId).append(':').append(sha256(source.text))
-            }
-        },
-    )
+    private fun fingerprint(item: AgendaItem, sources: List<AnalysisSource>): String = analysisFingerprint(item, sources)
 
     private fun citations(result: JsonNode): JsonNode = mapper.createArrayNode().also { target ->
         result.findValues("citations").filter { it.isArray }.forEach { array -> array.forEach(target::add) }
@@ -300,3 +293,16 @@ class AnalysisOrchestrator(
             .joinToString("") { "%02x".format(it) }
     }
 }
+
+internal fun analysisFingerprint(item: AgendaItem, sources: List<AnalysisSource>): String =
+    MessageDigest.getInstance("SHA-256").digest(
+        buildString {
+            append(item.category.name).append('|').append(item.sourceHash)
+            sources.sortedBy { it.sourceId }.forEach { source ->
+                val sourceHash = MessageDigest.getInstance("SHA-256")
+                    .digest(source.text.toByteArray())
+                    .joinToString("") { "%02x".format(it) }
+                append('|').append(source.sourceId).append(':').append(sourceHash)
+            }
+        }.toByteArray(),
+    ).joinToString("") { "%02x".format(it) }

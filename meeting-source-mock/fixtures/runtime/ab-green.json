@@ -1,0 +1,23 @@
+{
+  "agendaItemSourceId": "item-b-green",
+  "waarGaatHetOver": {
+    "text": "Het agendapunt gaat over een nieuwe groene provinciale verbinding.",
+    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"Biodiversiteit en leefgebieden worden verbonden"}]
+  },
+  "watVindenWeErvan": {
+    "text": "De verbinding is wenselijk wanneer natuurherstel leidend en meetbaar is.",
+    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"draagkracht van de planeet"}]
+  },
+  "commissieInzet": {
+    "text": "Vraag om een uitvoerbare planning en ecologische kwaliteitscriteria.",
+    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"Natuur en dieren hebben bescherming nodig"}]
+  },
+  "puntenVoorGedeputeerde": {
+    "text": "Laat zien hoe versnippering wordt opgeheven en natuurverlies wordt voorkomen.",
+    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"leefgebieden worden verbonden"}]
+  },
+  "technischeVragen": {
+    "text": "Welke ecologische doelen, middelen en oplevermomenten zijn vastgelegd?",
+    "citations": [{"sourceId":"policy-p1-c1","sourceType":"POLICY_PROGRAMME","pageNumber":1,"section":"Kernprincipes","quote":"Biodiversiteit en leefgebieden worden verbonden"}]
+  }
+}

@@ -18,6 +18,21 @@ check_now() {
     "$app_url/api/meetings/check-now"
 }
 
+wait_until_settled() {
+  local expected_revision="$1" deadline=$((SECONDS + 90)) overview=''
+  while (( SECONDS < deadline )); do
+    overview="$(curl --fail --silent --show-error "$app_url/api/meetings/next")"
+    if [[ "$(jq -r '.meeting.revisionNumber // 0' <<<"$overview")" -ge "$expected_revision" ]] &&
+       [[ "$(jq -r '.meeting.status // ""' <<<"$overview")" = COMPLETE ]] &&
+       [[ "$(jq -r '.meeting.revisionStatus // ""' <<<"$overview")" = CURRENT ]]; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "revisie $expected_revision werd niet binnen 90 seconden actueel" >&2
+  return 1
+}
+
 expect_status() {
   scenario_name="$1"
   expected_status="$2"
@@ -35,7 +50,9 @@ expect_status() {
       exit 1
     }
   fi
-  printf '%-24s %s revision=%s\n' "$scenario_name" "$actual_status" "$(jq -r '.revisionNumber // "-"' <<<"$response")"
+  revision_number="$(jq -r '.revisionNumber // 0' <<<"$response")"
+  if [[ "$actual_status" = IMPORTED ]]; then wait_until_settled "$revision_number"; fi
+  printf '%-24s %s revision=%s\n' "$scenario_name" "$actual_status" "$revision_number"
   sleep "$check_interval_seconds"
 }
 
