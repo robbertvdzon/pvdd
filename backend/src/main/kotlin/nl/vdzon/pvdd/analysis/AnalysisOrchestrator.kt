@@ -297,12 +297,21 @@ class AnalysisOrchestrator(
 internal fun analysisFingerprint(item: AgendaItem, sources: List<AnalysisSource>): String =
     MessageDigest.getInstance("SHA-256").digest(
         buildString {
-            append(item.category.name).append('|').append(item.sourceHash)
-            sources.sortedBy { it.sourceId }.forEach { source ->
+            appendFingerprintPart(item.category.name)
+            appendFingerprintPart(item.title)
+            appendFingerprintPart(item.explanation.orEmpty())
+            appendFingerprintPart(item.treatmentProposal.orEmpty())
+            sources.forEach { source ->
                 val sourceHash = MessageDigest.getInstance("SHA-256")
                     .digest(source.text.toByteArray())
                     .joinToString("") { "%02x".format(it) }
-                append('|').append(source.sourceId).append(':').append(sourceHash)
+                appendFingerprintPart(source.sourceType.name)
+                appendFingerprintPart(source.sourceId)
+                appendFingerprintPart(sourceHash)
             }
         }.toByteArray(),
     ).joinToString("") { "%02x".format(it) }
+
+private fun StringBuilder.appendFingerprintPart(value: String) {
+    append(value.length).append(':').append(value)
+}

@@ -23,15 +23,16 @@ register_result() {
       --data-binary @- "$runtime_url/v1/test-control/mocks" >/dev/null
 }
 
-register_result "$fixtures/ab-housing.json"
-register_result "$fixtures/ab-mobility.json"
-register_result "$fixtures/c-nature.json"
-# De bronrevisiereeks verwerkt wijzigingen één voor één. De centrale Runtime-mocks
-# zijn bewust eenmalig, dus registreer de verwachte nieuwe puntfingerprints in
-# dezelfde deterministische volgorde als de scenario-driver.
-register_result "$fixtures/ab-green.json"
-register_result "$fixtures/c-mobility.json"
+# De Runtime kiest bij even specifieke mocks de laatst geregistreerde en verbruikt
+# die eenmalig. Registreer daarom de verwachte antwoorden in omgekeerde volgorde:
+# vier woningmutaties, de categorie- en toevoegingsmutatie, en ten slotte de drie
+# analyses van de eerste publicatie.
 for _ in 1 2 3 4; do register_result "$fixtures/ab-housing.json"; done
+register_result "$fixtures/c-mobility.json"
+register_result "$fixtures/ab-green.json"
+register_result "$fixtures/c-nature.json"
+register_result "$fixtures/ab-mobility.json"
+register_result "$fixtures/ab-housing.json"
 register_result "$fixtures/large-notes.json" 'pvdd-acceptance-large-notes-1'
 
 jq -n --arg tenantId pvdd --arg key 'pvdd-acceptance-error' --slurpfile failure "$fixtures/mock-error.json" \
