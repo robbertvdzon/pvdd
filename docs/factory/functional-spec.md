@@ -22,9 +22,10 @@ bron-URL, bronhash, controle-/importtijd en status. Voor elk agendapunt bewaart 
 volgorde, nummer, semantische categorie A/B/C, titel, toelichting, behandelvoorstel, bronmetadata en
 importstatus. Opening, pauze en sluiting blijven zichtbaar maar zijn niet inhoudelijk voor AI.
 
-C-items komen uit de tabel onder de C-sectie en worden verrijkt via `/Reports/Item/...` en
-`/Reports/Document/...`. De categorie komt altijd uit de actuele sectiehiërarchie, niet alleen uit
-het agendanummer.
+C-items komen uit de tabel onder de C-sectie en worden verrijkt via `/Reports/Item/...`. De
+viewerlinks onder `/Agenda/Document/...` en `/Reports/Document/...` worden op basis van het
+gevalideerde document-ID omgezet naar de openbare bytesroute `/Document/View/{documentId}`. De
+categorie komt altijd uit de actuele sectiehiërarchie, niet alleen uit het agendanummer.
 
 ## Documenten
 
