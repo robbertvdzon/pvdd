@@ -1,6 +1,8 @@
 package nl.vdzon.pvdd.policy
 
+import com.sun.net.httpserver.HttpServer
 import java.io.ByteArrayOutputStream
+import java.net.InetSocketAddress
 import java.net.URI
 import java.time.Clock
 import java.time.Instant
@@ -16,6 +18,38 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts
 import org.junit.jupiter.api.Test
 
 class PolicySourceTest {
+    @Test
+    fun `web crawler retries a transient official source failure`() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        var requests = 0
+        server.createContext("/policy") { exchange ->
+            requests++
+            val body = if (requests == 1) "tijdelijk niet beschikbaar" else
+                "<main><h1>Actueel standpunt</h1><p>${"Dieren natuur klimaat en leefomgeving. ".repeat(4)}</p></main>"
+            exchange.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
+            exchange.sendResponseHeaders(if (requests == 1) 503 else 200, body.toByteArray().size.toLong())
+            exchange.responseBody.use { it.write(body.toByteArray()) }
+        }
+        server.start()
+        try {
+            val crawler = PolicyWebCrawler(
+                PolicySyncProperties(
+                    environment = "local",
+                    startUrls = listOf(URI("http://127.0.0.1:${server.address.port}/policy")),
+                ),
+                Clock.systemUTC(),
+            )
+
+            val sources = crawler.crawl()
+
+            assertEquals(2, requests)
+            assertEquals(1, sources.size)
+            assertEquals("Actueel standpunt", sources.single().title)
+        } finally {
+            server.stop(0)
+        }
+    }
+
     @Test
     fun `environment guard allows official PDF only in production`() {
         PolicySourceProperties(PolicySourceProperties.OFFICIAL_PROGRAMME_URL, "production").validate()

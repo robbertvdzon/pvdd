@@ -72,6 +72,20 @@ class PolicyWebCrawler(
     }
 
     private fun fetch(initialUrl: URI): FetchResponse? {
+        var lastFailure: PolicySourceException? = null
+        repeat(MAX_FETCH_ATTEMPTS) { attempt ->
+            try {
+                return fetchOnce(initialUrl)
+            } catch (failure: PolicySourceException) {
+                if (!isRetryable(failure.code) || attempt == MAX_FETCH_ATTEMPTS - 1) throw failure
+                lastFailure = failure
+                waitForRetry(attempt + 1)
+            }
+        }
+        throw requireNotNull(lastFailure)
+    }
+
+    private fun fetchOnce(initialUrl: URI): FetchResponse? {
         var url = initialUrl
         for (redirectCount in 0..MAX_REDIRECTS) {
             properties.validateUrl(url)
@@ -123,6 +137,18 @@ class PolicyWebCrawler(
             )
         }
         error("Unreachable redirect loop")
+    }
+
+    private fun isRetryable(code: String): Boolean = code in setOf("POLICY_TIMEOUT", "POLICY_HTTP_ERROR", "POLICY_HTTP_429") ||
+        code.matches(Regex("POLICY_HTTP_5\\d\\d"))
+
+    private fun waitForRetry(attempt: Int) {
+        try {
+            Thread.sleep((attempt * RETRY_DELAY_MILLIS).toLong())
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw PolicySourceException("POLICY_INTERRUPTED")
+        }
     }
 
     private fun waitForRequestSlot() {
@@ -237,6 +263,8 @@ class PolicyWebCrawler(
         private val PDF_MAGIC = "%PDF-".toByteArray()
         private val WHITESPACE = Regex("\\s+")
         private const val MAX_REDIRECTS = 3
+        private const val MAX_FETCH_ATTEMPTS = 3
+        private const val RETRY_DELAY_MILLIS = 250
         private const val MAX_DISCOVERY_DEPTH = 2
         private const val MIN_TEXT_CHARACTERS = 80
         private const val MAX_EXTRACTED_CHARACTERS = 500_000
