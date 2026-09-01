@@ -10,6 +10,16 @@ import org.junit.jupiter.api.Test
 
 class AgendaParserTest {
     private val parser = AgendaParser()
+
+    @Test
+    fun `visible C items do not make an explicitly prepublished agenda complete`() {
+        val agenda = parser.parse(
+            fixture("agenda-prepublished-with-c.html"),
+            URI("https://noordholland.bestuurlijkeinformatie.nl/Agenda/Index/prepublished"),
+        )
+        assertFalse(agenda.published)
+        assertTrue(agenda.items.any { it.category == AgendaCategory.C && it.substantive })
+    }
     private val meetingUrl = URI("http://localhost:18091/Agenda/Index/meeting-future")
 
     @Test

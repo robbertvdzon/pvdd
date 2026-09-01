@@ -78,7 +78,7 @@ class AgendaParser {
             location = location,
             sourceUrl = sourceUrl,
             sourceHash = sha256(html),
-            published = items.any { it.substantive },
+            published = items.any { it.substantive } && !UNPUBLISHED_NOTICE.containsMatchIn(document.text()),
             agendaDocuments = agendaDocuments,
             items = items,
         )
@@ -236,6 +236,10 @@ class AgendaParser {
             Regex("^opening\\b", RegexOption.IGNORE_CASE),
             Regex("^pauze\\b", RegexOption.IGNORE_CASE),
             Regex("^sluiting\\b", RegexOption.IGNORE_CASE),
+        )
+        private val UNPUBLISHED_NOTICE = Regex(
+            "\\bagenda\\b.{0,160}\\bwordt\\b.{0,80}\\bgepubliceerd\\b",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
         )
 
         fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
