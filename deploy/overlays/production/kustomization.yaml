@@ -8,9 +8,9 @@ resources:
 - route.yaml
 - sealed-secret.yaml
 images:
-- digest: sha256:34954968053533053ff38e9d222909f4b0dfeab35a68a3d2cb0a4825cc203fe5
+- digest: sha256:9e4aeff1ee0ad66af7b0a128b9dc9a5eab797e1eccd67fe76e2a7451beebba12
   name: ghcr.io/robbertvdzon/pvdd-backend
   newName: ghcr.io/robbertvdzon/pvdd-backend
-- digest: sha256:9531618ab5abb8d5d8d29fec5676f2c3b7f5a043e23be74f38defd31accd22f7
+- digest: sha256:d48591169dd762e4e4d605a767e2a2e439dd7b0ba5ff2828319447fcb855c030
   name: ghcr.io/robbertvdzon/pvdd-frontend
   newName: ghcr.io/robbertvdzon/pvdd-frontend
