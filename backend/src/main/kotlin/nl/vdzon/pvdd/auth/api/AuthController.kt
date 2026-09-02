@@ -99,7 +99,20 @@ class AuthController(
     @GetMapping("/me")
     fun me(
         @RequestAttribute(ApiAuthenticationFilter.AUTHENTICATED_EMAIL_ATTRIBUTE) email: String,
-    ): AuthenticatedUserResponse = AuthenticatedUserResponse(email)
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+    ): AuthenticatedUserResponse {
+        val existingCsrfToken = request.cookies.orEmpty()
+            .firstOrNull { it.name == UserSessionService.CSRF_COOKIE_NAME }
+            ?.value
+        if (config.mode != AuthMode.GOOGLE || !existingCsrfToken.isNullOrBlank()) {
+            return AuthenticatedUserResponse(email)
+        }
+        val csrf = sessions.createCsrfToken()
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store")
+        response.addHeader(HttpHeaders.SET_COOKIE, csrfCookie(csrf.token, csrf.expiresIn).toString())
+        return AuthenticatedUserResponse(email, csrf.token)
+    }
 
     @PostMapping("/session")
     fun createSession(

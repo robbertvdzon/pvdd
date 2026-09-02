@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component
 import org.springframework.web.server.ResponseStatusException
 
 data class CreatedUserSession(val token: String, val csrfToken: String, val expiresIn: Duration)
+data class CreatedCsrfToken(val token: String, val expiresIn: Duration)
 
 @Component
 class UserSessionService(
@@ -28,8 +29,8 @@ class UserSessionService(
     }
 
     fun create(email: String): CreatedUserSession {
-        val token = ByteArray(32).also(random::nextBytes).let(encoder::encodeToString)
-        val csrfToken = ByteArray(32).also(random::nextBytes).let(encoder::encodeToString)
+        val token = randomToken()
+        val csrfToken = randomToken()
         if (!authConfig.isAllowed(email)) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, "Session account is no longer allowed")
         }
@@ -44,6 +45,8 @@ class UserSessionService(
         )
         return CreatedUserSession(token, csrfToken, lifetime)
     }
+
+    fun createCsrfToken(): CreatedCsrfToken = CreatedCsrfToken(randomToken(), lifetime)
 
     fun authenticate(token: String): AuthenticatedUser {
         val email = jdbc.query(
@@ -70,6 +73,8 @@ class UserSessionService(
     private fun hash(token: String): String = MessageDigest.getInstance("SHA-256")
         .digest(token.toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
+
+    private fun randomToken(): String = ByteArray(32).also(random::nextBytes).let(encoder::encodeToString)
 
     companion object {
         const val COOKIE_NAME = "pvdd_session"

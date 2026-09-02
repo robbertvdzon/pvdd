@@ -10,6 +10,7 @@ import kotlin.test.assertTrue
 import kotlin.test.assertFailsWith
 import nl.vdzon.pvdd.auth.AuthConfig
 import nl.vdzon.pvdd.auth.Authenticator
+import nl.vdzon.pvdd.auth.CreatedCsrfToken
 import nl.vdzon.pvdd.auth.CreatedUserSession
 import nl.vdzon.pvdd.auth.GoogleIdentity
 import nl.vdzon.pvdd.auth.UserSessionService
@@ -27,6 +28,36 @@ class AuthControllerTest {
     private val sessions = mock(UserSessionService::class.java)
     private val tooling = ToolingSessionAuthenticator(config, Clock.systemUTC())
     private val controller = AuthController(authenticator, config, sessions, tooling)
+
+    @Test
+    fun `restoring a legacy session adds its missing csrf cookie`() {
+        `when`(sessions.createCsrfToken())
+            .thenReturn(CreatedCsrfToken("replacement-csrf", Duration.ofDays(180)))
+        val response = MockHttpServletResponse()
+
+        val body = controller.me(
+            "robbertvdzon@gmail.com",
+            MockHttpServletRequest(),
+            response,
+        )
+
+        assertEquals("replacement-csrf", body.csrfToken)
+        assertTrue(response.getHeaders("Set-Cookie").single().startsWith("pvdd_csrf=replacement-csrf"))
+        assertEquals("no-store", response.getHeader("Cache-Control"))
+    }
+
+    @Test
+    fun `restoring a current session keeps its existing csrf cookie`() {
+        val request = MockHttpServletRequest().apply {
+            setCookies(Cookie(UserSessionService.CSRF_COOKIE_NAME, "current-csrf"))
+        }
+        val response = MockHttpServletResponse()
+
+        val body = controller.me("robbertvdzon@gmail.com", request, response)
+
+        assertEquals(null, body.csrfToken)
+        assertTrue(response.getHeaders("Set-Cookie").isEmpty())
+    }
 
     @Test
     fun `Google login creates a long lived secure server session cookie`() {
