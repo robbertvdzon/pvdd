@@ -66,7 +66,7 @@ class ContentResultValidationTest {
     @Test
     fun `final advice and source notes use their own strict schemas`() {
         val builder = PromptBuilder(mapper)
-        assertEquals("pvdd-advice-v10", PromptBuilder.PROMPT_VERSION)
+        assertEquals("pvdd-advice-v11", PromptBuilder.PROMPT_VERSION)
         val schema = builder.schema()
         assertEquals(false, schema.path("additionalProperties").booleanValue())
         val required = schema.path("required").iterator().asSequence().map { it.stringValue() }.toSet()
@@ -74,5 +74,28 @@ class ContentResultValidationTest {
         assertEquals(setOf("displayTitle", "shortConclusion", "content"), schema.path("properties").propertyNames().toSet())
         val notesRequired = builder.sourceNotesSchema().path("required").iterator().asSequence().map { it.stringValue() }.toSet()
         assertEquals(setOf("content"), notesRequired)
+    }
+
+    @Test
+    fun `administrator guidance is included as trusted instruction in every prompt phase`() {
+        val builder = PromptBuilder(mapper)
+        val item = AnalysisAgendaItem("item-c", "C", "Ter kennisname", null, null)
+        val guidance = "Verplaats dit alleen naar B wanneer bespreking aantoonbare politieke meerwaarde heeft."
+        val direct = requireNotNull(builder.plan(item, listOf(policy), guidance).phases.single().prompt)
+
+        assertTrue(direct.contains("AANVULLENDE ANALYSE-INSTRUCTIE VAN DE BEHEERDER:\n$guidance"))
+        assertTrue(direct.indexOf(guidance) < direct.lastIndexOf("BEGIN_UNTRUSTED_SOURCE_DATA"))
+
+        val largePolicy = policy.copy(text = "beleid ".repeat(20_000))
+        val phased = builder.plan(item, listOf(largePolicy), guidance).phases
+        assertTrue(requireNotNull(phased.first().prompt).contains(guidance))
+        val synthesis = builder.synthesisPrompt(
+            item.sourceId,
+            item.category,
+            listOf(mapper.readTree("""{"content":"Notities"}""")),
+            guidance,
+        )
+        assertTrue(synthesis.contains(guidance))
+        assertTrue(synthesis.indexOf(guidance) < synthesis.lastIndexOf("BEGIN_UNTRUSTED_SOURCE_NOTES"))
     }
 }

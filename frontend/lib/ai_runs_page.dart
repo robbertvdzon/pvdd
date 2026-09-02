@@ -155,6 +155,11 @@ class _AiRunsPageState extends State<AiRunsPage> {
     final durationText = duration.inHours > 0
         ? '${duration.inHours}u ${duration.inMinutes.remainder(60)}m'
         : '${duration.inMinutes}m ${duration.inSeconds.remainder(60)}s';
+    final timestamps = [
+      'Aangemaakt: ${_dateTime(run.createdAt)}',
+      if (run.startedAt != null) 'Gestart: ${_dateTime(run.startedAt!)}',
+      if (!active) 'Afgerond: ${_dateTime(run.completedAt ?? run.updatedAt)}',
+    ].join(' · ');
     return Card(
       child: ListTile(
         leading: active
@@ -169,10 +174,16 @@ class _AiRunsPageState extends State<AiRunsPage> {
               ),
         title: Text(run.title),
         subtitle: Text(
-          '${run.explanation}\n${run.status} · ${active ? 'loopt' : 'duur'} $durationText · ${run.completedPhases}/${run.phaseCount} fasen${run.errorCode == null ? '' : '\nFoutcode: ${run.errorCode}'}',
+          '${run.explanation}\n$timestamps\n${active ? 'Looptijd' : 'Duur'}: $durationText · ${run.status} · ${run.completedPhases}/${run.phaseCount} fasen${run.errorCode == null ? '' : '\nFoutcode: ${run.errorCode}'}',
         ),
         isThreeLine: true,
       ),
     );
+  }
+
+  String _dateTime(DateTime value) {
+    final local = value.toLocal();
+    String two(int number) => number.toString().padLeft(2, '0');
+    return '${two(local.day)}-${two(local.month)}-${local.year} ${two(local.hour)}:${two(local.minute)}';
   }
 }

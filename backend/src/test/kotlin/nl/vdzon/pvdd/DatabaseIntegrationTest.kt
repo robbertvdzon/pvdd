@@ -229,6 +229,7 @@ class DatabaseIntegrationTest(
                     text = "Synthetische beleidstekst",
                 ),
             ),
+            analysisGuidance = "Alleen naar B bij aantoonbare politieke meerwaarde.",
         )
         val preparedId = analysisRepository.createPreparedRun(prepared)
         val firstClaim = requireNotNull(analysisRepository.claimPendingRun())
@@ -237,6 +238,7 @@ class DatabaseIntegrationTest(
         val recoveredClaim = requireNotNull(analysisRepository.claimPendingRun())
         assertEquals(prepared.run.idempotencyKey, recoveredClaim.run.idempotencyKey)
         assertEquals(prepared.allowedSources, recoveredClaim.allowedSources)
+        assertEquals(prepared.analysisGuidance, recoveredClaim.analysisGuidance)
         analysisRepository.markSubmitted(preparedId, "runtime-job-1", AnalysisStatus.RUNNING)
         assertEquals(preparedId, analysisRepository.activeRuns().single { it.run.id == preparedId }.run.id)
         analysisRepository.completeWithAdvice(

@@ -34,10 +34,10 @@ data class PromptPlan(val phases: List<PromptPhase>)
 
 @Component
 class PromptBuilder(private val mapper: ObjectMapper) {
-    fun plan(item: AnalysisAgendaItem, sources: List<AnalysisSource>): PromptPlan {
+    fun plan(item: AnalysisAgendaItem, sources: List<AnalysisSource>, guidance: String = ""): PromptPlan {
         require(sources.isNotEmpty()) { "Analysis requires sources." }
         require(sources.any { it.sourceType == CitationSourceType.POLICY_PROGRAMME }) { "Primary policy source is required." }
-        val direct = prompt(item, sources)
+        val direct = prompt(item, sources, guidance)
         if (direct.length <= MAX_DIRECT_PROMPT_CHARACTERS) {
             return PromptPlan(listOf(PromptPhase(PromptPhaseType.DIRECT_ADVICE, sources.map { it.sourceId }, direct)))
         }
@@ -55,7 +55,7 @@ class PromptBuilder(private val mapper: ObjectMapper) {
         }
         if (current.isNotEmpty()) batches += current
         val phases = batches.map { batch ->
-            PromptPhase(PromptPhaseType.SOURCE_NOTES, batch.map { it.sourceId }, notesPrompt(item, batch))
+            PromptPhase(PromptPhaseType.SOURCE_NOTES, batch.map { it.sourceId }, notesPrompt(item, batch, guidance))
         } + PromptPhase(PromptPhaseType.SYNTHESIS, sources.map { it.sourceId }, null)
         check(phases.filter { it.type == PromptPhaseType.SOURCE_NOTES }.flatMap { it.sourceIds } == sources.map { it.sourceId })
         return PromptPlan(phases)
@@ -71,9 +71,11 @@ class PromptBuilder(private val mapper: ObjectMapper) {
         agendaItemSourceId: String,
         category: String,
         sourceNotes: List<JsonNode>,
+        guidance: String = "",
     ): String = buildString {
         require(sourceNotes.isNotEmpty()) { "Synthesis requires validated source notes." }
         append(SYSTEM_PROMPT)
+        appendGuidance(guidance)
         append("\n\nMaak het definitieve advies voor agendapunt $agendaItemSourceId in categorie $category.")
         append(" Gebruik uitsluitend de meegegeven bronnotities.")
         append("\nBEGIN_UNTRUSTED_SOURCE_NOTES\n")
@@ -81,8 +83,11 @@ class PromptBuilder(private val mapper: ObjectMapper) {
         append("\nEND_UNTRUSTED_SOURCE_NOTES")
     }
 
-    private fun prompt(item: AnalysisAgendaItem, sources: List<AnalysisSource>): String = buildString {
+    fun systemPrompt(): String = SYSTEM_PROMPT
+
+    private fun prompt(item: AnalysisAgendaItem, sources: List<AnalysisSource>, guidance: String): String = buildString {
         append(SYSTEM_PROMPT)
+        appendGuidance(guidance)
         append("\n\nAnalyseer agendapunt ${item.sourceId} in categorie ${item.category}.\n")
         if (sources.any { it.sourceType == CitationSourceType.POLICY_POSITIONS }) {
             append("Bekijk alle standpunten in POLICY_POSITIONS en bepaal zelf welke inhoudelijk relevant zijn. ")
@@ -93,8 +98,9 @@ class PromptBuilder(private val mapper: ObjectMapper) {
         append("\nEND_UNTRUSTED_SOURCE_DATA")
     }
 
-    private fun notesPrompt(item: AnalysisAgendaItem, sources: List<AnalysisSource>): String = buildString {
+    private fun notesPrompt(item: AnalysisAgendaItem, sources: List<AnalysisSource>, guidance: String): String = buildString {
         append(SYSTEM_PROMPT)
+        appendGuidance(guidance)
         append("\n\nMaak uitsluitend feitelijke bronnotities voor een latere synthese; behoud alle bron-ID's en paginanummers.")
         if (sources.any { it.sourceType == CitationSourceType.POLICY_POSITIONS }) {
             append(" Beoordeel ieder aangeleverd standpunt op relevantie voor dit agendapunt en behoud de relevante standpunt-ID's en referenties.")
@@ -104,8 +110,15 @@ class PromptBuilder(private val mapper: ObjectMapper) {
         append("\nEND_UNTRUSTED_SOURCE_DATA")
     }
 
+    private fun StringBuilder.appendGuidance(guidance: String) {
+        if (guidance.isNotBlank()) {
+            append("\n\nAANVULLENDE ANALYSE-INSTRUCTIE VAN DE BEHEERDER:\n")
+            append(guidance.trim())
+        }
+    }
+
     companion object {
-        const val PROMPT_VERSION = "pvdd-advice-v10"
+        const val PROMPT_VERSION = "pvdd-advice-v11"
         const val SELECTION_VERSION = "policy-selection-v2-all-positions"
         private const val MAX_DIRECT_PROMPT_CHARACTERS = 80_000
         private const val NOTES_BATCH_CHARACTERS = 35_000

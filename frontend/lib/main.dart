@@ -16,6 +16,8 @@ import 'policy_api.dart';
 import 'policy_page.dart';
 import 'page_reload.dart';
 import 'pvdd_theme.dart';
+import 'settings_api.dart';
+import 'settings_page.dart';
 
 void main() => runApp(const PvddApp());
 
@@ -27,6 +29,8 @@ class PvddApp extends StatelessWidget {
     this.versionGateway,
     this.frontendVersionSource,
     this.dashboardGateway,
+    this.aiRunsGateway,
+    this.settingsGateway,
     this.acceptanceBypass,
   });
 
@@ -35,6 +39,8 @@ class PvddApp extends StatelessWidget {
   final VersionGateway? versionGateway;
   final FrontendVersionSource? frontendVersionSource;
   final DashboardGateway? dashboardGateway;
+  final AiRunsGateway? aiRunsGateway;
+  final SettingsGateway? settingsGateway;
   final bool? acceptanceBypass;
 
   @override
@@ -48,6 +54,8 @@ class PvddApp extends StatelessWidget {
       versionGateway: versionGateway ?? HttpVersionGateway(),
       frontendVersionSource: frontendVersionSource,
       dashboardGateway: dashboardGateway,
+      aiRunsGateway: aiRunsGateway,
+      settingsGateway: settingsGateway,
       acceptanceBypass: acceptanceBypass ?? AppConfiguration.acceptanceBypass,
     ),
   );
@@ -62,6 +70,8 @@ class AuthenticationGate extends StatefulWidget {
     this.loginBuilder,
     this.frontendVersionSource,
     this.dashboardGateway,
+    this.aiRunsGateway,
+    this.settingsGateway,
     required this.acceptanceBypass,
     super.key,
   });
@@ -70,6 +80,8 @@ class AuthenticationGate extends StatefulWidget {
   final VersionGateway versionGateway;
   final FrontendVersionSource? frontendVersionSource;
   final DashboardGateway? dashboardGateway;
+  final AiRunsGateway? aiRunsGateway;
+  final SettingsGateway? settingsGateway;
   final bool acceptanceBypass;
 
   @override
@@ -195,6 +207,8 @@ class _AuthenticationGateState extends State<AuthenticationGate> {
       frontendVersionSource:
           widget.frontendVersionSource ?? HttpFrontendVersionSource(),
       dashboardGateway: widget.dashboardGateway ?? HttpDashboardGateway(),
+      aiRunsGateway: widget.aiRunsGateway ?? HttpAiRunsGateway(),
+      settingsGateway: widget.settingsGateway ?? HttpSettingsGateway(),
       acceptanceBypass: widget.acceptanceBypass,
     ),
   };
@@ -287,6 +301,8 @@ class TechnicalApplicationShell extends StatefulWidget {
     required this.versionGateway,
     required this.frontendVersionSource,
     required this.dashboardGateway,
+    required this.aiRunsGateway,
+    required this.settingsGateway,
     required this.acceptanceBypass,
     super.key,
   });
@@ -295,6 +311,8 @@ class TechnicalApplicationShell extends StatefulWidget {
   final VersionGateway versionGateway;
   final FrontendVersionSource frontendVersionSource;
   final DashboardGateway dashboardGateway;
+  final AiRunsGateway aiRunsGateway;
+  final SettingsGateway settingsGateway;
   final bool acceptanceBypass;
   @override
   State<TechnicalApplicationShell> createState() =>
@@ -314,7 +332,8 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
     _selected = switch (currentAppPath()) {
       '/standpunten' => 1,
       '/ai-runs' => 2,
-      '/versie' => 3,
+      '/instellingen' => 3,
+      '/versie' => 4,
       _ => 0,
     };
     unawaited(_checkUpdate());
@@ -348,7 +367,8 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
       final content = switch (_selected) {
         0 => MeetingOverviewPage(gateway: widget.dashboardGateway),
         1 => PolicyPage(gateway: HttpPolicyGateway()),
-        2 => AiRunsPage(gateway: HttpAiRunsGateway()),
+        2 => AiRunsPage(gateway: widget.aiRunsGateway),
+        3 => SettingsPage(gateway: widget.settingsGateway),
         _ => _VersionPage(frontend: _current, gateway: widget.versionGateway),
       };
       return Scaffold(
@@ -454,7 +474,8 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
           _destination(0, Icons.dashboard_outlined, 'Agenda', close),
           _destination(1, Icons.policy_outlined, 'Standpunten', close),
           _destination(2, Icons.smart_toy_outlined, 'AI-runs', close),
-          _destination(3, Icons.info_outline, 'Over deze versie', close),
+          _destination(3, Icons.settings_outlined, 'Instellingen', close),
+          _destination(4, Icons.info_outline, 'Over deze versie', close),
         ],
       ),
     ),
@@ -475,7 +496,8 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
             navigateToAppPath(switch (index) {
               1 => '/standpunten',
               2 => '/ai-runs',
-              3 => '/versie',
+              3 => '/instellingen',
+              4 => '/versie',
               _ => '/agenda',
             });
             if (close) Navigator.of(context).pop();

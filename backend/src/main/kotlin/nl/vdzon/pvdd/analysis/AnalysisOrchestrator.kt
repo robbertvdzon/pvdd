@@ -34,6 +34,7 @@ class AnalysisOrchestrator(
     private val policyImport: PolicyImportService,
     private val policySelector: PolicySelector,
     private val policyPositionCatalogue: PolicyPositionCatalogue,
+    private val analysisGuidance: AnalysisGuidanceService,
     private val prompts: PromptBuilder,
     private val resultValidator: ContentResultValidator,
     private val runtime: AgentRuntimeGateway,
@@ -85,10 +86,11 @@ class AnalysisOrchestrator(
                 }
             require(items.isNotEmpty()) { "NO_ANALYSIS_ITEMS" }
             val positionCatalogue = policyPositionCatalogue.currentSource()
+            val guidance = analysisGuidance.current().text
             items.forEach { item ->
                 val sources = sources(item, positionCatalogue)
-                val plan = prompts.plan(item.toAnalysisItem(), sources)
-                val fingerprint = fingerprint(item, sources, meeting.publicationStatus.name)
+                val plan = prompts.plan(item.toAnalysisItem(), sources, guidance)
+                val fingerprint = fingerprint(item, sources, meeting.publicationStatus.name, guidance)
                 val key = "pvdd-${sha256("${meeting.sourceId}|${item.sourceId}|$fingerprint|${PromptBuilder.PROMPT_VERSION}")}" 
                 val now = clock.instant()
                 val finalRunId = UUID.randomUUID()
@@ -102,6 +104,7 @@ class AnalysisOrchestrator(
                     prompt = plan.phases.singleOrNull()?.takeIf { it.type == PromptPhaseType.DIRECT_ADVICE }?.prompt,
                     schema = prompts.schema(),
                     sources = sources,
+                    guidance = guidance,
                 )
                 val notePhases = plan.phases.filter { it.type == PromptPhaseType.SOURCE_NOTES }
                 if (notePhases.isEmpty()) {
@@ -122,6 +125,7 @@ class AnalysisOrchestrator(
                             runType = AnalysisRunType.SOURCE_NOTES,
                             phaseIndex = index + 1,
                             parentRunId = finalRunId,
+                            guidance = guidance,
                         )
                     }
                     repository.createPhasedRuns(finalRun, noteRuns)
@@ -201,7 +205,12 @@ class AnalysisOrchestrator(
             val notes = repository.sourceNoteResults(finalRun.run.id)
             repository.activateSynthesis(
                 finalRun.run.id,
-                prompts.synthesisPrompt(finalRun.agendaItemSourceId, finalRun.category, notes),
+                prompts.synthesisPrompt(
+                    finalRun.agendaItemSourceId,
+                    finalRun.category,
+                    notes,
+                    finalRun.analysisGuidance,
+                ),
             )
         }
     }
@@ -225,6 +234,7 @@ class AnalysisOrchestrator(
         runType: AnalysisRunType = AnalysisRunType.FINAL_ADVICE,
         phaseIndex: Int = 0,
         parentRunId: UUID? = null,
+        guidance: String = "",
     ) = PreparedAnalysisRun(
         run = AnalysisRun(
             id = runId,
@@ -249,6 +259,7 @@ class AnalysisOrchestrator(
         runType = runType,
         phaseIndex = phaseIndex,
         parentRunId = parentRunId,
+        analysisGuidance = guidance,
     )
 
     private fun sources(item: AgendaItem, positionCatalogue: AnalysisSource?): List<AnalysisSource> {
@@ -290,7 +301,8 @@ class AnalysisOrchestrator(
         item: AgendaItem,
         sources: List<AnalysisSource>,
         publicationStatus: String,
-    ): String = analysisFingerprint(item, sources, publicationStatus)
+        guidance: String,
+    ): String = analysisFingerprint(item, sources, publicationStatus, guidance)
 
     private fun AgendaItem.toAnalysisItem() = AnalysisAgendaItem(sourceId, category.name, title, explanation, treatmentProposal)
 
@@ -318,10 +330,12 @@ internal fun analysisFingerprint(
     item: AgendaItem,
     sources: List<AnalysisSource>,
     publicationStatus: String = "CURRENT",
+    guidance: String = "",
 ): String =
     MessageDigest.getInstance("SHA-256").digest(
         buildString {
             appendFingerprintPart(publicationStatus)
+            appendFingerprintPart(guidance)
             appendFingerprintPart(item.category.name)
             appendFingerprintPart(item.title)
             appendFingerprintPart(item.explanation.orEmpty())

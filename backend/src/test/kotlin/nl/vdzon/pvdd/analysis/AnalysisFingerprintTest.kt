@@ -27,6 +27,7 @@ class AnalysisFingerprintTest {
         assertEquals(original, analysisFingerprint(item, listOf(policy, agenda)))
         assertNotEquals(original, analysisFingerprint(item, listOf(agenda.copy(text = "Gewijzigde agenda"), policy)))
         assertNotEquals(original, analysisFingerprint(item, listOf(agenda, policy), "PREVIEW"))
+        assertNotEquals(original, analysisFingerprint(item, listOf(agenda, policy), guidance = "Verplaats C alleen bij politieke meerwaarde."))
     }
 
     private fun source(

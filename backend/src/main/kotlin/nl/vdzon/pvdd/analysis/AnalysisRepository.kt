@@ -20,6 +20,7 @@ data class PreparedAnalysisRun(
     val runType: AnalysisRunType = AnalysisRunType.FINAL_ADVICE,
     val phaseIndex: Int = 0,
     val parentRunId: UUID? = null,
+    val analysisGuidance: String = "",
 )
 
 data class RunControl(val id: UUID, val meetingId: UUID, val runtimeJobId: String?, val status: AnalysisStatus)
@@ -137,7 +138,7 @@ class AnalysisRepository(
             """
             UPDATE analysis_run SET category = ?, agenda_item_source_id = ?, prompt_text = ?,
                 response_schema = CAST(? AS jsonb), allowed_sources = CAST(? AS jsonb),
-                run_type = ?, phase_index = ?, parent_run_id = ?, updated_at = CURRENT_TIMESTAMP
+                run_type = ?, phase_index = ?, parent_run_id = ?, analysis_guidance = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND prompt_text IS NULL
             """.trimIndent(),
             prepared.category,
@@ -148,6 +149,7 @@ class AnalysisRepository(
             prepared.runType.name,
             prepared.phaseIndex,
             prepared.parentRunId,
+            prepared.analysisGuidance,
             runId,
         )
         reactivateSucceededAdvice(runId, prepared.run.agendaItemId)
@@ -445,6 +447,7 @@ class AnalysisRepository(
             runType = AnalysisRunType.valueOf(rs.getString("run_type")),
             phaseIndex = rs.getInt("phase_index"),
             parentRunId = rs.getObject("parent_run_id", UUID::class.java),
+            analysisGuidance = rs.getString("analysis_guidance"),
         )
     }
 }

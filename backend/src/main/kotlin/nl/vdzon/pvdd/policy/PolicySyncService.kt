@@ -59,7 +59,7 @@ class PolicySyncService(
         return PolicyRefreshResult(run, run.status == PolicySyncStatus.PENDING)
     }
 
-    @Scheduled(cron = "0 30 3 1 * *", zone = "Europe/Amsterdam")
+    @Scheduled(cron = MONTHLY_CRON, zone = SCHEDULE_ZONE)
     fun monthly() {
         val month = ZonedDateTime.now(clock.withZone(AMSTERDAM)).toLocalDate().withDayOfMonth(1)
         if (repository.activeRun() == null) {
@@ -231,6 +231,8 @@ class PolicySyncService(
         ?: failure::class.java.simpleName.uppercase().take(120)
 
     companion object {
+        const val MONTHLY_CRON = "0 30 3 1 * *"
+        const val SCHEDULE_ZONE = "Europe/Amsterdam"
         private val log = LoggerFactory.getLogger(PolicySyncService::class.java)
         private val AMSTERDAM = ZoneId.of("Europe/Amsterdam")
         private val POSITION_STATUSES = setOf("CURRENT", "CHANGED", "POTENTIAL_CONFLICT", "EXPIRED")
