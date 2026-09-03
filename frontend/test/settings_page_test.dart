@@ -34,11 +34,26 @@ void main() {
 
     expect(gateway.saved, 'C blijft C tenzij politieke behandeling nodig is.');
     expect(find.textContaining('Toekomstige vergaderingen'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+
+    await tester.ensureVisible(
+      find.text('Alle mislukte analyses opnieuw proberen'),
+    );
+    await tester.tap(find.text('Alle mislukte analyses opnieuw proberen'));
+    await tester.pumpAndSettle();
+    expect(find.text('Mislukte analyses opnieuw starten?'), findsOneWidget);
+    await tester.tap(find.text('Opnieuw starten'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(gateway.retryCalled, isTrue);
+    expect(find.textContaining('2 mislukte analyses zijn'), findsOneWidget);
   });
 }
 
 class FakeSettingsGateway implements SettingsGateway {
   String? saved;
+  bool retryCalled = false;
 
   @override
   Future<ApplicationSettings> load() async => _settings('Initiële instructie');
@@ -47,6 +62,12 @@ class FakeSettingsGateway implements SettingsGateway {
   Future<ApplicationSettings> updateAnalysisInstructions(String value) async {
     saved = value;
     return _settings(value);
+  }
+
+  @override
+  Future<int> retryAllFailedAnalyses() async {
+    retryCalled = true;
+    return 2;
   }
 
   ApplicationSettings _settings(String guidance) => ApplicationSettings(

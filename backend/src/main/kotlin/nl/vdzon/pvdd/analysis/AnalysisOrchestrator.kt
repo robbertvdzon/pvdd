@@ -70,6 +70,7 @@ class AnalysisOrchestrator(
     )
     fun reconcile() {
         prepareOneMeeting()
+        repository.cancelInapplicablePendingRuns()
         activateReadySynthesisRuns()
         submitOneRun()
         repository.activeRuns().forEach(::reconcileRun)
@@ -353,8 +354,8 @@ internal fun runtimeExecutionKey(run: AnalysisRun): String =
 internal fun automaticRetryDelay(errorCode: String, completedAttempts: Int): Duration? {
     if (errorCode !in setOf("ENGINE_FAILED", "EXECUTION_TIMEOUT", "RUNTIME_FAILED")) return null
     return when (completedAttempts) {
-        1 -> Duration.ofMinutes(1)
-        2 -> Duration.ofMinutes(5)
+        1 -> Duration.ofMinutes(15)
+        2 -> Duration.ofMinutes(120)
         else -> null
     }
 }

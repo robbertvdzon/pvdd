@@ -9,6 +9,7 @@ abstract interface class DashboardGateway {
   Future<List<AgendaItemSummary>> agendaItems(String meetingId);
   Future<AgendaItemDetail> agendaItem(String itemId);
   Future<MeetingCheckOutcome> checkNow();
+  Future<void> retryAnalysis(String itemId);
 }
 
 class HttpDashboardGateway implements DashboardGateway {
@@ -50,6 +51,20 @@ class HttpDashboardGateway implements DashboardGateway {
     return MeetingCheckOutcome.fromJson(
       jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>,
     );
+  }
+
+  @override
+  Future<void> retryAnalysis(String itemId) async {
+    final response = await _client
+        .post(
+          Uri.parse('/api/agenda-items/$itemId/retry-analysis'),
+          headers: _headers(
+            idempotencyKey:
+                'agenda-retry-$itemId-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}',
+          ),
+        )
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode != 202) throw const DashboardUnavailable();
   }
 
   Future<dynamic> _get(String path) async {
@@ -169,6 +184,7 @@ class AgendaItemSummary {
     this.displayTitle,
     this.shortConclusion,
     this.lastAnalysisRun,
+    this.canRetryAnalysis = false,
   });
   factory AgendaItemSummary.fromJson(Map<String, dynamic> json) =>
       AgendaItemSummary(
@@ -194,6 +210,7 @@ class AgendaItemSummary {
             : AnalysisRunInfo.fromJson(
                 json['lastAnalysisRun'] as Map<String, dynamic>,
               ),
+        canRetryAnalysis: json['canRetryAnalysis'] as bool,
       );
   final String id;
   final int sequence;
@@ -211,6 +228,7 @@ class AgendaItemSummary {
   final String? displayTitle;
   final String? shortConclusion;
   final AnalysisRunInfo? lastAnalysisRun;
+  final bool canRetryAnalysis;
 }
 
 class AnalysisRunInfo {

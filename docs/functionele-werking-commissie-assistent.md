@@ -294,9 +294,15 @@ blijft noodzakelijk.
 
 Bij een tijdelijke technische AI-fout, zoals `ENGINE_FAILED`, `EXECUTION_TIMEOUT` of een algemene
 runtimefout, probeert de applicatie iedere AI-fase maximaal drie keer uit te voeren. Na de eerste
-mislukking wacht zij één minuut en na de tweede mislukking vijf minuten. Na de derde mislukking
-blijft de logische run zichtbaar als mislukt. Een gebruiker kan die run op de pagina **AI-runs**
-met **Opnieuw proberen** opnieuw activeren. Reeds geslaagde bronnotitiefasen worden daarbij
+mislukking wacht zij vijftien minuten en na de tweede mislukking 120 minuten. Vlak vóór iedere
+nieuwe poging controleert zij opnieuw of dit nog de nieuwste analyse van het agendapunt is en of de
+vergadering nog moet beginnen. Achterhaalde analyses en analyses van voorbije vergaderingen worden
+niet opnieuw gestart. Na de derde mislukking blijft de logische run zichtbaar als mislukt.
+
+Bij het betreffende punt op de pagina **Agenda** kan een gebruiker de nieuwste toepasselijke
+mislukte analyse met **Opnieuw proberen** opnieuw starten. Op **Instellingen** kan een gebruiker na
+bevestiging alle nieuwste mislukte analyses van toekomstige vergaderingen opnieuw starten, ook als
+hun vorige automatische retrycyclus al was uitgeput. Reeds geslaagde bronnotitiefasen worden daarbij
 hergebruikt; alleen de mislukte fasen en het nog ontbrekende eindadvies worden opnieuw uitgevoerd.
 
 ## 9. Wijzigingen en gerichte heranalyse

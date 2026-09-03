@@ -216,6 +216,35 @@ void main() {
     expect(find.text('Automatisch vernieuwd advies'), findsOneWidget);
     expect(find.text('De analyse is nog niet beschikbaar.'), findsNothing);
   });
+
+  testWidgets('retries only from the failed agenda item', (tester) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final gateway = FakeDashboardGateway(
+      withMeeting: true,
+      failedAnalysis: true,
+    );
+    await tester.pumpWidget(
+      PvddApp(
+        authenticationGateway: FakeAuthenticationGateway(),
+        versionGateway: FakeVersionGateway(),
+        frontendVersionSource: FakeFrontendVersionSource(),
+        dashboardGateway: gateway,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Opnieuw proberen'), findsOneWidget);
+    await tester.ensureVisible(find.text('Opnieuw proberen'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Opnieuw proberen'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 10));
+
+    expect(gateway.retriedItemId, 'item-a');
+    expect(find.text('De AI-analyse is opnieuw gestart.'), findsOneWidget);
+  });
 }
 
 class FakeAuthenticationGateway implements AuthenticationGateway {
@@ -255,9 +284,15 @@ class FakeFrontendVersionSource implements FrontendVersionSource {
 }
 
 class FakeDashboardGateway implements DashboardGateway {
-  FakeDashboardGateway({this.withMeeting = false, this.preview = false});
+  FakeDashboardGateway({
+    this.withMeeting = false,
+    this.preview = false,
+    this.failedAnalysis = false,
+  });
   final bool withMeeting;
   final bool preview;
+  final bool failedAnalysis;
+  String? retriedItemId;
 
   @override
   Future<MeetingOverview> overview() async => MeetingOverview(
@@ -291,7 +326,9 @@ class FakeDashboardGateway implements DashboardGateway {
       title: 'Natuurinclusief wonen',
       substantive: true,
       importStatus: 'COMPLETE',
-      analysisStatus: 'SUCCEEDED',
+      analysisStatus: failedAnalysis
+          ? (retriedItemId == null ? 'FAILED' : 'PENDING')
+          : 'SUCCEEDED',
       sourceState: preview ? 'PREVIEW' : 'CURRENT',
       currentFingerprint: null,
       adviceActuality: 'CURRENT',
@@ -307,6 +344,7 @@ class FakeDashboardGateway implements DashboardGateway {
         updatedAt: DateTime(2026, 9, 1, 20, 3),
         completedAt: DateTime(2026, 9, 1, 20, 3),
       ),
+      canRetryAnalysis: failedAnalysis && retriedItemId == null,
     ),
     AgendaItemSummary(
       id: 'item-b',
@@ -392,6 +430,11 @@ class FakeDashboardGateway implements DashboardGateway {
     revisionNumber: 2,
     differences: [],
   );
+
+  @override
+  Future<void> retryAnalysis(String itemId) async {
+    retriedItemId = itemId;
+  }
 }
 
 class RefreshingDashboardGateway extends FakeDashboardGateway {

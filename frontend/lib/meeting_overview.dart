@@ -138,6 +138,7 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
                         key: ValueKey(item.id),
                         item: item,
                         gateway: widget.gateway,
+                        onChanged: () => _load(silent: true),
                       ),
                     ),
                   ],
@@ -265,15 +266,48 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
 }
 
 class _AgendaItemCard extends StatefulWidget {
-  const _AgendaItemCard({required this.item, required this.gateway, super.key});
+  const _AgendaItemCard({
+    required this.item,
+    required this.gateway,
+    required this.onChanged,
+    super.key,
+  });
   final AgendaItemSummary item;
   final DashboardGateway gateway;
+  final Future<void> Function() onChanged;
   @override
   State<_AgendaItemCard> createState() => _AgendaItemCardState();
 }
 
 class _AgendaItemCardState extends State<_AgendaItemCard> {
   Future<AgendaItemDetail>? _detail;
+  bool _retrying = false;
+
+  Future<void> _retryAnalysis() async {
+    if (_retrying) return;
+    setState(() => _retrying = true);
+    try {
+      await widget.gateway.retryAnalysis(widget.item.id);
+      await widget.onChanged();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('De AI-analyse is opnieuw gestart.')),
+        );
+      }
+    } on Object {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Opnieuw starten is niet gelukt. Mogelijk is er inmiddels een nieuwere analyse.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _retrying = false);
+    }
+  }
 
   @override
   void didUpdateWidget(covariant _AgendaItemCard oldWidget) {
@@ -391,7 +425,30 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 16),
-          child: _AgendaFactsTable(facts: facts),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _AgendaFactsTable(facts: facts),
+              if (item.canRetryAnalysis) ...[
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: OutlinedButton.icon(
+                    onPressed: _retrying ? null : _retryAnalysis,
+                    icon: _retrying
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh),
+                    label: Text(
+                      _retrying ? 'Opnieuw starten…' : 'Opnieuw proberen',
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
         children: [
           if (_detail != null)

@@ -10,8 +10,8 @@ import kotlin.test.assertNull
 class AnalysisRetryTest {
     @Test
     fun `transient runtime failures use bounded increasing backoff`() {
-        assertEquals(Duration.ofMinutes(1), automaticRetryDelay("ENGINE_FAILED", 1))
-        assertEquals(Duration.ofMinutes(5), automaticRetryDelay("ENGINE_FAILED", 2))
+        assertEquals(Duration.ofMinutes(15), automaticRetryDelay("ENGINE_FAILED", 1))
+        assertEquals(Duration.ofMinutes(120), automaticRetryDelay("ENGINE_FAILED", 2))
         assertNull(automaticRetryDelay("ENGINE_FAILED", 3))
         assertNull(automaticRetryDelay("INVALID_RESULT", 1))
     }

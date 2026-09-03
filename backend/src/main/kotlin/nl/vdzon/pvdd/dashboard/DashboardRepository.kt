@@ -50,6 +50,7 @@ data class AgendaItemSummaryDto(
     val displayTitle: String?,
     val shortConclusion: String?,
     val lastAnalysisRun: AnalysisRunDto?,
+    val canRetryAnalysis: Boolean,
 )
 
 data class SourceLinkDto(val name: String, val url: URI, val status: String)
@@ -119,7 +120,11 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                    advice.advice->>'shortConclusion' short_conclusion,
                    latest.id latest_run_id, latest.error_code latest_error_code,
                    latest.created_at latest_created_at, latest.updated_at latest_updated_at,
-                   latest.completed_at latest_completed_at
+                   latest.completed_at latest_completed_at,
+                   (m.starts_at > CURRENT_TIMESTAMP AND latest.status = 'FAILED'
+                    AND ai.source_state <> 'WITHDRAWN' AND ai.substantive AND ai.category IN ('A', 'B', 'C')
+                    AND NOT EXISTS (SELECT 1 FROM analysis_run retry WHERE retry.retry_of_run_id = latest.id))
+                       can_retry_analysis
             FROM agenda_item ai
             LEFT JOIN LATERAL (
                 SELECT id, status, error_code, created_at, updated_at, completed_at
@@ -156,7 +161,11 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                    advice.advice->>'shortConclusion' short_conclusion,
                    latest.id latest_run_id, latest.error_code latest_error_code,
                    latest.created_at latest_created_at, latest.updated_at latest_updated_at,
-                   latest.completed_at latest_completed_at
+                   latest.completed_at latest_completed_at,
+                   (m.starts_at > CURRENT_TIMESTAMP AND latest.status = 'FAILED'
+                    AND ai.source_state <> 'WITHDRAWN' AND ai.substantive AND ai.category IN ('A', 'B', 'C')
+                    AND NOT EXISTS (SELECT 1 FROM analysis_run retry WHERE retry.retry_of_run_id = latest.id))
+                       can_retry_analysis
             FROM agenda_item ai
             LEFT JOIN LATERAL (
                 SELECT id, status, error_code, created_at, updated_at, completed_at
@@ -270,5 +279,6 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                 rs.getTimestamp("latest_completed_at")?.toInstant(),
             )
         },
+        canRetryAnalysis = rs.getBoolean("can_retry_analysis"),
     )
 }

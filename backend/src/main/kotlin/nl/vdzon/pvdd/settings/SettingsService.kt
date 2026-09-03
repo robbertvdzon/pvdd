@@ -1,6 +1,7 @@
 package nl.vdzon.pvdd.settings
 
 import java.time.Instant
+import nl.vdzon.pvdd.analysis.AnalysisFacade
 import nl.vdzon.pvdd.analysis.AnalysisGuidanceService
 import nl.vdzon.pvdd.analysis.PromptBuilder
 import nl.vdzon.pvdd.meetings.MeetingCheckScheduler
@@ -49,6 +50,7 @@ class SettingsService(
     private val policySync: PolicySyncProperties,
     private val prompts: PromptBuilder,
     private val guidance: AnalysisGuidanceService,
+    private val analyses: AnalysisFacade,
     private val environment: Environment,
 ) {
     fun overview(): SettingsOverviewDto {
@@ -78,6 +80,8 @@ class SettingsService(
         guidance.update(text, email)
         return overview()
     }
+
+    fun retryFailedAnalyses(): Int = analyses.retryAllFailedAgendaItems()
 
     private fun scheduledJobs(): List<ScheduledJobSettingDto> = listOf(
         ScheduledJobSettingDto(

@@ -1,7 +1,7 @@
 package nl.vdzon.pvdd.analysis
 
-import java.util.UUID
 import java.time.Clock
+import java.util.UUID
 import nl.vdzon.pvdd.meetings.MeetingRepository
 import nl.vdzon.pvdd.runtime.AgentRuntimeGateway
 import org.springframework.stereotype.Service
@@ -34,17 +34,16 @@ class AnalysisFacade(
         return AnalysisCommandResult(AnalysisCommandStatus.CANCELLED, runId)
     }
 
-    fun retry(runId: UUID): AnalysisCommandResult {
-        val run = repository.runControl(runId) ?: return AnalysisCommandResult(AnalysisCommandStatus.NOT_FOUND, null)
-        val retriedRunId = if (run.status == AnalysisStatus.FAILED) {
-            repository.retryFailedLogicalRun(runId, clock.instant())
-        } else {
-            null
-        }
-        if (retriedRunId == null) {
-            return AnalysisCommandResult(AnalysisCommandStatus.NOT_RETRYABLE, runId)
-        }
-        meetings.markAnalysing(run.meetingId)
-        return AnalysisCommandResult(AnalysisCommandStatus.RETRIED, retriedRunId)
+    fun retryAgendaItem(agendaItemId: UUID): AnalysisCommandResult {
+        val retry = repository.retryLatestFailedAnalysis(agendaItemId, clock.instant())
+            ?: return AnalysisCommandResult(AnalysisCommandStatus.NOT_RETRYABLE, agendaItemId)
+        meetings.markAnalysing(retry.meetingId)
+        return AnalysisCommandResult(AnalysisCommandStatus.RETRIED, retry.runId)
+    }
+
+    fun retryAllFailedAgendaItems(): Int {
+        val retries = repository.retryAllLatestFailedAnalyses(clock.instant())
+        retries.map(AgendaAnalysisRetry::meetingId).distinct().forEach(meetings::markAnalysing)
+        return retries.size
     }
 }

@@ -25,6 +25,7 @@ data class PreparedAnalysisRun(
 )
 
 data class RunControl(val id: UUID, val meetingId: UUID, val runtimeJobId: String?, val status: AnalysisStatus)
+data class AgendaAnalysisRetry(val runId: UUID, val agendaItemId: UUID, val meetingId: UUID)
 
 @Repository
 class AnalysisRepository(
@@ -188,11 +189,20 @@ class AnalysisRepository(
     fun claimPendingRun(): PreparedAnalysisRun? = jdbc.query(
         """
         WITH candidate AS (
-            SELECT id FROM analysis_run
-            WHERE (outbox_status = 'PENDING' OR (outbox_status = 'CLAIMED' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes'))
-              AND status = 'PENDING' AND prompt_text IS NOT NULL
-              AND (next_runtime_attempt_at IS NULL OR next_runtime_attempt_at <= CURRENT_TIMESTAMP)
-            ORDER BY created_at
+            SELECT run.id FROM analysis_run run
+            JOIN agenda_item item ON item.id = run.agenda_item_id
+            JOIN meeting ON meeting.id = item.meeting_id
+            WHERE (run.outbox_status = 'PENDING' OR (run.outbox_status = 'CLAIMED' AND run.updated_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes'))
+              AND run.status = 'PENDING' AND run.prompt_text IS NOT NULL
+              AND (run.next_runtime_attempt_at IS NULL OR run.next_runtime_attempt_at <= CURRENT_TIMESTAMP)
+              AND meeting.starts_at > CURRENT_TIMESTAMP
+              AND item.source_state <> 'WITHDRAWN' AND item.substantive AND item.category IN ('A', 'B', 'C')
+              AND COALESCE(run.parent_run_id, run.id) = (
+                  SELECT latest.id FROM analysis_run latest
+                  WHERE latest.agenda_item_id = run.agenda_item_id AND latest.run_type = 'FINAL_ADVICE'
+                  ORDER BY latest.created_at DESC, latest.id DESC LIMIT 1
+              )
+            ORDER BY run.created_at
             FOR UPDATE SKIP LOCKED LIMIT 1
         )
         UPDATE analysis_run r SET outbox_status = 'CLAIMED', submit_attempts = submit_attempts + 1,
@@ -219,16 +229,46 @@ class AnalysisRepository(
 
     fun scheduleRuntimeRetry(runId: UUID, errorCode: String, retryAt: Instant, maxAttempts: Int): Boolean = jdbc.update(
         """
-        UPDATE analysis_run SET status = 'PENDING', outbox_status = 'PENDING',
+        UPDATE analysis_run run SET status = 'PENDING', outbox_status = 'PENDING',
             runtime_job_id = NULL, error_code = ?, error_message = NULL,
             completed_at = NULL, next_runtime_attempt_at = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND runtime_attempt_count < ?
+        WHERE run.id = ? AND run.runtime_attempt_count < ?
+          AND EXISTS (
+              SELECT 1 FROM agenda_item item
+              JOIN meeting ON meeting.id = item.meeting_id
+              WHERE item.id = run.agenda_item_id AND meeting.starts_at > CURRENT_TIMESTAMP
+                AND item.source_state <> 'WITHDRAWN' AND item.substantive AND item.category IN ('A', 'B', 'C')
+                AND COALESCE(run.parent_run_id, run.id) = (
+                    SELECT latest.id FROM analysis_run latest
+                    WHERE latest.agenda_item_id = run.agenda_item_id AND latest.run_type = 'FINAL_ADVICE'
+                    ORDER BY latest.created_at DESC, latest.id DESC LIMIT 1
+                )
+          )
         """.trimIndent(),
         errorCode,
         Timestamp.from(retryAt),
         runId,
         maxAttempts,
     ) == 1
+
+    fun cancelInapplicablePendingRuns(): Int = jdbc.update(
+        """
+        UPDATE analysis_run run SET status = 'CANCELLED', outbox_status = 'FAILED',
+            error_code = 'NO_LONGER_APPLICABLE', completed_at = CURRENT_TIMESTAMP,
+            next_runtime_attempt_at = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE run.status = 'PENDING' AND NOT EXISTS (
+            SELECT 1 FROM agenda_item item
+            JOIN meeting ON meeting.id = item.meeting_id
+            WHERE item.id = run.agenda_item_id AND meeting.starts_at > CURRENT_TIMESTAMP
+              AND item.source_state <> 'WITHDRAWN' AND item.substantive AND item.category IN ('A', 'B', 'C')
+              AND COALESCE(run.parent_run_id, run.id) = (
+                  SELECT latest.id FROM analysis_run latest
+                  WHERE latest.agenda_item_id = run.agenda_item_id AND latest.run_type = 'FINAL_ADVICE'
+                  ORDER BY latest.created_at DESC, latest.id DESC LIMIT 1
+              )
+        )
+        """.trimIndent(),
+    )
 
     fun retrySubmit(runId: UUID, errorCode: String) {
         jdbc.update(
@@ -404,16 +444,55 @@ class AnalysisRepository(
     ).singleOrNull()
 
     @org.springframework.transaction.annotation.Transactional
-    fun retryFailedLogicalRun(runId: UUID, now: Instant): UUID? {
+    fun retryLatestFailedAnalysis(agendaItemId: UUID, now: Instant): AgendaAnalysisRetry? {
         val original = jdbc.query(
             """
             SELECT run.* FROM analysis_run run
-            WHERE run.id = ? AND run.run_type = 'FINAL_ADVICE' AND run.status = 'FAILED'
+            JOIN agenda_item item ON item.id = run.agenda_item_id
+            JOIN meeting ON meeting.id = item.meeting_id
+            WHERE item.id = ? AND meeting.starts_at > ?
+              AND item.source_state <> 'WITHDRAWN' AND item.substantive AND item.category IN ('A', 'B', 'C')
+              AND run.run_type = 'FINAL_ADVICE' AND run.status = 'FAILED'
+              AND run.id = (
+                  SELECT latest.id FROM analysis_run latest
+                  WHERE latest.agenda_item_id = item.id AND latest.run_type = 'FINAL_ADVICE'
+                  ORDER BY latest.created_at DESC, latest.id DESC LIMIT 1
+              )
               AND NOT EXISTS (SELECT 1 FROM analysis_run retry WHERE retry.retry_of_run_id = run.id)
+            FOR UPDATE OF run
             """.trimIndent(),
             preparedRowMapper,
-            runId,
+            agendaItemId,
+            Timestamp.from(now),
         ).singleOrNull() ?: return null
+        return cloneFailedLogicalRun(original, now)
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    fun retryAllLatestFailedAnalyses(now: Instant): List<AgendaAnalysisRetry> {
+        val itemIds = jdbc.query(
+            """
+            SELECT item.id FROM agenda_item item
+            JOIN meeting ON meeting.id = item.meeting_id
+            JOIN LATERAL (
+                SELECT run.id, run.status FROM analysis_run run
+                WHERE run.agenda_item_id = item.id AND run.run_type = 'FINAL_ADVICE'
+                ORDER BY run.created_at DESC, run.id DESC LIMIT 1
+            ) latest ON TRUE
+            WHERE meeting.starts_at > ? AND item.source_state <> 'WITHDRAWN'
+              AND item.substantive AND item.category IN ('A', 'B', 'C')
+              AND latest.status = 'FAILED'
+              AND NOT EXISTS (SELECT 1 FROM analysis_run retry WHERE retry.retry_of_run_id = latest.id)
+            ORDER BY meeting.starts_at, item.sequence_number
+            """.trimIndent(),
+            { rs, _ -> rs.getObject("id", UUID::class.java) },
+            Timestamp.from(now),
+        )
+        return itemIds.mapNotNull { retryLatestFailedAnalysis(it, now) }
+    }
+
+    private fun cloneFailedLogicalRun(original: PreparedAnalysisRun, now: Instant): AgendaAnalysisRetry {
+        val runId = original.run.id
         val originalPhases = jdbc.query(
             "SELECT * FROM analysis_run WHERE parent_run_id = ? ORDER BY phase_index",
             preparedRowMapper,
@@ -464,7 +543,7 @@ class AnalysisRepository(
             createPreparedRun(newPhase)
             if (succeeded) completeSourceNotes(newPhaseId, requireNotNull(phase.phaseResult), now)
         }
-        return newFinalId
+        return AgendaAnalysisRetry(newFinalId, original.run.agendaItemId, original.meetingId)
     }
 
     fun saveAdvice(

@@ -7,6 +7,7 @@ import 'csrf_token.dart';
 abstract interface class SettingsGateway {
   Future<ApplicationSettings> load();
   Future<ApplicationSettings> updateAnalysisInstructions(String value);
+  Future<int> retryAllFailedAnalyses();
 }
 
 class HttpSettingsGateway implements SettingsGateway {
@@ -35,6 +36,26 @@ class HttpSettingsGateway implements SettingsGateway {
           )
           .timeout(const Duration(seconds: 10)),
     );
+  }
+
+  @override
+  Future<int> retryAllFailedAnalyses() async {
+    final headers = <String, String>{
+      'Idempotency-Key':
+          'retry-all-failed-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}',
+    };
+    final csrf = readCsrfToken();
+    if (csrf != null) headers['X-CSRF-Token'] = csrf;
+    final response = await _client
+        .post(
+          Uri.parse('/api/settings/retry-failed-analyses'),
+          headers: headers,
+        )
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode != 200) throw const SettingsUnavailable();
+    final value = jsonDecode(utf8.decode(response.bodyBytes));
+    if (value is! Map<String, dynamic>) throw const SettingsUnavailable();
+    return value['retriedCount'] as int;
   }
 
   ApplicationSettings _decode(http.Response response) {

@@ -17,7 +17,6 @@ class _AiRunsPageState extends State<AiRunsPage> {
   String? _cursor;
   bool _loading = true;
   bool _moreLoading = false;
-  String? _retryingRunId;
   String? _error;
   Timer? _refreshTimer;
   Timer? _durationTimer;
@@ -84,26 +83,6 @@ class _AiRunsPageState extends State<AiRunsPage> {
       }
     } finally {
       if (mounted) setState(() => _moreLoading = false);
-    }
-  }
-
-  Future<void> _retry(AiRun run) async {
-    if (_retryingRunId != null) return;
-    setState(() {
-      _retryingRunId = run.id;
-      _error = null;
-    });
-    try {
-      await widget.gateway.retry(run.id);
-      await _load(silent: true);
-    } on Object {
-      if (mounted) {
-        setState(() {
-          _error = 'Opnieuw proberen van de AI-run is niet gelukt.';
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _retryingRunId = null);
     }
   }
 
@@ -181,7 +160,6 @@ class _AiRunsPageState extends State<AiRunsPage> {
       if (run.startedAt != null) 'Gestart: ${_dateTime(run.startedAt!)}',
       if (!active) 'Afgerond: ${_dateTime(run.completedAt ?? run.updatedAt)}',
     ].join(' · ');
-    final canRetry = !active && run.canRetry;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -211,25 +189,6 @@ class _AiRunsPageState extends State<AiRunsPage> {
                   Text(
                     '${run.explanation}\n$timestamps\n${active ? 'Looptijd' : 'Duur'}: $durationText · ${run.status} · ${run.completedPhases}/${run.phaseCount} fasen${run.errorCode == null ? '' : '\nFoutcode: ${run.errorCode}'}',
                   ),
-                  if (canRetry) ...[
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: _retryingRunId == null
-                          ? () => _retry(run)
-                          : null,
-                      icon: _retryingRunId == run.id
-                          ? const SizedBox.square(
-                              dimension: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.refresh),
-                      label: Text(
-                        _retryingRunId == run.id
-                            ? 'Opnieuw starten…'
-                            : 'Opnieuw proberen',
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),

@@ -24,7 +24,6 @@ data class LogicalAiRunDto(
     val phaseCount: Int,
     val completedPhases: Int,
     val errorCode: String?,
-    val canRetry: Boolean,
 )
 
 data class LogicalAiRunPageDto(val items: List<LogicalAiRunDto>, val nextCursor: String?)
@@ -83,9 +82,6 @@ class AiRunQueryRepository(private val jdbc: JdbcTemplate) {
                    EXISTS (SELECT 1 FROM analysis_run older WHERE older.agenda_item_id = run.agenda_item_id
                        AND older.run_type = 'FINAL_ADVICE' AND older.created_at < run.created_at) reanalysis,
                    run.retry_of_run_id,
-                   run.status = 'FAILED' AND NOT EXISTS (
-                       SELECT 1 FROM analysis_run retry WHERE retry.retry_of_run_id = run.id
-                   ) can_retry,
                    advice.provider, advice.model,
                    (SELECT COUNT(*) FROM analysis_run phase WHERE phase.parent_run_id = run.id) + 1 phase_count,
                    (SELECT COUNT(*) FROM analysis_run phase WHERE phase.parent_run_id = run.id AND phase.status = 'SUCCEEDED')
@@ -112,7 +108,6 @@ class AiRunQueryRepository(private val jdbc: JdbcTemplate) {
                 rs.getTimestamp("updated_at").toInstant(), rs.getTimestamp("completed_at")?.toInstant(),
                 rs.getString("provider"), rs.getString("model"), rs.getString("prompt_version"),
                 rs.getInt("phase_count"), rs.getInt("completed_phases"), rs.getString("error_code"),
-                rs.getBoolean("can_retry"),
             )
         }, *args.toTypedArray())
     }
@@ -135,7 +130,7 @@ class AiRunQueryRepository(private val jdbc: JdbcTemplate) {
                 rs.getTimestamp("started_at")?.toInstant(), rs.getTimestamp("updated_at").toInstant(),
                 rs.getTimestamp("completed_at")?.toInstant(), null, null, "policy-position-v1", 2,
                 when (rs.getString("status")) { "PENDING" -> 0; "RUNNING", "QUEUED", "WAITING_FOR_WORKER" -> 1; else -> 2 },
-                rs.getString("error_code"), false,
+                rs.getString("error_code"),
             )
         }, *args.toTypedArray())
     }

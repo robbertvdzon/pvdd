@@ -15,6 +15,7 @@ class _SettingsPageState extends State<SettingsPage> {
   ApplicationSettings? _settings;
   bool _loading = true;
   bool _saving = false;
+  bool _retryingFailed = false;
   String? _error;
 
   @override
@@ -76,6 +77,53 @@ class _SettingsPageState extends State<SettingsPage> {
       }
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _retryFailedAnalyses() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Mislukte analyses opnieuw starten?'),
+        content: const Text(
+          'Alleen de laatste mislukte analyse per agendapunt van toekomstige vergaderingen wordt opnieuw gestart. Lopende, geslaagde en achterhaalde analyses worden overgeslagen.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuleren'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Opnieuw starten'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _retryingFailed = true;
+      _error = null;
+    });
+    try {
+      final count = await widget.gateway.retryAllFailedAnalyses();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              count == 0
+                  ? 'Er zijn geen toepasselijke mislukte analyses gevonden.'
+                  : '$count mislukte ${count == 1 ? 'analyse is' : 'analyses zijn'} opnieuw gestart.',
+            ),
+          ),
+        );
+      }
+    } on Object {
+      if (mounted) {
+        setState(() => _error = 'Opnieuw starten is niet gelukt.');
+      }
+    } finally {
+      if (mounted) setState(() => _retryingFailed = false);
     }
   }
 
@@ -191,6 +239,42 @@ class _SettingsPageState extends State<SettingsPage> {
           '${_dateTime(prompt.additionalInstructionsUpdatedAt)} door ${prompt.additionalInstructionsUpdatedBy}',
         ),
       ]),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Mislukte AI-analyses',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Start de laatste mislukte analyse opnieuw voor ieder agendapunt van een toekomstige vergadering. Oude, vervangen en niet meer toepasselijke runs worden overgeslagen.',
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: _retryingFailed ? null : _retryFailedAnalyses,
+                  icon: _retryingFailed
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                  label: Text(
+                    _retryingFailed
+                        ? 'Opnieuw starten…'
+                        : 'Alle mislukte analyses opnieuw proberen',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
       Card(
         child: Padding(
           padding: const EdgeInsets.all(20),

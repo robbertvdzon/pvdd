@@ -84,16 +84,15 @@ class DashboardController(
         }
     }
 
-    @PostMapping("/analysis-runs/{id}/retry")
+    @PostMapping("/agenda-items/{id}/retry-analysis")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    fun retry(
+    fun retryAgendaItem(
         @PathVariable id: UUID,
         @RequestAttribute(ApiAuthenticationFilter.AUTHENTICATED_EMAIL_ATTRIBUTE) email: String,
         @RequestHeader("Idempotency-Key") key: String,
-    ) = guard.execute(email, "retry-analysis-$id", key) {
-        analyses.retry(id).also {
+    ) = guard.execute(email, "retry-agenda-analysis-$id", key) {
+        analyses.retryAgendaItem(id).also {
             when (it.status) {
-                AnalysisCommandStatus.NOT_FOUND -> notFound<Nothing>()
                 AnalysisCommandStatus.NOT_RETRYABLE -> throw ResponseStatusException(HttpStatus.CONFLICT, "not_retryable")
                 else -> Unit
             }

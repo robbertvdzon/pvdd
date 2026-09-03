@@ -5,6 +5,7 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import nl.vdzon.pvdd.analysis.AnalysisRepository
 import nl.vdzon.pvdd.analysis.AnalysisRun
@@ -315,12 +316,21 @@ class DatabaseIntegrationTest(
             laterFailed.run.id,
         )
         assertFalse(analysisRepository.allRequiredRunsSucceeded(meetingId))
-        val manualRetryId = requireNotNull(analysisRepository.retryFailedLogicalRun(laterFailed.run.id, now.plusSeconds(8)))
+        assertTrue(requireNotNull(dashboardRepository.item(itemId)).item.canRetryAnalysis)
+        val manualRetryId = requireNotNull(
+            analysisRepository.retryLatestFailedAnalysis(itemId, now.plusSeconds(8)),
+        ).runId
         val manualRetry = requireNotNull(analysisRepository.claimPendingRun())
         assertEquals(manualRetryId, manualRetry.run.id)
         assertEquals(laterFailed.run.id, manualRetry.run.retryOfRunId)
         assertEquals(0, manualRetry.run.runtimeAttemptCount)
+        assertFalse(requireNotNull(dashboardRepository.item(itemId)).item.canRetryAnalysis)
         analysisRepository.updateRuntimeStatus(manualRetryId, AnalysisStatus.FAILED, "ENGINE_FAILED")
+        val bulkRetry = analysisRepository.retryAllLatestFailedAnalyses(now.plusSeconds(9)).single()
+        assertEquals(itemId, bulkRetry.agendaItemId)
+        val claimedBulkRetry = requireNotNull(analysisRepository.claimPendingRun())
+        assertEquals(bulkRetry.runId, claimedBulkRetry.run.id)
+        analysisRepository.updateRuntimeStatus(bulkRetry.runId, AnalysisStatus.FAILED, "ENGINE_FAILED")
 
         assertEquals(preparedId, analysisRepository.createPreparedRun(prepared))
         assertTrue(analysisRepository.allRequiredRunsSucceeded(meetingId))
@@ -338,11 +348,21 @@ class DatabaseIntegrationTest(
         assertEquals("CURRENT", requireNotNull(dashboardRepository.item(itemId)).adviceActuality)
 
         val phasedFinal = prepared.copy(
-            run = prepared.run.copy(id = UUID.randomUUID(), idempotencyKey = "pvdd-${"7".repeat(64)}"),
+            run = prepared.run.copy(
+                id = UUID.randomUUID(),
+                idempotencyKey = "pvdd-${"7".repeat(64)}",
+                createdAt = now.plusSeconds(10),
+                updatedAt = now.plusSeconds(10),
+            ),
             prompt = null,
         )
         val noteRun = prepared.copy(
-            run = prepared.run.copy(id = UUID.randomUUID(), idempotencyKey = "pvdd-${"8".repeat(64)}-notes-1"),
+            run = prepared.run.copy(
+                id = UUID.randomUUID(),
+                idempotencyKey = "pvdd-${"8".repeat(64)}-notes-1",
+                createdAt = now.plusSeconds(10),
+                updatedAt = now.plusSeconds(10),
+            ),
             prompt = "durable source notes prompt",
             runType = AnalysisRunType.SOURCE_NOTES,
             phaseIndex = 1,
@@ -355,7 +375,7 @@ class DatabaseIntegrationTest(
         analysisRepository.completeSourceNotes(
             claimedNote.run.id,
             mapper.readTree("""{"content":"Synthetische feitelijke bronnotitie."}"""),
-            now.plusSeconds(3),
+            now.plusSeconds(11),
         )
         val readyFinal = analysisRepository.readySynthesisRuns().single { it.run.id == phasedFinal.run.id }
         assertEquals(1, analysisRepository.sourceNoteResults(readyFinal.run.id).size)
@@ -367,14 +387,40 @@ class DatabaseIntegrationTest(
         analysisRepository.updateRuntimeStatus(claimedFinal.run.id, AnalysisStatus.FAILED, "ENGINE_FAILED")
 
         val phasedRetryId = requireNotNull(
-            analysisRepository.retryFailedLogicalRun(claimedFinal.run.id, now.plusSeconds(9)),
-        )
+            analysisRepository.retryLatestFailedAnalysis(itemId, now.plusSeconds(12)),
+        ).runId
         assertEquals(1, analysisRepository.sourceNoteResults(phasedRetryId).size)
         val claimedPhasedRetry = requireNotNull(analysisRepository.claimPendingRun())
         assertEquals(phasedRetryId, claimedPhasedRetry.run.id)
         assertEquals(AnalysisRunType.FINAL_ADVICE, claimedPhasedRetry.runType)
         assertEquals("restart-safe synthesis prompt", claimedPhasedRetry.prompt)
         analysisRepository.updateRuntimeStatus(phasedRetryId, AnalysisStatus.FAILED, "ENGINE_FAILED")
+
+        val superseding = prepared.copy(
+            run = prepared.run.copy(
+                id = UUID.randomUUID(),
+                idempotencyKey = "pvdd-${"4".repeat(64)}",
+                createdAt = now.plusSeconds(13),
+                updatedAt = now.plusSeconds(13),
+            ),
+            prompt = "newest analysis makes older failures inapplicable",
+        )
+        analysisRepository.createPreparedRun(superseding)
+        assertNull(analysisRepository.retryLatestFailedAnalysis(itemId, now.plusSeconds(14)))
+        assertFalse(requireNotNull(dashboardRepository.item(itemId)).item.canRetryAnalysis)
+        meetingRepository.upsert(meeting.copy(startsAt = now.minusSeconds(1)))
+        assertFalse(
+            analysisRepository.scheduleRuntimeRetry(
+                superseding.run.id,
+                "ENGINE_FAILED",
+                now.plusSeconds(60),
+                3,
+            ),
+        )
+        assertTrue(analysisRepository.cancelInapplicablePendingRuns() >= 1)
+        assertEquals(AnalysisStatus.CANCELLED, analysisRepository.runControl(superseding.run.id)?.status)
+        assertTrue(analysisRepository.retryAllLatestFailedAnalyses(now.plusSeconds(15)).isEmpty())
+        assertFalse(requireNotNull(dashboardRepository.item(itemId)).item.canRetryAnalysis)
 
         val policy = PolicyChunk(
             id = UUID.randomUUID(),
