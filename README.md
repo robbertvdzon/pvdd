@@ -9,6 +9,7 @@ geblokkeerd totdat de technische acceptatiepoort T14 uit het stappenplan groen i
 
 ## Documentatie
 
+- [Functionele werking voor de Commissie-assistent](docs/functionele-werking-commissie-assistent.md)
 - [Normatieve specificatie](docs/microservice-specificatie.md)
 - [Technische fundering](docs/stappenplannen/01-technische-fundering.md)
 - [Functionele MVP](docs/stappenplannen/02-functionele-mvp.md)
