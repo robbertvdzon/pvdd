@@ -28,6 +28,9 @@ data class AnalysisRun(
     val createdAt: Instant,
     val updatedAt: Instant,
     val completedAt: Instant?,
+    val runtimeAttemptCount: Int = 0,
+    val nextRuntimeAttemptAt: Instant? = null,
+    val retryOfRunId: UUID? = null,
 )
 
 enum class CitationSourceType { MEETING_DOCUMENT, POLICY_PROGRAMME, POLICY_POSITIONS }

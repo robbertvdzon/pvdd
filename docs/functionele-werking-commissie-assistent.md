@@ -292,6 +292,13 @@ Een technisch geldig eindresultaat bevat exact:
 Deze technische validatie garandeert niet dat de politieke inhoud juist is. Menselijke controle
 blijft noodzakelijk.
 
+Bij een tijdelijke technische AI-fout, zoals `ENGINE_FAILED`, `EXECUTION_TIMEOUT` of een algemene
+runtimefout, probeert de applicatie iedere AI-fase maximaal drie keer uit te voeren. Na de eerste
+mislukking wacht zij één minuut en na de tweede mislukking vijf minuten. Na de derde mislukking
+blijft de logische run zichtbaar als mislukt. Een gebruiker kan die run op de pagina **AI-runs**
+met **Opnieuw proberen** opnieuw activeren. Reeds geslaagde bronnotitiefasen worden daarbij
+hergebruikt; alleen de mislukte fasen en het nog ontbrekende eindadvies worden opnieuw uitgevoerd.
+
 ## 9. Wijzigingen en gerichte heranalyse
 
 De applicatie bewaart bronrevisies en herkent onder andere:

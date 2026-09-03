@@ -2,6 +2,7 @@ package nl.vdzon.pvdd.analysis
 
 import java.security.MessageDigest
 import java.time.Clock
+import java.time.Duration
 import java.util.UUID
 import nl.vdzon.pvdd.documents.DocumentPassage
 import nl.vdzon.pvdd.documents.DocumentRepository
@@ -147,7 +148,7 @@ class AnalysisOrchestrator(
         try {
             val job = runtime.create(
                 RuntimeCreateRequest(
-                    idempotencyKey = prepared.run.idempotencyKey,
+                    idempotencyKey = runtimeExecutionKey(prepared.run),
                     prompt = requireNotNull(prepared.prompt),
                     responseSchema = prepared.responseSchema,
                     environmentKeys = emptyList(),
@@ -216,6 +217,25 @@ class AnalysisOrchestrator(
     }
 
     private fun fail(prepared: PreparedAnalysisRun, status: AnalysisStatus, errorCode: String) {
+        val retryDelay = automaticRetryDelay(errorCode, prepared.run.runtimeAttemptCount)
+        if (
+            status == AnalysisStatus.FAILED && retryDelay != null &&
+            repository.scheduleRuntimeRetry(
+                prepared.run.id,
+                errorCode,
+                clock.instant().plus(retryDelay),
+                MAX_RUNTIME_ATTEMPTS,
+            )
+        ) {
+            log.info(
+                "Scheduled automatic retry {} of {} for analysis {} after {}",
+                prepared.run.runtimeAttemptCount + 1,
+                MAX_RUNTIME_ATTEMPTS,
+                prepared.run.id,
+                retryDelay,
+            )
+            return
+        }
         repository.updateRuntimeStatus(prepared.run.id, status, errorCode)
         prepared.parentRunId?.let { repository.failParentFinal(it, errorCode) }
         meetings.markPartial(prepared.meetingId, errorCode)
@@ -318,11 +338,24 @@ class AnalysisOrchestrator(
         ?: failure::class.java.simpleName.uppercase().take(120)
 
     companion object {
+        const val MAX_RUNTIME_ATTEMPTS = 3
         private val log = LoggerFactory.getLogger(AnalysisOrchestrator::class.java)
 
         private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray())
             .joinToString("") { "%02x".format(it) }
+    }
+}
+
+internal fun runtimeExecutionKey(run: AnalysisRun): String =
+    "${run.idempotencyKey}-execution-${run.runtimeAttemptCount + 1}"
+
+internal fun automaticRetryDelay(errorCode: String, completedAttempts: Int): Duration? {
+    if (errorCode !in setOf("ENGINE_FAILED", "EXECUTION_TIMEOUT", "RUNTIME_FAILED")) return null
+    return when (completedAttempts) {
+        1 -> Duration.ofMinutes(1)
+        2 -> Duration.ofMinutes(5)
+        else -> null
     }
 }
 

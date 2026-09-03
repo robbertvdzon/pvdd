@@ -21,6 +21,7 @@ data class PreparedAnalysisRun(
     val phaseIndex: Int = 0,
     val parentRunId: UUID? = null,
     val analysisGuidance: String = "",
+    val phaseResult: JsonNode? = null,
 )
 
 data class RunControl(val id: UUID, val meetingId: UUID, val runtimeJobId: String?, val status: AnalysisStatus)
@@ -111,8 +112,8 @@ class AnalysisRepository(
         INSERT INTO analysis_run(
             id, meeting_id, agenda_item_id, source_fingerprint, prompt_version,
             selection_version, idempotency_key, runtime_job_id, status, error_code,
-            created_at, updated_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            created_at, updated_at, completed_at, retry_of_run_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (idempotency_key) DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
         RETURNING id
         """.trimIndent(),
@@ -130,6 +131,7 @@ class AnalysisRepository(
         Timestamp.from(run.createdAt),
         Timestamp.from(run.updatedAt),
         run.completedAt?.let(Timestamp::from),
+        run.retryOfRunId,
     ).single()
 
     fun createPreparedRun(prepared: PreparedAnalysisRun): UUID {
@@ -189,6 +191,7 @@ class AnalysisRepository(
             SELECT id FROM analysis_run
             WHERE (outbox_status = 'PENDING' OR (outbox_status = 'CLAIMED' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes'))
               AND status = 'PENDING' AND prompt_text IS NOT NULL
+              AND (next_runtime_attempt_at IS NULL OR next_runtime_attempt_at <= CURRENT_TIMESTAMP)
             ORDER BY created_at
             FOR UPDATE SKIP LOCKED LIMIT 1
         )
@@ -205,13 +208,27 @@ class AnalysisRepository(
             """
             UPDATE analysis_run SET runtime_job_id = ?, status = ?, outbox_status = 'SUBMITTED',
                 submitted_at = COALESCE(submitted_at, CURRENT_TIMESTAMP), error_code = NULL,
-                error_message = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+                error_message = NULL, runtime_attempt_count = runtime_attempt_count + 1,
+                next_runtime_attempt_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
             """.trimIndent(),
             runtimeJobId,
             status.name,
             runId,
         )
     }
+
+    fun scheduleRuntimeRetry(runId: UUID, errorCode: String, retryAt: Instant, maxAttempts: Int): Boolean = jdbc.update(
+        """
+        UPDATE analysis_run SET status = 'PENDING', outbox_status = 'PENDING',
+            runtime_job_id = NULL, error_code = ?, error_message = NULL,
+            completed_at = NULL, next_runtime_attempt_at = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND runtime_attempt_count < ?
+        """.trimIndent(),
+        errorCode,
+        Timestamp.from(retryAt),
+        runId,
+        maxAttempts,
+    ) == 1
 
     fun retrySubmit(runId: UUID, errorCode: String) {
         jdbc.update(
@@ -386,6 +403,70 @@ class AnalysisRepository(
         runId,
     ).singleOrNull()
 
+    @org.springframework.transaction.annotation.Transactional
+    fun retryFailedLogicalRun(runId: UUID, now: Instant): UUID? {
+        val original = jdbc.query(
+            """
+            SELECT run.* FROM analysis_run run
+            WHERE run.id = ? AND run.run_type = 'FINAL_ADVICE' AND run.status = 'FAILED'
+              AND NOT EXISTS (SELECT 1 FROM analysis_run retry WHERE retry.retry_of_run_id = run.id)
+            """.trimIndent(),
+            preparedRowMapper,
+            runId,
+        ).singleOrNull() ?: return null
+        val originalPhases = jdbc.query(
+            "SELECT * FROM analysis_run WHERE parent_run_id = ? ORDER BY phase_index",
+            preparedRowMapper,
+            runId,
+        )
+        val newFinalId = UUID.randomUUID()
+        val newBaseKey = retryKey(original.run.idempotencyKey, newFinalId)
+        val waitingForPhases = originalPhases.any { it.run.status != AnalysisStatus.SUCCEEDED }
+        val newFinal = original.copy(
+            run = original.run.copy(
+                id = newFinalId,
+                idempotencyKey = newBaseKey,
+                runtimeJobId = null,
+                status = AnalysisStatus.PENDING,
+                errorCode = null,
+                createdAt = now,
+                updatedAt = now,
+                completedAt = null,
+                runtimeAttemptCount = 0,
+                nextRuntimeAttemptAt = null,
+                retryOfRunId = runId,
+            ),
+            prompt = if (waitingForPhases) null else original.prompt,
+            phaseResult = null,
+        )
+        createPreparedRun(newFinal)
+
+        originalPhases.forEach { phase ->
+            val succeeded = phase.run.status == AnalysisStatus.SUCCEEDED && phase.phaseResult != null
+            val newPhaseId = UUID.randomUUID()
+            val newPhase = phase.copy(
+                run = phase.run.copy(
+                    id = newPhaseId,
+                    idempotencyKey = "$newBaseKey-notes-${phase.phaseIndex}",
+                    runtimeJobId = null,
+                    status = AnalysisStatus.PENDING,
+                    errorCode = null,
+                    createdAt = now,
+                    updatedAt = now,
+                    completedAt = null,
+                    runtimeAttemptCount = 0,
+                    nextRuntimeAttemptAt = null,
+                    retryOfRunId = null,
+                ),
+                parentRunId = newFinalId,
+                phaseResult = null,
+            )
+            createPreparedRun(newPhase)
+            if (succeeded) completeSourceNotes(newPhaseId, requireNotNull(phase.phaseResult), now)
+        }
+        return newFinalId
+    }
+
     fun saveAdvice(
         id: UUID,
         runId: UUID,
@@ -435,6 +516,9 @@ class AnalysisRepository(
             createdAt = rs.getTimestamp("created_at").toInstant(),
             updatedAt = rs.getTimestamp("updated_at").toInstant(),
             completedAt = rs.getTimestamp("completed_at")?.toInstant(),
+            runtimeAttemptCount = rs.getInt("runtime_attempt_count"),
+            nextRuntimeAttemptAt = rs.getTimestamp("next_runtime_attempt_at")?.toInstant(),
+            retryOfRunId = rs.getObject("retry_of_run_id", UUID::class.java),
         )
         PreparedAnalysisRun(
             run = run,
@@ -448,6 +532,12 @@ class AnalysisRepository(
             phaseIndex = rs.getInt("phase_index"),
             parentRunId = rs.getObject("parent_run_id", UUID::class.java),
             analysisGuidance = rs.getString("analysis_guidance"),
+            phaseResult = rs.getString("phase_result")?.let { mapper.readTree(it) },
         )
     }
+
+    private fun retryKey(originalKey: String, newRunId: UUID): String = "pvdd-" +
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest("$originalKey|manual-retry|$newRunId".toByteArray())
+            .joinToString("") { "%02x".format(it) }
 }

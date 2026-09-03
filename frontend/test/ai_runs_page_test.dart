@@ -20,9 +20,36 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets('retries a failed agenda analysis from the finished list', (
+    tester,
+  ) async {
+    final gateway = FakeAiRunsGateway(includeFailed: true);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: AiRunsPage(gateway: gateway)),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 10));
+
+    expect(find.text('Opnieuw proberen'), findsOneWidget);
+    await tester.ensureVisible(find.text('Opnieuw proberen'));
+    await tester.pump();
+    await tester.tap(find.text('Opnieuw proberen'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 10));
+
+    expect(gateway.retriedId, 'failed');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }
 
 class FakeAiRunsGateway implements AiRunsGateway {
+  FakeAiRunsGateway({this.includeFailed = false});
+  final bool includeFailed;
+  String? retriedId;
+
   @override
   Future<AiRunPage> active() async => AiRunPage([
     _run('active', 'RUNNING', DateTime(2026, 9, 2, 8, 15), null),
@@ -36,7 +63,19 @@ class FakeAiRunsGateway implements AiRunsGateway {
       DateTime(2026, 9, 2, 8),
       DateTime(2026, 9, 2, 8, 12),
     ),
+    if (includeFailed)
+      _run(
+        'failed',
+        'FAILED',
+        DateTime(2026, 9, 2, 9),
+        DateTime(2026, 9, 2, 9, 2),
+      ),
   ], null);
+
+  @override
+  Future<void> retry(String id) async {
+    retriedId = id;
+  }
 
   AiRun _run(
     String id,
@@ -56,5 +95,6 @@ class FakeAiRunsGateway implements AiRunsGateway {
     phaseCount: 2,
     completedPhases: completedAt == null ? 1 : 2,
     errorCode: null,
+    canRetry: status == 'FAILED',
   );
 }

@@ -240,9 +240,22 @@ class DatabaseIntegrationTest(
         assertEquals(prepared.allowedSources, recoveredClaim.allowedSources)
         assertEquals(prepared.analysisGuidance, recoveredClaim.analysisGuidance)
         analysisRepository.markSubmitted(preparedId, "runtime-job-1", AnalysisStatus.RUNNING)
-        assertEquals(preparedId, analysisRepository.activeRuns().single { it.run.id == preparedId }.run.id)
+        assertEquals(1, analysisRepository.activeRuns().single { it.run.id == preparedId }.run.runtimeAttemptCount)
+        assertTrue(
+            analysisRepository.scheduleRuntimeRetry(
+                preparedId,
+                "ENGINE_FAILED",
+                Instant.EPOCH,
+                3,
+            ),
+        )
+        val automaticRetry = requireNotNull(analysisRepository.claimPendingRun())
+        assertEquals(preparedId, automaticRetry.run.id)
+        assertEquals(1, automaticRetry.run.runtimeAttemptCount)
+        analysisRepository.markSubmitted(preparedId, "runtime-job-2", AnalysisStatus.RUNNING)
+        assertEquals(2, analysisRepository.activeRuns().single { it.run.id == preparedId }.run.runtimeAttemptCount)
         analysisRepository.completeWithAdvice(
-            recoveredClaim,
+            automaticRetry,
             mapper.readTree("""{"validated":true}"""),
             mapper.createArrayNode(),
             "MOCKED",
@@ -302,6 +315,12 @@ class DatabaseIntegrationTest(
             laterFailed.run.id,
         )
         assertFalse(analysisRepository.allRequiredRunsSucceeded(meetingId))
+        val manualRetryId = requireNotNull(analysisRepository.retryFailedLogicalRun(laterFailed.run.id, now.plusSeconds(8)))
+        val manualRetry = requireNotNull(analysisRepository.claimPendingRun())
+        assertEquals(manualRetryId, manualRetry.run.id)
+        assertEquals(laterFailed.run.id, manualRetry.run.retryOfRunId)
+        assertEquals(0, manualRetry.run.runtimeAttemptCount)
+        analysisRepository.updateRuntimeStatus(manualRetryId, AnalysisStatus.FAILED, "ENGINE_FAILED")
 
         assertEquals(preparedId, analysisRepository.createPreparedRun(prepared))
         assertTrue(analysisRepository.allRequiredRunsSucceeded(meetingId))
@@ -344,6 +363,18 @@ class DatabaseIntegrationTest(
         val claimedFinal = requireNotNull(analysisRepository.claimPendingRun())
         assertEquals(phasedFinal.run.id, claimedFinal.run.id)
         assertEquals(AnalysisRunType.FINAL_ADVICE, claimedFinal.runType)
+        analysisRepository.markSubmitted(claimedFinal.run.id, "runtime-final-1", AnalysisStatus.RUNNING)
+        analysisRepository.updateRuntimeStatus(claimedFinal.run.id, AnalysisStatus.FAILED, "ENGINE_FAILED")
+
+        val phasedRetryId = requireNotNull(
+            analysisRepository.retryFailedLogicalRun(claimedFinal.run.id, now.plusSeconds(9)),
+        )
+        assertEquals(1, analysisRepository.sourceNoteResults(phasedRetryId).size)
+        val claimedPhasedRetry = requireNotNull(analysisRepository.claimPendingRun())
+        assertEquals(phasedRetryId, claimedPhasedRetry.run.id)
+        assertEquals(AnalysisRunType.FINAL_ADVICE, claimedPhasedRetry.runType)
+        assertEquals("restart-safe synthesis prompt", claimedPhasedRetry.prompt)
+        analysisRepository.updateRuntimeStatus(phasedRetryId, AnalysisStatus.FAILED, "ENGINE_FAILED")
 
         val policy = PolicyChunk(
             id = UUID.randomUUID(),

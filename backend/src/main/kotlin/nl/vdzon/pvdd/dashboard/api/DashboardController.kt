@@ -84,5 +84,21 @@ class DashboardController(
         }
     }
 
+    @PostMapping("/analysis-runs/{id}/retry")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    fun retry(
+        @PathVariable id: UUID,
+        @RequestAttribute(ApiAuthenticationFilter.AUTHENTICATED_EMAIL_ATTRIBUTE) email: String,
+        @RequestHeader("Idempotency-Key") key: String,
+    ) = guard.execute(email, "retry-analysis-$id", key) {
+        analyses.retry(id).also {
+            when (it.status) {
+                AnalysisCommandStatus.NOT_FOUND -> notFound<Nothing>()
+                AnalysisCommandStatus.NOT_RETRYABLE -> throw ResponseStatusException(HttpStatus.CONFLICT, "not_retryable")
+                else -> Unit
+            }
+        }
+    }
+
     private fun <T> notFound(): T = throw ResponseStatusException(HttpStatus.NOT_FOUND)
 }

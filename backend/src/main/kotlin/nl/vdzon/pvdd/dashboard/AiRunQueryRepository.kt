@@ -24,6 +24,7 @@ data class LogicalAiRunDto(
     val phaseCount: Int,
     val completedPhases: Int,
     val errorCode: String?,
+    val canRetry: Boolean,
 )
 
 data class LogicalAiRunPageDto(val items: List<LogicalAiRunDto>, val nextCursor: String?)
@@ -81,6 +82,10 @@ class AiRunQueryRepository(private val jdbc: JdbcTemplate) {
                    item.title item_title, item.category,
                    EXISTS (SELECT 1 FROM analysis_run older WHERE older.agenda_item_id = run.agenda_item_id
                        AND older.run_type = 'FINAL_ADVICE' AND older.created_at < run.created_at) reanalysis,
+                   run.retry_of_run_id,
+                   run.status = 'FAILED' AND NOT EXISTS (
+                       SELECT 1 FROM analysis_run retry WHERE retry.retry_of_run_id = run.id
+                   ) can_retry,
                    advice.provider, advice.model,
                    (SELECT COUNT(*) FROM analysis_run phase WHERE phase.parent_run_id = run.id) + 1 phase_count,
                    (SELECT COUNT(*) FROM analysis_run phase WHERE phase.parent_run_id = run.id AND phase.status = 'SUCCEEDED')
@@ -95,17 +100,19 @@ class AiRunQueryRepository(private val jdbc: JdbcTemplate) {
         val args = mutableListOf<Any>(*statuses.toTypedArray()).apply { id?.let(::add) }
         return jdbc.query(sql, { rs, _ ->
             val reanalysis = rs.getBoolean("reanalysis")
+            val manualRetry = rs.getObject("retry_of_run_id") != null
             val itemTitle = rs.getString("item_title")
             LogicalAiRunDto(
                 rs.getObject("id", UUID::class.java),
-                if (reanalysis) "AGENDA_REANALYSIS" else "AGENDA_ADVICE",
-                if (reanalysis) "$itemTitle opnieuw analyseren" else itemTitle,
-                if (reanalysis) "Opnieuw gestart omdat de bron- of beleidscontext veranderde" else "Eerste analyse van een ${rs.getString("category")}-agendapunt",
+                if (manualRetry) "AGENDA_RETRY" else if (reanalysis) "AGENDA_REANALYSIS" else "AGENDA_ADVICE",
+                if (manualRetry) "$itemTitle opnieuw proberen" else if (reanalysis) "$itemTitle opnieuw analyseren" else itemTitle,
+                if (manualRetry) "Handmatig opnieuw gestart na een technische fout" else if (reanalysis) "Opnieuw gestart omdat de bron- of beleidscontext veranderde" else "Eerste analyse van een ${rs.getString("category")}-agendapunt",
                 rs.getObject("agenda_item_id", UUID::class.java), rs.getString("status"),
                 rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("submitted_at")?.toInstant(),
                 rs.getTimestamp("updated_at").toInstant(), rs.getTimestamp("completed_at")?.toInstant(),
                 rs.getString("provider"), rs.getString("model"), rs.getString("prompt_version"),
                 rs.getInt("phase_count"), rs.getInt("completed_phases"), rs.getString("error_code"),
+                rs.getBoolean("can_retry"),
             )
         }, *args.toTypedArray())
     }
@@ -128,7 +135,7 @@ class AiRunQueryRepository(private val jdbc: JdbcTemplate) {
                 rs.getTimestamp("started_at")?.toInstant(), rs.getTimestamp("updated_at").toInstant(),
                 rs.getTimestamp("completed_at")?.toInstant(), null, null, "policy-position-v1", 2,
                 when (rs.getString("status")) { "PENDING" -> 0; "RUNNING", "QUEUED", "WAITING_FOR_WORKER" -> 1; else -> 2 },
-                rs.getString("error_code"),
+                rs.getString("error_code"), false,
             )
         }, *args.toTypedArray())
     }

@@ -2,9 +2,12 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'csrf_token.dart';
+
 abstract interface class AiRunsGateway {
   Future<AiRunPage> active();
   Future<AiRunPage> finished({String? cursor});
+  Future<void> retry(String id);
 }
 
 class HttpAiRunsGateway implements AiRunsGateway {
@@ -18,6 +21,20 @@ class HttpAiRunsGateway implements AiRunsGateway {
   Future<AiRunPage> finished({String? cursor}) => _load(
     '/api/ai-runs?state=finished&limit=10${cursor == null ? '' : '&cursor=${Uri.encodeQueryComponent(cursor)}'}',
   );
+
+  @override
+  Future<void> retry(String id) async {
+    final csrf = readCsrfToken();
+    final headers = <String, String>{
+      'Idempotency-Key':
+          'ai-run-retry-$id-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}',
+    };
+    if (csrf != null) headers['X-CSRF-Token'] = csrf;
+    final response = await _client
+        .post(Uri.parse('/api/analysis-runs/$id/retry'), headers: headers)
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode != 202) throw const AiRunsUnavailable();
+  }
 
   Future<AiRunPage> _load(String path) async {
     final response = await _client
@@ -56,6 +73,7 @@ class AiRun {
     required this.phaseCount,
     required this.completedPhases,
     required this.errorCode,
+    required this.canRetry,
   });
   factory AiRun.fromJson(Map<String, dynamic> json) => AiRun(
     id: json['id'] as String,
@@ -70,6 +88,7 @@ class AiRun {
     phaseCount: json['phaseCount'] as int,
     completedPhases: json['completedPhases'] as int,
     errorCode: json['errorCode'] as String?,
+    canRetry: json['canRetry'] as bool,
   );
   final String id;
   final String type;
@@ -83,6 +102,7 @@ class AiRun {
   final int phaseCount;
   final int completedPhases;
   final String? errorCode;
+  final bool canRetry;
 }
 
 class AiRunsUnavailable implements Exception {
