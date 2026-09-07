@@ -573,20 +573,32 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
             if (advice['content'] is String)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
-                child: MarkdownBody(
-                  data: advice['content'] as String,
-                  selectable: true,
-                  imageBuilder: (_, _, alt) => Text(
-                    alt?.isNotEmpty == true
-                        ? '[Afbeelding niet geladen: $alt]'
-                        : '[Afbeelding niet geladen]',
+                child: SelectionArea(
+                  child: MarkdownBody(
+                    data: advice['content'] as String,
+                    selectable: false,
+                    imageBuilder: (_, _, alt) => Text(
+                      alt?.isNotEmpty == true
+                          ? '[Afbeelding niet geladen: $alt]'
+                          : '[Afbeelding niet geladen]',
+                    ),
                   ),
                 ),
               )
             else if (widget.item.category == 'C')
-              ..._cAdvice(advice)
+              SelectionArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: _cAdvice(advice),
+                ),
+              )
             else
-              ..._abAdvice(advice),
+              SelectionArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: _abAdvice(advice),
+                ),
+              ),
           ],
           const Divider(height: 28),
           Text(

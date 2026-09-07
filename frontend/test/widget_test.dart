@@ -156,6 +156,13 @@ void main() {
       find.text('Een bruikbaar politiek advies zonder vast format.'),
       findsOneWidget,
     );
+    expect(
+      find.ancestor(
+        of: find.text('Een bruikbaar politiek advies zonder vast format.'),
+        matching: find.byType(SelectionArea),
+      ),
+      findsOneWidget,
+    );
     expect(find.textContaining('AI-concept'), findsOneWidget);
 
     String? copiedAdvice;
