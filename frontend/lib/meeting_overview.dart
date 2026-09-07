@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
 import 'dashboard_api.dart';
@@ -309,6 +310,25 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
     }
   }
 
+  Future<void> _copyAdvice(Map<String, dynamic> advice, String category) async {
+    try {
+      await Clipboard.setData(
+        ClipboardData(text: _adviceAsText(advice, category)),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Het volledige advies is gekopieerd.')),
+        );
+      }
+    } on Object {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Kopiëren is niet gelukt.')),
+        );
+      }
+    }
+  }
+
   @override
   void didUpdateWidget(covariant _AgendaItemCard oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -538,23 +558,36 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
                 _ => 'De analyse is nog niet beschikbaar.',
               }),
             )
-          else if (advice['content'] is String)
+          else ...[
             Padding(
               padding: const EdgeInsets.only(top: 16),
-              child: MarkdownBody(
-                data: advice['content'] as String,
-                selectable: true,
-                imageBuilder: (_, _, alt) => Text(
-                  alt?.isNotEmpty == true
-                      ? '[Afbeelding niet geladen: $alt]'
-                      : '[Afbeelding niet geladen]',
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: () => _copyAdvice(advice, widget.item.category),
+                  icon: const Icon(Icons.copy_all_outlined),
+                  label: const Text('Volledig advies kopiëren'),
                 ),
               ),
-            )
-          else if (widget.item.category == 'C')
-            ..._cAdvice(advice)
-          else
-            ..._abAdvice(advice),
+            ),
+            if (advice['content'] is String)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: MarkdownBody(
+                  data: advice['content'] as String,
+                  selectable: true,
+                  imageBuilder: (_, _, alt) => Text(
+                    alt?.isNotEmpty == true
+                        ? '[Afbeelding niet geladen: $alt]'
+                        : '[Afbeelding niet geladen]',
+                  ),
+                ),
+              )
+            else if (widget.item.category == 'C')
+              ..._cAdvice(advice)
+            else
+              ..._abAdvice(advice),
+          ],
           const Divider(height: 28),
           Text(
             detail.warning,
@@ -640,6 +673,49 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
       ),
     );
   }
+}
+
+String _adviceAsText(Map<String, dynamic> advice, String category) {
+  final content = advice['content'];
+  if (content is String) return content;
+
+  final sections = category == 'C'
+      ? <(String, dynamic)>[
+          (
+            'Bespreken en verplaatsen naar B',
+            advice['besprekenEnNaarB'] == true ? 'Ja' : 'Nee',
+          ),
+          ('Urgentie', advice['urgentie']),
+          ('Motivering', advice['motivering']),
+          ('Commissiedoel', advice['commissieDoel']),
+          ('Kernvraag', advice['kernvraag']),
+        ]
+      : <(String, dynamic)>[
+          ('Waar gaat het over?', advice['waarGaatHetOver']),
+          ('Wat vinden we ervan?', advice['watVindenWeErvan']),
+          (
+            'Wat kunnen/willen we ermee in de commissie?',
+            advice['commissieInzet'],
+          ),
+          (
+            'Welke punten willen we maken en wat willen we van de gedeputeerde?',
+            advice['puntenVoorGedeputeerde'],
+          ),
+          (
+            'Welke technische vragen gaan we stellen?',
+            advice['technischeVragen'],
+          ),
+        ];
+  return sections
+      .map((section) => '${section.$1}\n${_adviceValue(section.$2)}')
+      .join('\n\n');
+}
+
+String _adviceValue(dynamic value) {
+  final text = value is Map<String, dynamic>
+      ? value['text']?.toString()
+      : value?.toString();
+  return text?.isNotEmpty == true ? text! : 'Niet beschikbaar';
 }
 
 class _AgendaFact {

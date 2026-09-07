@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pvdd_frontend/authentication.dart';
 import 'package:pvdd_frontend/build_identity.dart';
@@ -156,6 +157,32 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('AI-concept'), findsOneWidget);
+
+    String? copiedAdvice;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copiedAdvice =
+              (call.arguments as Map<Object?, Object?>)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await tester.ensureVisible(find.text('Volledig advies kopiëren'));
+    await tester.tap(find.text('Volledig advies kopiëren'));
+    await tester.pump();
+    expect(
+      copiedAdvice,
+      '# Vrije Markdown-analyse\n\nEen bruikbaar politiek advies zonder vast format.',
+    );
+    expect(find.text('Het volledige advies is gekopieerd.'), findsOneWidget);
   });
 
   testWidgets('shows processed preview advice as provisional and ready', (
