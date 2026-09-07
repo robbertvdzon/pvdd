@@ -347,6 +347,27 @@ class DatabaseIntegrationTest(
         )
         assertEquals("CURRENT", requireNotNull(dashboardRepository.item(itemId)).adviceActuality)
 
+        val replayedSourceNote = prepared.copy(
+            run = prepared.run.copy(
+                id = UUID.randomUUID(),
+                idempotencyKey = "pvdd-${"3".repeat(64)}-notes-1",
+                status = AnalysisStatus.SUCCEEDED,
+                createdAt = now.plusSeconds(9),
+                updatedAt = now.plusSeconds(9),
+                completedAt = now.plusSeconds(9),
+            ),
+            prompt = "replayed source notes must not change advice actuality",
+            runType = AnalysisRunType.SOURCE_NOTES,
+            phaseIndex = 1,
+            parentRunId = preparedId,
+        )
+        analysisRepository.createPreparedRun(replayedSourceNote)
+        assertEquals("CURRENT", jdbc.queryForObject(
+            "SELECT actuality FROM agenda_item_advice WHERE analysis_run_id = ?",
+            String::class.java,
+            preparedId,
+        ))
+
         val phasedFinal = prepared.copy(
             run = prepared.run.copy(
                 id = UUID.randomUUID(),

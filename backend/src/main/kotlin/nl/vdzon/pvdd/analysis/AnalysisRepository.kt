@@ -157,7 +157,9 @@ class AnalysisRepository(
             prepared.analysisGuidance,
             runId,
         )
-        reactivateSucceededAdvice(runId, prepared.run.agendaItemId)
+        if (prepared.runType == AnalysisRunType.FINAL_ADVICE) {
+            reactivateSucceededAdvice(runId, prepared.run.agendaItemId)
+        }
         return runId
     }
 
