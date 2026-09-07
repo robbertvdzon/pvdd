@@ -2,10 +2,12 @@ package nl.vdzon.pvdd.policy
 
 import java.io.IOException
 import java.net.URI
+import java.net.URLEncoder
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.net.http.HttpTimeoutException
+import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Clock
 import java.time.Duration
@@ -16,6 +18,7 @@ import org.apache.pdfbox.Loader
 import org.apache.pdfbox.text.PDFTextStripper
 import org.jsoup.Jsoup
 import org.springframework.stereotype.Component
+import tools.jackson.databind.ObjectMapper
 
 enum class PolicyWebSourceType { PROGRAMME, IDEAL, POLITICAL_WORK, NEWS }
 
@@ -36,14 +39,16 @@ data class CrawledPolicySource(
 data class PolicyCrawlResult(
     val sources: List<CrawledPolicySource>,
     val unavailableUrls: Set<URI> = emptySet(),
+    val truncated: Boolean = false,
 ) {
-    val complete: Boolean get() = unavailableUrls.isEmpty()
+    val complete: Boolean get() = unavailableUrls.isEmpty() && !truncated
 }
 
 @Component
 class PolicyWebCrawler(
     private val properties: PolicySyncProperties,
     private val clock: Clock,
+    private val mapper: ObjectMapper,
 ) {
     private var lastRequestNanos = 0L
     private val client = HttpClient.newBuilder()
@@ -57,6 +62,7 @@ class PolicyWebCrawler(
         val visited = linkedSetOf<URI>()
         val result = mutableListOf<CrawledPolicySource>()
         val unavailable = linkedSetOf<URI>()
+        var truncated = false
         var totalBytes = 0L
         while (queue.isNotEmpty() && visited.size < properties.maxPages) {
             val (url, depth) = queue.removeFirst()
@@ -73,23 +79,33 @@ class PolicyWebCrawler(
             if (totalBytes > properties.maxTotalBytes) throw PolicySourceException("POLICY_TOTAL_TOO_LARGE")
             val parsed = parse(url, response)
             if (parsed.source.extractedText.length >= MIN_TEXT_CHARACTERS) result += parsed.source
+            val archiveLinks = if (url.path == ARCHIVE_PATH && properties.environment.lowercase() == "production") {
+                val archive = discoverArchiveLinks(url, response.bytes)
+                totalBytes += archive.totalBytes
+                if (totalBytes > properties.maxTotalBytes) throw PolicySourceException("POLICY_TOTAL_TOO_LARGE")
+                truncated = truncated || archive.truncated
+                archive.links
+            } else {
+                emptyList()
+            }
             if (depth < MAX_DISCOVERY_DEPTH) {
-                parsed.links.asSequence()
+                (parsed.links + archiveLinks).asSequence()
                     .map(::canonical)
                     .filter(properties::mayDiscover)
                     .filterNot(visited::contains)
                     .forEach { queue.addLast(it to depth + 1) }
             }
         }
+        truncated = truncated || queue.isNotEmpty()
         if (result.isEmpty() && unavailable.isEmpty()) throw PolicySourceException("NO_POLICY_SOURCES")
-        return PolicyCrawlResult(result.sortedBy { it.canonicalUrl.toString() }, unavailable)
+        return PolicyCrawlResult(result.sortedBy { it.canonicalUrl.toString() }, unavailable, truncated)
     }
 
-    private fun fetch(initialUrl: URI): FetchResponse? {
+    private fun fetch(initialUrl: URI, headers: Map<String, String> = emptyMap()): FetchResponse? {
         var lastFailure: PolicySourceException? = null
         repeat(MAX_FETCH_ATTEMPTS) { attempt ->
             try {
-                return fetchOnce(initialUrl)
+                return fetchOnce(initialUrl, headers)
             } catch (failure: PolicySourceException) {
                 if (!isRetryable(failure.code) || attempt == MAX_FETCH_ATTEMPTS - 1) throw failure
                 lastFailure = failure
@@ -99,17 +115,18 @@ class PolicyWebCrawler(
         throw requireNotNull(lastFailure)
     }
 
-    private fun fetchOnce(initialUrl: URI): FetchResponse? {
+    private fun fetchOnce(initialUrl: URI, headers: Map<String, String>): FetchResponse? {
         var url = initialUrl
         for (redirectCount in 0..MAX_REDIRECTS) {
             properties.validateUrl(url)
             waitForRequestSlot()
-            val request = HttpRequest.newBuilder(url)
+            val requestBuilder = HttpRequest.newBuilder(url)
                 .GET()
                 .timeout(Duration.ofSeconds(15))
                 .header("Accept", "text/html,application/pdf;q=0.9")
                 .header("User-Agent", "PvdD-Commissie-Assistent/0.2 (+https://pvdd.vdzonsoftware.nl)")
-                .build()
+            headers.forEach { (name, value) -> requestBuilder.header(name, value) }
+            val request = requestBuilder.build()
             val response = try {
                 client.send(request, HttpResponse.BodyHandlers.ofInputStream())
             } catch (_: HttpTimeoutException) {
@@ -151,6 +168,59 @@ class PolicyWebCrawler(
             )
         }
         error("Unreachable redirect loop")
+    }
+
+    private fun discoverArchiveLinks(archiveUrl: URI, htmlBytes: ByteArray): ArchiveDiscoveryResult {
+        val page = Jsoup.parse(htmlBytes.toString(Charsets.UTF_8), archiveUrl.toString())
+        val component = page.selectFirst("#search-component[data-hx-vals]")
+            ?: throw PolicySourceException("POLICY_ARCHIVE_COMPONENT_MISSING")
+        val values = runCatching { mapper.readTree(component.attr("data-hx-vals")) }.getOrNull()
+            ?: throw PolicySourceException("POLICY_ARCHIVE_COMPONENT_INVALID")
+        val config = values.path("sprig:config").takeIf { it.isString }?.stringValue()?.takeIf(String::isNotBlank)
+            ?: throw PolicySourceException("POLICY_ARCHIVE_COMPONENT_INVALID")
+        val endpoint = archiveUrl.resolve(component.attr("data-hx-get")).also { candidate ->
+            properties.validateUrl(candidate)
+            if (candidate.path != "/index.php" || candidate.rawQuery != "p=actions/sprig-core/components/render") {
+                throw PolicySourceException("POLICY_ARCHIVE_ENDPOINT_INVALID")
+            }
+        }
+        val links = linkedSetOf<URI>()
+        var totalBytes = 0L
+        var requestedPage = 1
+        var hasNextPage = false
+        while (links.size < properties.maxPages) {
+            val requestUrl = URI.create(
+                "$endpoint&sprig%3Aconfig=${URLEncoder.encode(config, StandardCharsets.UTF_8)}" +
+                    "&page=$requestedPage&orderBy=date",
+            )
+            val response = fetch(
+                requestUrl,
+                mapOf(
+                    "HX-Request" to "true",
+                    "HX-Current-URL" to archiveUrl.toString(),
+                    "HX-Target" to "search-component",
+                ),
+            ) ?: throw PolicySourceException("POLICY_ARCHIVE_UNAVAILABLE")
+            totalBytes += response.bytes.size
+            if (totalBytes > properties.maxTotalBytes) throw PolicySourceException("POLICY_TOTAL_TOO_LARGE")
+            val resultPage = Jsoup.parse(response.bytes.toString(Charsets.UTF_8), archiveUrl.toString())
+            resultPage.select("#search-entries .search-entry a[href], .search-entry a[href]")
+                .asSequence()
+                .mapNotNull { element -> runCatching { URI(element.absUrl("href")) }.getOrNull() }
+                .map(::canonical)
+                .filter(properties::mayDiscover)
+                .take(properties.maxPages - links.size)
+                .forEach(links::add)
+            val nextPage = resultPage.selectFirst("#load-more-oob[data-hx-vals]")
+                ?.attr("data-hx-vals")
+                ?.let { NEXT_ARCHIVE_PAGE.find(it)?.groupValues?.get(1)?.toIntOrNull() }
+                ?.takeIf { it > requestedPage }
+                ?: break
+            hasNextPage = true
+            requestedPage = nextPage
+        }
+        if (links.isEmpty()) throw PolicySourceException("POLICY_ARCHIVE_EMPTY")
+        return ArchiveDiscoveryResult(links.toList(), totalBytes, hasNextPage && links.size >= properties.maxPages)
     }
 
     private fun isRetryable(code: String): Boolean = code in setOf("POLICY_TIMEOUT", "POLICY_HTTP_ERROR", "POLICY_HTTP_429") ||
@@ -272,10 +342,13 @@ class PolicyWebCrawler(
 
     private data class FetchResponse(val bytes: ByteArray, val contentType: String, val etag: String?, val lastModified: String?)
     private data class ParsedSource(val source: CrawledPolicySource, val links: List<URI>)
+    private data class ArchiveDiscoveryResult(val links: List<URI>, val totalBytes: Long, val truncated: Boolean)
 
     companion object {
         private val PDF_MAGIC = "%PDF-".toByteArray()
         private val WHITESPACE = Regex("\\s+")
+        private val NEXT_ARCHIVE_PAGE = Regex("\\\"page\\\"\\s*:\\s*\\\"?(\\d+)")
+        private const val ARCHIVE_PATH = "/archief"
         private const val MAX_REDIRECTS = 3
         private const val MAX_FETCH_ATTEMPTS = 3
         private const val RETRY_DELAY_MILLIS = 250

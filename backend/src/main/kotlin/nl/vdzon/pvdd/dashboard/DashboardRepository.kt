@@ -42,6 +42,9 @@ data class AgendaItemSummaryDto(
     val substantive: Boolean,
     val importStatus: String,
     val analysisStatus: String?,
+    val documentStatus: String,
+    val documentCount: Int,
+    val readableDocumentCount: Int,
     val sourceState: String,
     val currentFingerprint: String?,
     val adviceActuality: String?,
@@ -114,6 +117,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             SELECT ai.id, ai.sequence_number, ai.display_number, ai.category, ai.title, ai.substantive,
                    ai.import_status, ai.source_state, ai.current_fingerprint,
                    latest.status AS analysis_status, advice.actuality AS advice_actuality,
+                   documents.document_count, documents.readable_document_count,
                    revision.difference_types,
                    CASE WHEN cardinality(revision.difference_types) > 0 THEN revision.created_at END last_detected_change_at,
                    advice.advice->>'displayTitle' display_title,
@@ -123,6 +127,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                    latest.completed_at latest_completed_at,
                    (m.starts_at > CURRENT_TIMESTAMP AND latest.status = 'FAILED'
                     AND ai.source_state <> 'WITHDRAWN' AND ai.substantive AND ai.category IN ('A', 'B', 'C')
+                    AND documents.readable_document_count > 0
                     AND NOT EXISTS (SELECT 1 FROM analysis_run retry WHERE retry.retry_of_run_id = latest.id))
                        can_retry_analysis
             FROM agenda_item ai
@@ -144,6 +149,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             LEFT JOIN meeting m ON m.id = ai.meeting_id
             LEFT JOIN meeting_revision mr ON mr.meeting_id = m.id AND mr.revision_number = m.current_revision_number
             LEFT JOIN agenda_item_revision revision ON revision.meeting_revision_id = mr.id AND revision.source_id = ai.source_id
+            JOIN agenda_item_document_status documents ON documents.agenda_item_id = ai.id
             WHERE ai.meeting_id = ? ORDER BY ai.sequence_number
             """.trimIndent(),
             { rs, _ -> summary(rs) },
@@ -156,6 +162,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             """
             SELECT ai.*, latest.status AS analysis_status, advice.advice::text AS advice_json,
                    advice.actuality AS advice_actuality, revision.difference_types,
+                   documents.document_count, documents.readable_document_count,
                    CASE WHEN cardinality(revision.difference_types) > 0 THEN revision.created_at END last_detected_change_at,
                    advice.advice->>'displayTitle' display_title,
                    advice.advice->>'shortConclusion' short_conclusion,
@@ -164,6 +171,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                    latest.completed_at latest_completed_at,
                    (m.starts_at > CURRENT_TIMESTAMP AND latest.status = 'FAILED'
                     AND ai.source_state <> 'WITHDRAWN' AND ai.substantive AND ai.category IN ('A', 'B', 'C')
+                    AND documents.readable_document_count > 0
                     AND NOT EXISTS (SELECT 1 FROM analysis_run retry WHERE retry.retry_of_run_id = latest.id))
                        can_retry_analysis
             FROM agenda_item ai
@@ -185,6 +193,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             LEFT JOIN meeting m ON m.id = ai.meeting_id
             LEFT JOIN meeting_revision mr ON mr.meeting_id = m.id AND mr.revision_number = m.current_revision_number
             LEFT JOIN agenda_item_revision revision ON revision.meeting_revision_id = mr.id AND revision.source_id = ai.source_id
+            JOIN agenda_item_document_status documents ON documents.agenda_item_id = ai.id
             WHERE ai.id = ?
             """.trimIndent(),
             { rs, _ ->
@@ -224,11 +233,13 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                COUNT(*) FILTER (WHERE latest.status = 'SUCCEEDED') AS complete,
                COUNT(*) FILTER (WHERE latest.status IN ('FAILED', 'CANCELLED')) AS failed
         FROM agenda_item ai
+        JOIN agenda_item_document_status documents ON documents.agenda_item_id = ai.id
         LEFT JOIN LATERAL (
             SELECT status FROM analysis_run ar WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE' ORDER BY created_at DESC LIMIT 1
         ) latest ON TRUE
         WHERE ai.meeting_id = ? AND ai.source_state <> 'WITHDRAWN'
           AND ai.substantive AND ai.category IN ('A', 'B', 'C')
+          AND documents.readable_document_count > 0
         """.trimIndent(),
         { rs, _ -> ProgressDto(rs.getInt("total"), rs.getInt("complete"), rs.getInt("failed")) },
         meetingId,
@@ -236,11 +247,31 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
 
     private fun sources(itemId: UUID): List<SourceLinkDto> = jdbc.query(
         """
-        SELECT name, source_url, extraction_status FROM (
-            SELECT DISTINCT ON (source_id) source_id, name, source_url, extraction_status, created_at
-            FROM source_document WHERE agenda_item_id = ?
-            ORDER BY source_id, created_at DESC
-        ) latest ORDER BY name
+        SELECT document_revision.name, document_revision.source_url,
+               COALESCE(document_version.extraction_status, 'DOWNLOAD_FAILED') extraction_status
+        FROM agenda_item item
+        JOIN meeting ON meeting.id = item.meeting_id
+        JOIN meeting_revision
+          ON meeting_revision.meeting_id = meeting.id
+         AND meeting_revision.revision_number = meeting.current_revision_number
+        JOIN agenda_item_revision
+          ON agenda_item_revision.meeting_revision_id = meeting_revision.id
+         AND agenda_item_revision.agenda_item_id = item.id
+         AND agenda_item_revision.source_state <> 'WITHDRAWN'
+        JOIN document_revision
+          ON document_revision.agenda_item_revision_id = agenda_item_revision.id
+         AND document_revision.source_state = 'CURRENT'
+        LEFT JOIN LATERAL (
+            SELECT source_document.extraction_status
+            FROM source_document
+            WHERE source_document.agenda_item_id = item.id
+              AND source_document.source_id = document_revision.source_id
+              AND source_document.sha256 IS NOT DISTINCT FROM document_revision.sha256
+            ORDER BY source_document.created_at DESC
+            LIMIT 1
+        ) document_version ON TRUE
+        WHERE item.id = ?
+        ORDER BY document_revision.name
         """.trimIndent(),
         { rs, _ -> SourceLinkDto(rs.getString("name"), URI(rs.getString("source_url")), rs.getString("extraction_status")) },
         itemId,
@@ -261,6 +292,9 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
         substantive = rs.getBoolean("substantive"),
         importStatus = rs.getString("import_status"),
         analysisStatus = rs.getString("analysis_status"),
+        documentStatus = documentStatus(rs.getInt("document_count"), rs.getInt("readable_document_count")),
+        documentCount = rs.getInt("document_count"),
+        readableDocumentCount = rs.getInt("readable_document_count"),
         sourceState = rs.getString("source_state"),
         currentFingerprint = rs.getString("current_fingerprint"),
         adviceActuality = rs.getString("advice_actuality"),
@@ -281,4 +315,11 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
         },
         canRetryAnalysis = rs.getBoolean("can_retry_analysis"),
     )
+
+    private fun documentStatus(documentCount: Int, readableDocumentCount: Int): String = when {
+        documentCount == 0 -> "NO_DOCUMENTS"
+        readableDocumentCount == 0 -> "DOCUMENTS_UNREADABLE"
+        readableDocumentCount < documentCount -> "DOCUMENTS_PARTIALLY_READABLE"
+        else -> "DOCUMENTS_READY"
+    }
 }

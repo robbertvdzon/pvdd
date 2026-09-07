@@ -46,10 +46,12 @@ class AnalysisRepository(
         SELECT DISTINCT meeting.id, 'PENDING'
         FROM meeting
         JOIN agenda_item item ON item.meeting_id = meeting.id
+        JOIN agenda_item_document_status documents ON documents.agenda_item_id = item.id
         WHERE meeting.starts_at >= CURRENT_TIMESTAMP
           AND item.source_state <> 'WITHDRAWN'
           AND item.substantive
           AND item.category IN ('A', 'B', 'C')
+          AND documents.readable_document_count > 0
           AND NOT EXISTS (
               SELECT 1 FROM analysis_run run
               WHERE run.agenda_item_id = item.id
@@ -197,6 +199,10 @@ class AnalysisRepository(
               AND (run.next_runtime_attempt_at IS NULL OR run.next_runtime_attempt_at <= CURRENT_TIMESTAMP)
               AND meeting.starts_at > CURRENT_TIMESTAMP
               AND item.source_state <> 'WITHDRAWN' AND item.substantive AND item.category IN ('A', 'B', 'C')
+              AND EXISTS (
+                  SELECT 1 FROM agenda_item_document_status documents
+                  WHERE documents.agenda_item_id = item.id AND documents.readable_document_count > 0
+              )
               AND COALESCE(run.parent_run_id, run.id) = (
                   SELECT latest.id FROM analysis_run latest
                   WHERE latest.agenda_item_id = run.agenda_item_id AND latest.run_type = 'FINAL_ADVICE'
@@ -236,8 +242,10 @@ class AnalysisRepository(
           AND EXISTS (
               SELECT 1 FROM agenda_item item
               JOIN meeting ON meeting.id = item.meeting_id
+              JOIN agenda_item_document_status documents ON documents.agenda_item_id = item.id
               WHERE item.id = run.agenda_item_id AND meeting.starts_at > CURRENT_TIMESTAMP
                 AND item.source_state <> 'WITHDRAWN' AND item.substantive AND item.category IN ('A', 'B', 'C')
+                AND documents.readable_document_count > 0
                 AND COALESCE(run.parent_run_id, run.id) = (
                     SELECT latest.id FROM analysis_run latest
                     WHERE latest.agenda_item_id = run.agenda_item_id AND latest.run_type = 'FINAL_ADVICE'
@@ -259,8 +267,10 @@ class AnalysisRepository(
         WHERE run.status = 'PENDING' AND NOT EXISTS (
             SELECT 1 FROM agenda_item item
             JOIN meeting ON meeting.id = item.meeting_id
+            JOIN agenda_item_document_status documents ON documents.agenda_item_id = item.id
             WHERE item.id = run.agenda_item_id AND meeting.starts_at > CURRENT_TIMESTAMP
               AND item.source_state <> 'WITHDRAWN' AND item.substantive AND item.category IN ('A', 'B', 'C')
+              AND documents.readable_document_count > 0
               AND COALESCE(run.parent_run_id, run.id) = (
                   SELECT latest.id FROM analysis_run latest
                   WHERE latest.agenda_item_id = run.agenda_item_id AND latest.run_type = 'FINAL_ADVICE'
@@ -412,10 +422,12 @@ class AnalysisRepository(
 
     fun allRequiredRunsSucceeded(meetingId: UUID): Boolean = jdbc.queryForObject(
         """
-        SELECT COUNT(*) > 0 AND NOT EXISTS (
+        SELECT NOT EXISTS (
             SELECT 1 FROM agenda_item ai
+            JOIN agenda_item_document_status documents ON documents.agenda_item_id = ai.id
             WHERE ai.meeting_id = ? AND ai.source_state <> 'WITHDRAWN'
               AND ai.substantive AND ai.category IN ('A', 'B', 'C')
+              AND documents.readable_document_count > 0
               AND NOT EXISTS (
                   SELECT 1 FROM agenda_item_advice advice
                   JOIN analysis_run run ON run.id = advice.analysis_run_id
@@ -423,10 +435,8 @@ class AnalysisRepository(
                     AND run.run_type = 'FINAL_ADVICE' AND run.status = 'SUCCEEDED'
               )
         )
-        FROM analysis_run WHERE meeting_id = ?
         """.trimIndent(),
         Boolean::class.java,
-        meetingId,
         meetingId,
     ) == true
 
@@ -452,6 +462,10 @@ class AnalysisRepository(
             JOIN meeting ON meeting.id = item.meeting_id
             WHERE item.id = ? AND meeting.starts_at > ?
               AND item.source_state <> 'WITHDRAWN' AND item.substantive AND item.category IN ('A', 'B', 'C')
+              AND EXISTS (
+                  SELECT 1 FROM agenda_item_document_status documents
+                  WHERE documents.agenda_item_id = item.id AND documents.readable_document_count > 0
+              )
               AND run.run_type = 'FINAL_ADVICE' AND run.status = 'FAILED'
               AND run.id = (
                   SELECT latest.id FROM analysis_run latest
@@ -474,6 +488,7 @@ class AnalysisRepository(
             """
             SELECT item.id FROM agenda_item item
             JOIN meeting ON meeting.id = item.meeting_id
+            JOIN agenda_item_document_status documents ON documents.agenda_item_id = item.id
             JOIN LATERAL (
                 SELECT run.id, run.status FROM analysis_run run
                 WHERE run.agenda_item_id = item.id AND run.run_type = 'FINAL_ADVICE'
@@ -481,6 +496,7 @@ class AnalysisRepository(
             ) latest ON TRUE
             WHERE meeting.starts_at > ? AND item.source_state <> 'WITHDRAWN'
               AND item.substantive AND item.category IN ('A', 'B', 'C')
+              AND documents.readable_document_count > 0
               AND latest.status = 'FAILED'
               AND NOT EXISTS (SELECT 1 FROM analysis_run retry WHERE retry.retry_of_run_id = latest.id)
             ORDER BY meeting.starts_at, item.sequence_number

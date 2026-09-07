@@ -90,7 +90,7 @@ class FakeSettingsGateway implements SettingsGateway {
       maximumPages: 250,
     ),
     analysisPrompt: AnalysisPromptSettings(
-      promptVersion: 'pvdd-advice-v11',
+      promptVersion: 'pvdd-advice-v12-direct-documents',
       systemPrompt: 'Vaste veilige prompt',
       additionalInstructions: guidance,
       additionalInstructionsUpdatedAt: DateTime(2026, 9, 2, 7, 30),

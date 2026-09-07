@@ -81,16 +81,20 @@ class AnalysisOrchestrator(
         try {
             policyImport.ensureImported()
             val meeting = requireNotNull(meetings.findMeeting(meetingId))
-            val items = meetings.findAgendaItems(meetingId)
+            val itemsWithSources = meetings.findAgendaItems(meetingId)
                 .filter {
                     it.sourceState != SourceState.WITHDRAWN && it.substantive &&
                         it.category in setOf(AgendaCategory.A, AgendaCategory.B, AgendaCategory.C)
                 }
-            require(items.isNotEmpty()) { "NO_ANALYSIS_ITEMS" }
+                .mapNotNull { item ->
+                    documents.findPassagesForAnalysis(item.id).map(::documentSource)
+                        .takeIf(List<AnalysisSource>::isNotEmpty)
+                        ?.let { item to it }
+                }
             val positionCatalogue = policyPositionCatalogue.currentSource()
             val guidance = analysisGuidance.current().text
-            items.forEach { item ->
-                val sources = sources(item, positionCatalogue)
+            itemsWithSources.forEach { (item, documentSources) ->
+                val sources = sources(item, documentSources, positionCatalogue)
                 val plan = prompts.plan(item.toAnalysisItem(), sources, guidance)
                 val fingerprint = fingerprint(item, sources, meeting.publicationStatus.name, guidance)
                 val key = "pvdd-${sha256("${meeting.sourceId}|${item.sourceId}|$fingerprint|${PromptBuilder.PROMPT_VERSION}")}" 
@@ -185,6 +189,17 @@ class AnalysisOrchestrator(
                 repository.completeSourceNotes(prepared.run.id, result, clock.instant())
                 activateReadySynthesisRuns()
             } else {
+                if (documents.findPassagesForAnalysis(prepared.run.agendaItemId).isEmpty()) {
+                    repository.updateRuntimeStatus(
+                        prepared.run.id,
+                        AnalysisStatus.CANCELLED,
+                        "NO_READABLE_DIRECT_DOCUMENTS",
+                    )
+                    if (repository.allRequiredRunsSucceeded(prepared.meetingId)) {
+                        meetings.markSuccessful(prepared.meetingId)
+                    }
+                    return
+                }
                 resultValidator.validateAdvice(result)
                 repository.completeWithAdvice(
                     prepared,
@@ -283,9 +298,12 @@ class AnalysisOrchestrator(
         analysisGuidance = guidance,
     )
 
-    private fun sources(item: AgendaItem, positionCatalogue: AnalysisSource?): List<AnalysisSource> {
+    private fun sources(
+        item: AgendaItem,
+        documentSources: List<AnalysisSource>,
+        positionCatalogue: AnalysisSource?,
+    ): List<AnalysisSource> {
         val agendaText = listOfNotNull(item.title, item.explanation, item.treatmentProposal).joinToString("\n")
-        val documentSources = documents.findPassagesForAnalysis(item.id).map(::documentSource)
         val selection = policySelector.select("$agendaText\n${documentSources.joinToString("\n") { it.text }}")
         val policySources = selection.chunks.map { chunk ->
             AnalysisSource(

@@ -537,6 +537,7 @@ class DatabaseIntegrationTest(
         requireNotNull(dashboardRepository.overview().meeting)
         val dashboardItems = requireNotNull(dashboardRepository.agendaItems(meetingId))
         assertTrue(dashboardItems.any { it.sourceState == SourceState.CURRENT.name && it.changeTypes.isNotEmpty() })
+        assertTrue(dashboardItems.filter { it.substantive }.all { it.documentStatus == "DOCUMENTS_UNREADABLE" })
         assertEquals(
             SourceState.CURRENT.name,
             requireNotNull(dashboardRepository.item(dashboardItems.first().id)).item.sourceState,
@@ -555,6 +556,8 @@ class DatabaseIntegrationTest(
             "Actuele synthetische documenttekst",
             documentRepository.findPassagesForAnalysis(target.agendaItemId).single().text,
         )
+        assertEquals("DOCUMENTS_READY", requireNotNull(dashboardRepository.item(target.agendaItemId)).item.documentStatus)
+        assertEquals(1, dashboardRepository.overview().progress.total)
 
         val parsedTarget = parsed.items.single { it.sourceId == target.sourceId }
         val withoutDocument = currentItems.map { item ->
@@ -573,6 +576,8 @@ class DatabaseIntegrationTest(
             removedComparison, now.plusSeconds(240),
         )
         assertTrue(documentRepository.findPassagesForAnalysis(target.agendaItemId).isEmpty())
+        assertEquals("NO_DOCUMENTS", requireNotNull(dashboardRepository.item(target.agendaItemId)).item.documentStatus)
+        assertEquals(0, dashboardRepository.overview().progress.total)
     }
 
     @Test

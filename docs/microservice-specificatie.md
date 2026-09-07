@@ -169,18 +169,19 @@ zo’n document niet stilzwijgend als volledig gelezen markeren.
 
 ### 4.4 Analyse van A- en B-agendapunten
 
-De AI maakt voor ieder inhoudelijk punt op de A- of B-agenda een vrij Markdownadvies. De volgende
-vragen sturen de opdracht, maar zijn bewust geen technisch afgedwongen responsevelden:
+De AI maakt voor ieder inhoudelijk punt op de A- of B-agenda met minimaal één leesbaar, direct
+gekoppeld stuk één gestructureerd Markdownadvies. Punten zonder eigen stukken worden zonder AI-run
+overgeslagen. De volgende onderdelen sturen de opdracht, maar zijn bewust geen technisch
+afgedwongen responsevelden:
 
-1. **Waar gaat het over?** — feitelijke, neutrale samenvatting van voorstel, besluit, geld,
+1. **Feitelijke samenvatting** — neutrale samenvatting van voorstel, besluit, geld,
    planning, betrokken gebieden en gevolgen.
-2. **Wat vinden we ervan?** — beoordeling vanuit het PvdD-verkiezingsprogramma, met relevante
-   programmapassages en eventuele spanning of onzekerheid.
-3. **Wat kunnen/willen we ermee in de commissie?** — handelingsopties, prioriteit en gewenst
-   commissieresultaat.
-4. **Welke punten willen we maken en wat willen we van de gedeputeerde?** — concrete politieke
-   punten, verzoeken, toezeggingen of vervolgacties.
-5. **Welke technische vragen gaan we stellen?** — feitelijke, niet-retorische vragen die nodig
+2. **Wat sluit aan bij de PvdD?** — maximaal vijf positieve voorstelonderdelen en/of relevante
+   PvdD-invalshoeken, met minder punten wanneer de bronnen onvoldoende bewijs bieden.
+3. **Wat moet beter?** — maximaal vijf concrete aandachtspunten vanuit programma en politiek
+   archief, eveneens zonder aantallen kunstmatig aan te vullen.
+4. **Inzet en vragen voor de commissie** — concrete politieke punten, verzoeken, toezeggingen en
+   feitelijke, niet-retorische vragen die nodig
    zijn om ontbrekende informatie, aannames, effecten, financiën, juridische ruimte, monitoring en
    alternatieven helder te krijgen.
 
@@ -190,13 +191,13 @@ ontbrekende citaten of een andere nuttige indeling.
 
 ### 4.5 Beoordeling van C-agendapunten
 
-Voor ieder C-agendapunt vraagt de opdracht om:
+Voor ieder C-agendapunt met minimaal één leesbaar, direct gekoppeld stuk vraagt de opdracht alleen
+om:
 
-- **bespreken en verplaatsen naar B: ja/nee**;
+- **voldoende of onvoldoende concrete PvdD-argumenten** voor bespreking en eventuele verplaatsing
+  naar B;
 - een korte, concrete motivering vanuit het PvdD-standpunt;
-- urgentie: laag, middel of hoog;
-- wat bespreking in de commissie moet opleveren;
-- de belangrijkste politieke en/of technische vraag wanneer bespreking wordt geadviseerd;
+- wat bespreking in de commissie moet opleveren wanneer er voldoende argumenten zijn;
 - waar nuttig een verwijzing naar de gebruikte bron.
 
 “Ja” wordt alleen geadviseerd wanneer bespreking politieke meerwaarde heeft, bijvoorbeeld bij

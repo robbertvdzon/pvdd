@@ -27,10 +27,12 @@ e-mail en maakt niet zelfstandig moties, vragen of bijdragen openbaar.
 De verwerking verloopt als volgt:
 
 1. De applicatie zoekt de eerstvolgende toekomstige vergadering van commissie Ruimte.
-2. Zij leest de agenda, de A/B/C-structuur, de inhoudelijke agendapunten en gekoppelde documenten.
+2. Zij leest de agenda, de A/B/C-structuur, de inhoudelijke agendapunten en direct aan ieder punt
+   gekoppelde documenten.
 3. Documenten worden gedownload, technisch gecontroleerd en naar tekst omgezet.
 4. De nieuwe broninhoud wordt vergeleken met de vorige opgeslagen versie.
-5. Nieuwe of inhoudelijk gewijzigde agendapunten worden klaargezet voor AI-analyse.
+5. Nieuwe of inhoudelijk gewijzigde agendapunten met minimaal één leesbaar, direct gekoppeld stuk
+   worden klaargezet voor AI-analyse. Punten zonder eigen stukken worden overgeslagen.
 6. Per punt wordt een begrensd bronpakket samengesteld uit het agendapunt, de leesbare stukken,
    relevante passages uit het verkiezingsprogramma en het volledige actuele
    standpuntenoverzicht.
@@ -63,7 +65,8 @@ De applicatie bewaart onder andere:
 - volgorde, zichtbaar nummer en hiërarchie van agendapunten;
 - de categorie A, B of C uit de officiële sectiekop;
 - officiële titel, toelichting en behandelvoorstel;
-- gekoppelde agenda- en puntdocumenten;
+- algemene vergaderdocumenten en direct aan een punt gekoppelde documenten, waarbij alleen die
+  laatste een analyse van dat punt kunnen starten;
 - bronhashes, importstatus en revisiehistorie.
 
 De categorie wordt dus **niet door AI bedacht** en ook niet alleen uit het agendanummer afgeleid.
@@ -121,6 +124,9 @@ analyse-instructie uit de applicatie mogen het gedrag van de AI sturen.
 
 Een document zonder bruikbare tekst krijgt een zichtbare fout- of OCR-status. De AI ontvangt alleen
 de passages die werkelijk konden worden geëxtraheerd en mag ontbrekende inhoud niet zelf invullen.
+De interface noemt iedere specifieke onleesbare bijlage. Zijn daarnaast andere direct gekoppelde
+stukken wel leesbaar, dan gaat de analyse met die stukken door en blijft de waarschuwing zichtbaar.
+Zijn alle direct gekoppelde stukken onleesbaar, dan wordt geen inhoudelijke analyse gestart.
 
 ## 6. Waar de PvdD-standpunten vandaan komen
 
@@ -150,9 +156,8 @@ De productie-crawler start bij:
 
 - `/onze-idealen`;
 - `/nieuws`;
-- `/bijdragen`;
-- `/moties`;
-- `/vragen`;
+- `/archief`, inclusief de gepagineerde resultaten voor bijdragen, initiatiefvoorstellen, moties
+  en vragen;
 - de provinciale programmapagina;
 - het programma-PDF.
 
@@ -172,6 +177,8 @@ bronnen, vult geen formulieren in en volgt geen willekeurige externe links.
 
 De broncontrole draait automatisch op de eerste dag van iedere maand om **03:30 uur** en kan ook
 handmatig worden gestart via **Standpunten nu actualiseren**.
+Na de eerste productie-start met de nieuwe archiefconfiguratie wordt daarnaast eenmalig automatisch
+een verversing klaargezet, zodat de applicatie niet op de volgende maandrun hoeft te wachten.
 
 De workflow:
 
@@ -209,8 +216,8 @@ actieve standpuntensnapshot alle toekomstige agendapunten opnieuw actueel laten 
 
 ### 7.1 Wat voor alle categorieën gelijk is
 
-Alleen inhoudelijke punten in categorie A, B of C worden geanalyseerd. Voor ieder punt gelden
-dezelfde basisregels:
+Alleen inhoudelijke punten in categorie A, B of C met minimaal één leesbaar, direct gekoppeld stuk
+worden geanalyseerd. Voor ieder geanalyseerd punt gelden dezelfde basisregels:
 
 - gebruik uitsluitend de door de applicatie aangeleverde bronnen;
 - scheid feiten, politieke beoordeling en voorgestelde actie;
@@ -227,37 +234,42 @@ voorbereidingscontract.
 
 ### 7.2 A-punten
 
-Voor een inhoudelijk A-punt maakt de Commissie-assistent een volledig politiek
-voorbereidingsadvies. Het advies behandelt waar passend:
+Voor een inhoudelijk A-punt maakt de Commissie-assistent één politiek voorbereidingsadvies met een
+vaste, controleerbare structuur:
 
-1. waar het voorstel of onderwerp feitelijk over gaat;
-2. hoe het onderwerp zich verhoudt tot het PvdD-programma en de actuele standpunten;
-3. wat de fractie ermee kan of wil bereiken in de commissiebehandeling;
-4. welke politieke punten, verzoeken of gewenste toezeggingen aan de gedeputeerde relevant zijn;
-5. welke technische vragen nodig zijn om ontbrekende feiten, effecten, financiën, juridische
-   ruimte, monitoring of alternatieven helder te krijgen.
+1. een korte feitelijke samenvatting;
+2. maximaal vijf punten die aansluiten bij de PvdD, als positief onderdeel van het voorstel en/of
+   als relevante PvdD-invalshoek;
+3. maximaal vijf punten waarop het voorstel vanuit de PvdD beter moet;
+4. concrete politieke inzet en technische vragen voor de commissiebehandeling.
+
+De AI geeft minder dan drie punten wanneer de bronnen onvoldoende onderbouwing bieden. Ieder
+beoordelend punt koppelt bewijs uit het vergaderstuk aan het verkiezingsprogramma en/of een
+relevante officiële archiefbron, met bron-ID, paginanummer en archiefreferentie waar beschikbaar.
 
 De korte conclusie bevat de politieke hoofdbeoordeling en de belangrijkste aanbevolen actie.
 
 ### 7.3 B-punten
 
-Voor een inhoudelijk B-punt gebruikt de applicatie hetzelfde volledige analysecontract als voor
-een A-punt. Ook hier staan feitelijke samenvatting, PvdD-beoordeling, commissiedoel, politieke
-punten en technische vragen centraal.
+Voor een inhoudelijk B-punt gebruikt de applicatie hetzelfde gestructureerde analysecontract als
+voor een A-punt.
 
 De applicatie gaat niet zelf raden waarom de provincie een punt onder A of B heeft geplaatst en
 verplaatst A- of B-punten niet zelfstandig naar een andere categorie.
 
 ### 7.4 C-punten
 
-Bij een C-punt is de centrale vraag anders:
+Bij een C-punt wordt geen volledige A/B-analyse gemaakt. De centrale vraag is:
 
-> Heeft bespreking in de commissie en verplaatsing van C naar B aantoonbare politieke meerwaarde?
+> Bevatten de direct gekoppelde stukken voldoende concrete PvdD-argumenten om bespreking en
+> eventuele verplaatsing van C naar B te rechtvaardigen?
 
 De korte conclusie moet minimaal aangeven:
 
-- **wel of niet bespreken en naar B verplaatsen**;
-- waarom dat vanuit de aangeleverde feiten en PvdD-bronnen wel of niet zinvol is.
+- **voldoende of onvoldoende argumenten**;
+- waarom bespreking en eventuele verplaatsing vanuit de aangeleverde feiten en PvdD-bronnen wel of
+  niet zinvol is;
+- mogelijke commissie-inzet, uitsluitend wanneer er voldoende argumenten zijn.
 
 Dit is een inhoudelijke opdracht aan de AI. De applicatie kan technisch controleren of de korte
 conclusie aanwezig en niet te lang is, maar niet zelfstandig bewijzen dat het politieke oordeel

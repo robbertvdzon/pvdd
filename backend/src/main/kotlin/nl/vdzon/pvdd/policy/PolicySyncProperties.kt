@@ -48,7 +48,7 @@ data class PolicySyncProperties(
         const val WEBSITE_HOST = "noordholland.partijvoordedieren.nl"
         val OFFICIAL_HOSTS = setOf(WEBSITE_HOST, "assets.partijvoordedieren.nl")
         val DISCOVERY_PREFIXES = listOf(
-            "/onze-idealen", "/standpunten", "/nieuws", "/bijdragen",
+            "/onze-idealen", "/standpunten", "/nieuws", "/archief", "/bijdragen",
             "/initiatiefvoorstellen", "/moties", "/vragen",
         )
     }

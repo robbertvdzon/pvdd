@@ -176,6 +176,9 @@ class AgendaItemSummary {
     required this.substantive,
     required this.importStatus,
     required this.analysisStatus,
+    this.documentStatus = 'DOCUMENTS_READY',
+    this.documentCount = 1,
+    this.readableDocumentCount = 1,
     required this.sourceState,
     required this.currentFingerprint,
     required this.adviceActuality,
@@ -196,6 +199,9 @@ class AgendaItemSummary {
         substantive: json['substantive'] as bool,
         importStatus: json['importStatus'] as String,
         analysisStatus: json['analysisStatus'] as String?,
+        documentStatus: json['documentStatus'] as String,
+        documentCount: json['documentCount'] as int,
+        readableDocumentCount: json['readableDocumentCount'] as int,
         sourceState: json['sourceState'] as String,
         currentFingerprint: json['currentFingerprint'] as String?,
         adviceActuality: json['adviceActuality'] as String?,
@@ -220,6 +226,9 @@ class AgendaItemSummary {
   final bool substantive;
   final String importStatus;
   final String? analysisStatus;
+  final String documentStatus;
+  final int documentCount;
+  final int readableDocumentCount;
   final String sourceState;
   final String? currentFingerprint;
   final String? adviceActuality;

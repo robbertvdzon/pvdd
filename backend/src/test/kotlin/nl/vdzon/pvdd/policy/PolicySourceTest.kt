@@ -17,6 +17,7 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream
 import org.apache.pdfbox.pdmodel.font.PDType1Font
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts
 import org.junit.jupiter.api.Test
+import tools.jackson.module.kotlin.jacksonObjectMapper
 
 class PolicySourceTest {
     @Test
@@ -39,6 +40,7 @@ class PolicySourceTest {
                     startUrls = listOf(URI("http://127.0.0.1:${server.address.port}/policy")),
                 ),
                 Clock.systemUTC(),
+                jacksonObjectMapper(),
             )
 
             val result = crawler.crawl()
@@ -68,6 +70,7 @@ class PolicySourceTest {
             val result = PolicyWebCrawler(
                 PolicySyncProperties(environment = "local", startUrls = listOf(url)),
                 Clock.systemUTC(),
+                jacksonObjectMapper(),
             ).crawl()
 
             assertEquals(3, requests)
@@ -88,6 +91,17 @@ class PolicySourceTest {
         assertFailsWith<IllegalArgumentException> {
             PolicySourceProperties(PolicySourceProperties.OFFICIAL_PROGRAMME_URL, "acceptance").validate()
         }
+    }
+
+    @Test
+    fun `production discovery accepts every political archive category`() {
+        val properties = PolicySyncProperties(environment = "production")
+
+        listOf("archief", "bijdragen/wonen", "initiatiefvoorstellen/natuur", "moties/klimaat", "vragen/water")
+            .forEach { path ->
+                assertTrue(properties.mayDiscover(URI("https://noordholland.partijvoordedieren.nl/$path")))
+            }
+        assertFalse(properties.mayDiscover(URI("https://noordholland.partijvoordedieren.nl/personen/iemand")))
     }
 
     @Test

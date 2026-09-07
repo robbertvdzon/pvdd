@@ -328,19 +328,40 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
         ? 'PREVIEW'
         : item.sourceState == 'WITHDRAWN'
         ? 'WITHDRAWN'
+        : item.documentStatus == 'NO_DOCUMENTS' ||
+              item.documentStatus == 'DOCUMENTS_UNREADABLE'
+        ? item.documentStatus
         : item.adviceActuality == 'STALE'
         ? 'STALE'
-        : item.analysisStatus ?? item.importStatus;
+        : item.analysisStatus ??
+              (item.documentStatus == 'DOCUMENTS_READY'
+                  ? item.importStatus
+                  : item.documentStatus);
     final secondaryStatus = item.sourceState == 'PREVIEW'
         ? item.adviceActuality == 'STALE'
               ? 'STALE'
-              : item.analysisStatus ?? item.importStatus
+              : item.analysisStatus ??
+                    (item.documentStatus == 'DOCUMENTS_READY'
+                        ? item.importStatus
+                        : item.documentStatus)
+        : item.documentStatus == 'DOCUMENTS_PARTIALLY_READABLE'
+        ? item.documentStatus
+        : (item.documentStatus == 'NO_DOCUMENTS' ||
+                  item.documentStatus == 'DOCUMENTS_UNREADABLE') &&
+              item.adviceActuality == 'STALE'
+        ? 'STALE'
         : null;
+    final unavailableAnalysisLabel = switch (item.documentStatus) {
+      'NO_DOCUMENTS' => 'Niet van toepassing — geen direct gekoppelde stukken',
+      'DOCUMENTS_UNREADABLE' =>
+        'Niet beschikbaar — gekoppelde stukken zijn niet leesbaar',
+      _ => 'Nog niet beschikbaar',
+    };
     final facts = [
-      _AgendaFact('AI-titel', item.displayTitle ?? 'Nog niet beschikbaar'),
+      _AgendaFact('AI-titel', item.displayTitle ?? unavailableAnalysisLabel),
       _AgendaFact(
         'Korte conclusie',
-        item.shortConclusion ?? 'Nog niet beschikbaar',
+        item.shortConclusion ?? unavailableAnalysisLabel,
       ),
       _AgendaFact(
         'Laatste wijziging',
@@ -355,7 +376,11 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
       _AgendaFact(
         'Laatste AI-analyse',
         item.lastAnalysisRun == null
-            ? 'Nog niet uitgevoerd'
+            ? item.documentStatus == 'NO_DOCUMENTS'
+                  ? 'Overgeslagen — geen direct gekoppelde stukken'
+                  : item.documentStatus == 'DOCUMENTS_UNREADABLE'
+                  ? 'Niet uitgevoerd — gekoppelde stukken zijn niet leesbaar'
+                  : 'Nog niet uitgevoerd'
             : _analysisRunDateTimeLabel(item.lastAnalysisRun!),
       ),
     ];
@@ -477,6 +502,9 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
 
   Widget _detailView(BuildContext context, AgendaItemDetail detail) {
     final advice = detail.advice;
+    final unreadableSources = detail.sources
+        .where((source) => source.status != 'EXTRACTED')
+        .toList(growable: false);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       child: Column(
@@ -493,10 +521,22 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
               context,
               'Voorlopige bronversie — dit beschikbare stuk is geanalyseerd en wordt bij nieuwe broninformatie opnieuw verwerkt.',
             ),
+          if (unreadableSources.isNotEmpty)
+            _actualityWarning(
+              context,
+              'Niet leesbaar en daarom niet gebruikt in de analyse: '
+              '${unreadableSources.map((source) => '${source.name} (${_statusLabel(source.status)})').join(', ')}.',
+            ),
           if (advice == null)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('De analyse is nog niet beschikbaar.'),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Text(switch (detail.item.documentStatus) {
+                'NO_DOCUMENTS' =>
+                  'Geen AI-analyse: aan dit agendapunt zijn geen stukken direct gekoppeld.',
+                'DOCUMENTS_UNREADABLE' =>
+                  'Geen inhoudelijke AI-analyse mogelijk: geen van de direct gekoppelde stukken is leesbaar.',
+                _ => 'De analyse is nog niet beschikbaar.',
+              }),
             )
           else if (advice['content'] is String)
             Padding(
@@ -704,6 +744,10 @@ String _statusLabel(String status) => switch (status) {
   'PARTIAL' => 'Onvolledig — controle nodig',
   'FAILED' => 'Mislukt',
   'OCR_REQUIRED' => 'Scan — OCR nodig',
+  'NO_DOCUMENTS' => 'Geen stukken — analyse overgeslagen',
+  'DOCUMENTS_UNREADABLE' => 'Stukken niet leesbaar',
+  'DOCUMENTS_PARTIALLY_READABLE' => 'Een of meer stukken niet leesbaar',
+  'DOCUMENTS_READY' => 'Stukken leesbaar',
   _ => status.toLowerCase().replaceAll('_', ' '),
 };
 

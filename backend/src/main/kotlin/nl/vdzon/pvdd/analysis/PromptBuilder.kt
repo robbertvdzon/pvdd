@@ -102,6 +102,8 @@ class PromptBuilder(private val mapper: ObjectMapper) {
         append(SYSTEM_PROMPT)
         appendGuidance(guidance)
         append("\n\nMaak uitsluitend feitelijke bronnotities voor een latere synthese; behoud alle bron-ID's en paginanummers.")
+        append(" Leg voor A/B afzonderlijk mogelijke aansluitende punten, verbeterpunten en commissievragen vast.")
+        append(" Leg voor C uitsluitend argumenten voor en tegen bespreking en eventuele verplaatsing naar B vast.")
         if (sources.any { it.sourceType == CitationSourceType.POLICY_POSITIONS }) {
             append(" Beoordeel ieder aangeleverd standpunt op relevantie voor dit agendapunt en behoud de relevante standpunt-ID's en referenties.")
         }
@@ -118,8 +120,8 @@ class PromptBuilder(private val mapper: ObjectMapper) {
     }
 
     companion object {
-        const val PROMPT_VERSION = "pvdd-advice-v11"
-        const val SELECTION_VERSION = "policy-selection-v2-all-positions"
+        const val PROMPT_VERSION = "pvdd-advice-v12-direct-documents"
+        const val SELECTION_VERSION = "policy-selection-v3-programme-and-political-archive"
         private const val MAX_DIRECT_PROMPT_CHARACTERS = 80_000
         private const val NOTES_BATCH_CHARACTERS = 35_000
         private val SYSTEM_PROMPT = requireNotNull(PromptBuilder::class.java.getResource("/prompts/advice-system-v1.txt")).readText()

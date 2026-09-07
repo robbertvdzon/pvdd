@@ -245,6 +245,46 @@ void main() {
     expect(gateway.retriedItemId, 'item-a');
     expect(find.text('De AI-analyse is opnieuw gestart.'), findsOneWidget);
   });
+
+  testWidgets(
+    'skips items without direct documents and names unreadable files',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        PvddApp(
+          authenticationGateway: FakeAuthenticationGateway(),
+          versionGateway: FakeVersionGateway(),
+          frontendVersionSource: FakeFrontendVersionSource(),
+          dashboardGateway: DocumentStatusDashboardGateway(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Geen stukken — analyse overgeslagen'), findsOneWidget);
+      expect(find.text('Stukken niet leesbaar'), findsOneWidget);
+      expect(
+        find.text('Overgeslagen — geen direct gekoppelde stukken'),
+        findsOneWidget,
+      );
+
+      await tester.ensureVisible(find.text('Gescand rapport'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Gescand rapport'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('rapport-scan.pdf (Scan — OCR nodig)'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          'geen van de direct gekoppelde stukken is leesbaar',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 }
 
 class FakeAuthenticationGateway implements AuthenticationGateway {
@@ -470,4 +510,84 @@ class RefreshingDashboardGateway extends FakeDashboardGateway {
     sources: const [],
     warning: 'AI-concept — controleer bronnen en formulering vóór gebruik',
   );
+}
+
+class DocumentStatusDashboardGateway extends FakeDashboardGateway {
+  DocumentStatusDashboardGateway() : super(withMeeting: true);
+
+  final noDocuments = const AgendaItemSummary(
+    id: 'no-documents',
+    sequence: 1,
+    displayNumber: '1',
+    category: 'A',
+    title: 'Punt zonder stukken',
+    substantive: true,
+    importStatus: 'COMPLETE',
+    analysisStatus: null,
+    documentStatus: 'NO_DOCUMENTS',
+    documentCount: 0,
+    readableDocumentCount: 0,
+    sourceState: 'CURRENT',
+    currentFingerprint: null,
+    adviceActuality: null,
+    changeTypes: [],
+  );
+
+  final unreadable = const AgendaItemSummary(
+    id: 'unreadable',
+    sequence: 2,
+    displayNumber: '2',
+    category: 'B',
+    title: 'Gescand rapport',
+    substantive: true,
+    importStatus: 'PARTIAL',
+    analysisStatus: null,
+    documentStatus: 'DOCUMENTS_UNREADABLE',
+    documentCount: 1,
+    readableDocumentCount: 0,
+    sourceState: 'CURRENT',
+    currentFingerprint: null,
+    adviceActuality: null,
+    changeTypes: [],
+  );
+
+  @override
+  Future<MeetingOverview> overview() async {
+    final base = await super.overview();
+    return MeetingOverview(
+      status: base.status,
+      meeting: base.meeting,
+      lastCheckedAt: base.lastCheckedAt,
+      progress: const Progress(0, 0, 0),
+    );
+  }
+
+  @override
+  Future<List<AgendaItemSummary>> agendaItems(String meetingId) async => [
+    noDocuments,
+    unreadable,
+  ];
+
+  @override
+  Future<AgendaItemDetail> agendaItem(String itemId) async {
+    final selected = itemId == unreadable.id ? unreadable : noDocuments;
+    return AgendaItemDetail(
+      item: selected,
+      explanation: null,
+      treatmentProposal: null,
+      sourceUrl: Uri.parse('https://example.test/item'),
+      advice: null,
+      adviceActuality: null,
+      sources: itemId == unreadable.id
+          ? [
+              SourceLink(
+                'rapport-scan.pdf',
+                Uri.parse('https://example.test/rapport-scan.pdf'),
+                'OCR_REQUIRED',
+              ),
+            ]
+          : const [],
+      warning: 'AI-concept — controleer bronnen en formulering vóór gebruik',
+    );
+  }
 }

@@ -91,8 +91,7 @@ class DocumentRepository(
         JOIN meeting_revision current_revision
             ON current_revision.meeting_id = target_meeting.id
             AND current_revision.revision_number = target_meeting.current_revision_number
-        JOIN agenda_item source_item ON source_item.meeting_id = target.meeting_id
-            AND (source_item.id = target.id OR source_item.source_id LIKE '%:meeting-documents')
+        JOIN agenda_item source_item ON source_item.id = target.id
         JOIN agenda_item_revision current_item
             ON current_item.meeting_revision_id = current_revision.id
             AND current_item.agenda_item_id = source_item.id

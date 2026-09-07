@@ -371,7 +371,7 @@ class PolicySyncRepository(private val jdbc: JdbcTemplate) {
         ) },
     )
 
-    private fun findByIdempotencyKey(key: String): PolicySyncRunRecord? = jdbc.query(
+    fun findByIdempotencyKey(key: String): PolicySyncRunRecord? = jdbc.query(
         "SELECT * FROM policy_sync_run WHERE idempotency_key = ?", runMapper, key,
     ).singleOrNull()
 

@@ -39,30 +39,41 @@ gedeeltelijk of onleesbaar dossier heet nooit volledig ingelezen.
 
 ## A- en B-advies
 
-De AI krijgt voor ieder inhoudelijk A/B-punt deze richtinggevende vragen mee:
+Alleen een inhoudelijk A/B-punt met minimaal één leesbaar, direct aan dat agendapunt gekoppeld stuk
+krijgt een analyse. Algemeen aan de vergadering gekoppelde documenten tellen niet mee. De analyse
+heeft vier herkenbare delen:
 
-1. **Waar gaat het over?** — feitelijke samenvatting;
-2. **Wat vinden we ervan?** — politieke beoordeling met programmapassages;
-3. **Wat kunnen/willen we ermee in de commissie?** — handelingsopties en doel;
-4. **Welke punten willen we maken en wat willen we van de gedeputeerde?** — concrete verzoeken;
-5. **Welke technische vragen gaan we stellen?** — feitelijke vragen over ontbrekende informatie.
+1. **Feitelijke samenvatting** van de stukken;
+2. **Wat sluit aan bij de PvdD?** met maximaal vijf onderbouwde punten;
+3. **Wat moet beter?** met maximaal vijf onderbouwde aandachtspunten;
+4. **Inzet en vragen voor de commissie** met concrete handelingsopties en vragen.
 
-Het eindresultaat is één vrij Markdowndocument. Deze indeling en eventuele bronverwijzingen worden
-niet technisch afgedwongen; voor de MVP vertrouwen we op de AI-uitvoering.
+Minder dan drie politieke punten is toegestaan wanneer de bronnen onvoldoende aanknopingspunten
+geven. Ieder politiek oordeel verwijst zowel naar het behandelde stuk, liefst met pagina of sectie,
+als naar het verkiezingsprogramma of een relevante publicatie uit het politieke archief.
 
 ## C-advies
 
-Voor ieder C-punt vraagt de prompt of bespreking en verplaatsing naar B wenselijk is, met een
-bruikbare motivering. De AI is vrij in de Markdownindeling; er is geen apart C-responseschema.
+Voor ieder C-punt met minimaal één leesbaar, direct gekoppeld stuk beoordeelt de AI uitsluitend of
+de stukken voldoende concrete PvdD-argumenten bevatten om bespreking en mogelijke verplaatsing
+naar de B-agenda te rechtvaardigen. Het resultaat begint expliciet met **Voldoende argumenten** of
+**Onvoldoende argumenten** en noemt daarna alleen de doorslaggevende argumenten en eventueel de
+mogelijke inzet bij verplaatsing; er wordt geen volledige A/B-analyse gemaakt.
 
 ## Politiek kader
 
-Het Noord-Hollandse PvdD-verkiezingsprogramma 2023–2027 is de primaire politieke bron en wordt met
-URL, SHA-256, ophaaldatum en paginachunks bewaard. Selectie is deterministisch en gebruikt minimaal
+Het Noord-Hollandse PvdD-verkiezingsprogramma 2023–2027 is de primaire politieke bron. Daarnaast
+wordt het volledige politieke archief gebruikt, waaronder moties, bijdragen, initiatiefvoorstellen
+en schriftelijke vragen. Een vraag bewijst dat de PvdD een onderwerp agendeert, niet dat een
+standpunt is aangenomen; een verworpen motie bewijst inzet van de PvdD, niet provinciaal beleid.
+De bronnen worden met URL, SHA-256, ophaaldatum en paginachunks bewaard. Selectie is deterministisch en gebruikt minimaal
 dieren/natuur, biodiversiteit, klimaat/grondstoffen, gezonde leefomgeving, ecologie boven
 kortetermijneconomie, natuurinclusief/circulair bouwen, bestaande bebouwing en betaalbaarheid,
 voet/fiets/OV, geen nieuwe wegen en minder luchtvaart, transparantie/privacy/inwoners en
-verdelingseffecten/toekomstige generaties. Zonder geldige beleidsbron start geen analyse.
+verdelingseffecten/toekomstige generaties. Zonder geldige beleidsbron start geen analyse. Wanneer
+een bijlage niet leesbaar is, noemt de interface het specifieke bestand. Leesbare bijlagen worden
+wel geanalyseerd; als geen enkele direct gekoppelde bijlage leesbaar is, start geen inhoudelijke
+AI-analyse.
 
 ## AI en validatie
 
