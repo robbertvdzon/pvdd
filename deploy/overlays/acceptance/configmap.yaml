@@ -8,7 +8,8 @@ data:
   PVDD_ACCEPTANCE_RUN_ON_STARTUP: "true"
   PVDD_DATABASE_URL: jdbc:postgresql://database:5432/pvdd
   PVDD_AGENT_RUNTIME_BASE_URL: http://agent-runtime-server.agent-runtime-acceptance.svc.cluster.local
-  PVDD_AGENT_RUNTIME_PROVIDER: MOCKED
-  PVDD_AGENT_RUNTIME_MODEL: mock-model
+  PVDD_AGENT_RUNTIME_VENDOR_ID: mock
+  PVDD_AGENT_RUNTIME_MODEL: mock
+  PVDD_AGENT_RUNTIME_MODE: MOCK
   PVDD_MEETING_SOURCE_BASE_URL: http://pvdd-meeting-source-mock:8080
   PVDD_POLICY_SOURCE_URL: http://pvdd-meeting-source-mock:8080/fixtures/policy.pdf

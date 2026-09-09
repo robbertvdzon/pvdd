@@ -438,7 +438,7 @@ Productie:
 Acceptance:
 
 - gebruikt uitsluitend synthetische website-, programma- en wijzigingsfixtures;
-- gebruikt Agent Runtime-provider `MOCKED`;
+- gebruikt Agent Runtime-uitvoering `mock`/`mock`/`MOCK`;
 - doet geen request naar echte PvdD-websites, iBabs of echte AI;
 - gebruikt de in stappenplan 4 vastgelegde auth-vrije testeromgeving;
 - bevat scenario's voor gewijzigde pagina, gewijzigd programma, verdwenen pagina, conflict,

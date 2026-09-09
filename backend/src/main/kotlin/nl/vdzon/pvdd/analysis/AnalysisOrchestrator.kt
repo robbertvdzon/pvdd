@@ -205,8 +205,8 @@ class AnalysisOrchestrator(
                     prepared,
                     result,
                     mapper.createArrayNode(),
-                    job.provider,
-                    job.model,
+                    job.execution.vendorId,
+                    job.execution.model,
                     clock.instant(),
                 )
                 if (repository.allRequiredRunsSucceeded(prepared.meetingId)) meetings.markSuccessful(prepared.meetingId)

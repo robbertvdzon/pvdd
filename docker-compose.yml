@@ -25,8 +25,9 @@ services:
       PVDD_GOOGLE_CLIENT_ID: local-development-client-id
       PVDD_AGENT_RUNTIME_BASE_URL: http://host.docker.internal:18089
       PVDD_AGENT_RUNTIME_TOKEN: local-pvdd-token
-      PVDD_AGENT_RUNTIME_PROVIDER: MOCKED
-      PVDD_AGENT_RUNTIME_MODEL: mock-model
+      PVDD_AGENT_RUNTIME_VENDOR_ID: mock
+      PVDD_AGENT_RUNTIME_MODEL: mock
+      PVDD_AGENT_RUNTIME_MODE: MOCK
       PVDD_MEETING_SOURCE_BASE_URL: http://meeting-source-mock:8080
     depends_on:
       database:

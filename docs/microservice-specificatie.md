@@ -389,14 +389,14 @@ database- en Runtime-modellen lekken niet naar de frontend.
 
 ### 7.1 Contract
 
-De backend praat rechtstreeks via HTTPS met `https://agent-runtime.vdzonsoftware.nl`, naar het
-patroon van `product-factory/ai-execution-impl/.../AgentRuntimeClient.kt`:
+De backend praat binnen OpenShift via HTTP met de interne Agent Runtime-service en lokaal met de
+geconfigureerde basis-URL:
 
-- `POST /v1/jobs` om een `APPLICATION_WORK`-job te maken;
-- `GET /v1/jobs/{jobId}` voor status;
-- `GET /v1/jobs/{jobId}/result` voor het gevalideerde JSON-resultaat;
-- `POST /v1/jobs/{jobId}/cancel` om te annuleren;
-- optioneel artifactdownloads wanneer de analyse artifacts oplevert.
+- `POST /v2/uploads`, `PATCH /v2/uploads/{uploadId}` en `POST .../complete` voor de grote Markdownprompt;
+- `POST /v2/jobs` om een `STRUCTURED_GENERATION`/`APPLICATION_WORK`-job te maken;
+- `GET /v2/jobs/{jobId}` voor status;
+- `GET /v2/jobs/{jobId}/result` voor gevalideerde JSON, artifacts en usage;
+- `POST /v2/jobs/{jobId}/cancel` om te annuleren.
 
 Ieder request gebruikt een eigen PvdD-consumentcredential in `Authorization: Bearer ...`, korte
 HTTP-time-outs en een harde Runtime-uitvoeringstime-out. Een verloren submitresponse wordt met
@@ -406,30 +406,30 @@ Voorgestelde configuratie:
 
 | Variabele | Productiewaarde/betekenis |
 | --- | --- |
-| `PVDD_AGENT_RUNTIME_URL` | `https://agent-runtime.vdzonsoftware.nl` |
+| `PVDD_AGENT_RUNTIME_BASE_URL` | interne OpenShift-service-URL |
 | `PVDD_AGENT_RUNTIME_TOKEN` | eigen geheim consumenttoken |
-| `PVDD_AGENT_RUNTIME_PROJECT_PREFIX` | `PVDD` |
-| `PVDD_AGENT_RUNTIME_PROVIDER` | `CODEX` |
-| `PVDD_AGENT_RUNTIME_MODEL` | configureerbaar toegestaan model |
-| `PVDD_AGENT_RUNTIME_TIMEOUT_SECONDS` | standaard 3600 |
+| `PVDD_AGENT_RUNTIME_VENDOR_ID` | `openai` |
+| `PVDD_AGENT_RUNTIME_MODEL` | `gpt-5.6-sol` |
+| `PVDD_AGENT_RUNTIME_MODE` | `SUBSCRIPTION` |
+| `PVDD_AGENT_RUNTIME_UPLOAD_TIMEOUT` | time-out per uploadrequest |
 
 De frontend ontvangt het Runtime-token nooit en roept Agent Runtime nooit rechtstreeks aan.
 
-### 7.2 Vereiste wijziging in `agent-runtime`
+### 7.2 PvdD-tenant in `agent-runtime`
 
-Agent Runtime kent momenteel aparte consumentidentiteiten voor Product Factory, Software Factory,
-HKH Autopilot en HKH. Voor PvdD is dus een kleine, afzonderlijke platformwijziging nodig:
+Agent Runtime heeft naast de andere consumers een afzonderlijke PvdD-consumentidentiteit. Daarvoor
+geldt:
 
-- `AR_PVDD_TOKEN` genereren en als SealedSecret in acceptatie en productie opnemen;
-- tenant `pvdd` toevoegen aan authenticatie en policy;
+- `AR_PVDD_TOKEN` is als SealedSecret in acceptatie en productie opgenomen;
+- tenant `pvdd` is aan authenticatie en policy toegevoegd;
 - alleen `APPLICATION_WORK` toestaan;
-- alleen project/environmentprefix `PVDD` toestaan;
-- in productie alleen de gekozen echte providers/modellen toestaan;
-- in acceptatie uitsluitend `MOCKED` toestaan;
+- alleen environmentkeys met tenantprefix `PVDD__` toestaan;
+- in productie alleen de gekozen vendor/model/mode-combinatie toestaan;
+- in acceptatie uitsluitend `mock`/`mock`/`MOCK` toestaan;
 - geen worker-, admin- of `REPOSITORY_WORK`-rechten geven;
-- een veilig script toevoegen dat de consumentcredential zonder weergave naar de gitignored
-  PvdD-secretbron kopieert;
-- tenantisolatie en fail-closed configuratie met integratietests bewijzen.
+- een veilig script kopieert de consumentcredential zonder weergave naar de gitignored
+  PvdD-secretbron;
+- integratietests bewaken tenantisolatie en fail-closed configuratie.
 
 Productie en acceptatie gebruiken verschillende PvdD-tokens. Een bestaand Product Factory- of
 HKH-token wordt niet hergebruikt.
@@ -500,7 +500,7 @@ verificatie, imagebuild, GitOps-pin en Argo-sync tot een werkende versie. “Dir
 groene pipeline en rollout; een falende verificatie wordt nooit uitgerold.
 
 Er komt een vaste acceptatieomgeving vóór productie, naar het nieuwere Product Factory-patroon.
-Acceptatie gebruikt uitsluitend de `MOCKED` provider van Agent Runtime én een eigen gemockte
+Acceptatie gebruikt uitsluitend `mock`/`mock`/`MOCK` van Agent Runtime én een eigen gemockte
 vergaderbron. De acceptatiebackend maakt geen verbinding met de echte iBabs-site. Voor de MVP komen
 er geen automatische PR-previewomgevingen.
 

@@ -9,7 +9,7 @@ Benodigde categorieën:
 - publieke Google Web OAuth client-ID (geen client secret);
 - afzonderlijk PvdD Agent Runtime-token voor acceptance en productie;
 - een afzonderlijk productie-toolingtoken voor het openen van een normale testsessie;
-- build- en runtimeconfiguratie zoals URLs, provider en model.
+- build- en runtimeconfiguratie zoals URLs, vendor-ID, model en uitvoeringsmodus.
 
 Gebruikerssessies hebben geen gedeeld sessiesecret: de backend genereert een willekeurige sleutel,
 zet alleen de SHA-256-hash in PostgreSQL en geeft de oorspronkelijke waarde uitsluitend als

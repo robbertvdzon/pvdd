@@ -17,9 +17,11 @@ class RuntimeSelfTestService(
     private val mapper: ObjectMapper,
 ) {
     fun run(): RuntimeSelfTestResult {
-        require(properties.provider == "MOCKED") { "Technical self-test requires the MOCKED provider." }
+        require(properties.vendorId == "mock" && properties.model == "mock" && properties.mode == "MOCK") {
+            "Technical self-test requires the mock Runtime execution."
+        }
         val schema = mapper.readTree(
-            """{"type":"object","additionalProperties":false,"required":["message"],"properties":{"message":{"const":"pvdd-runtime-ok"}}}"""
+            """{"type":"object","additionalProperties":false,"required":["message"],"properties":{"message":{"type":"string"}}}"""
         )
         val key = "pvdd-self-test-${UUID.randomUUID()}"
         val job = client.create(RuntimeCreateRequest(key, "Return the exact JSON object required by the response schema.", schema))
@@ -32,7 +34,7 @@ class RuntimeSelfTestService(
         if (current.status != "SUCCEEDED") throw AgentRuntimeException("Agent Runtime self-test did not succeed (status ${current.status}).")
         val result = client.result(job.id)
         val message = result.result.path("message").asText("")
-        if (message != "pvdd-runtime-ok") throw AgentRuntimeInvalidResponseException()
+        if (message != "mock") throw AgentRuntimeInvalidResponseException()
         return RuntimeSelfTestResult(job.id, message)
     }
 
