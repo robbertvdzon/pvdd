@@ -408,8 +408,8 @@ Voorgestelde configuratie:
 | --- | --- |
 | `PVDD_AGENT_RUNTIME_BASE_URL` | interne OpenShift-service-URL |
 | `PVDD_AGENT_RUNTIME_TOKEN` | eigen geheim consumenttoken |
-| `PVDD_AGENT_RUNTIME_VENDOR_ID` | `openai` |
-| `PVDD_AGENT_RUNTIME_MODEL` | `gpt-5.6-sol` |
+| `PVDD_AGENT_RUNTIME_VENDOR_ID` | `anthropic` |
+| `PVDD_AGENT_RUNTIME_MODEL` | `claude-opus-5` |
 | `PVDD_AGENT_RUNTIME_MODE` | `SUBSCRIPTION` |
 | `PVDD_AGENT_RUNTIME_UPLOAD_TIMEOUT` | time-out per uploadrequest |
 

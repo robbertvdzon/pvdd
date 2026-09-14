@@ -12,7 +12,7 @@ job aanmaken, status opvragen, resultaat ophalen en annuleren. Alle instellingen
 | --- | --- |
 | `PVDD_AGENT_RUNTIME_BASE_URL` | Basis-URL zonder credentials |
 | `PVDD_AGENT_RUNTIME_TOKEN` | Eigen PvdD-consumertoken; nooit naar frontend of logs |
-| `PVDD_AGENT_RUNTIME_VENDOR_ID` | `mock` in acceptatie, `openai` in productie |
+| `PVDD_AGENT_RUNTIME_VENDOR_ID` | `mock` in acceptatie, `anthropic` in productie |
 | `PVDD_AGENT_RUNTIME_MODEL` | `mock` in acceptatie, expliciet model in productie |
 | `PVDD_AGENT_RUNTIME_MODE` | `MOCK`, `API` of `SUBSCRIPTION`; altijd expliciet |
 | `PVDD_AGENT_RUNTIME_CONNECT_TIMEOUT` | Korte connect-time-out, standaard één seconde |

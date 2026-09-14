@@ -5,7 +5,7 @@ de code geconfigureerd en geeft geen repository-, worker- of beheerrechten.
 
 Iedere job heeft `taskType=STRUCTURED_GENERATION` en een expliciete combinatie van `vendorId`,
 `model` en `mode`; er is geen modelfallback. Acceptance gebruikt exact `mock`/`mock`/`MOCK`.
-Productie gebruikt `openai`/`gpt-5.6-sol`/`SUBSCRIPTION` via de interne OpenShift-service.
+Productie gebruikt `anthropic`/`claude-opus-5`/`SUBSCRIPTION` via de interne OpenShift-service.
 
 De volledige prompt wordt als `text/markdown` via de hervatbare upload-API verstuurd en daarna als
 `PROMPT`-object aan de job gekoppeld. De kleine jobbody bevat daardoor geen grote bronteksten. De

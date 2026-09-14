@@ -23,8 +23,8 @@ grep -q 'PVDD_MEETING_SOURCE_BASE_URL: http://pvdd-meeting-source-mock:8080' "$a
 
 ! grep -Eq 'pvdd-meeting-source-mock|MOCKED|mock-model|ACCEPTANCE_AGENT_RUNTIME' "$production"
 grep -q 'host: pvdd.vdzonsoftware.nl' "$production"
-grep -q 'PVDD_AGENT_RUNTIME_VENDOR_ID: openai' "$production"
-grep -q 'PVDD_AGENT_RUNTIME_MODEL: gpt-5.6-sol' "$production"
+grep -q 'PVDD_AGENT_RUNTIME_VENDOR_ID: anthropic' "$production"
+grep -q 'PVDD_AGENT_RUNTIME_MODEL: claude-opus-5' "$production"
 grep -q 'PVDD_AGENT_RUNTIME_MODE: SUBSCRIPTION' "$production"
 grep -q 'PVDD_AUTH_MODE: google' "$production"
 grep -q 'PVDD_GOOGLE_CLIENT_ID' "$production"

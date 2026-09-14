@@ -9,8 +9,8 @@ data:
   PVDD_TOOLING_AUTH_ENABLED: "true"
   PVDD_DATABASE_URL: jdbc:postgresql://database:5432/pvdd
   PVDD_AGENT_RUNTIME_BASE_URL: http://agent-runtime-server.agent-runtime.svc.cluster.local
-  PVDD_AGENT_RUNTIME_VENDOR_ID: openai
-  PVDD_AGENT_RUNTIME_MODEL: gpt-5.6-sol
+  PVDD_AGENT_RUNTIME_VENDOR_ID: anthropic
+  PVDD_AGENT_RUNTIME_MODEL: claude-opus-5
   PVDD_AGENT_RUNTIME_MODE: SUBSCRIPTION
   PVDD_MEETING_SOURCE_BASE_URL: https://noordholland.bestuurlijkeinformatie.nl
   PVDD_POLICY_SOURCE_URL: https://assets.partijvoordedieren.nl/assets/site/noordHolland/PvdDNH-programma-PS23.pdf
