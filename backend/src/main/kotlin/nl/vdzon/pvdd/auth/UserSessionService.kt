@@ -28,7 +28,11 @@ class UserSessionService(
         }
     }
 
-    fun create(email: String, sessionLifetime: Duration = lifetime): CreatedUserSession {
+    fun create(email: String): CreatedUserSession = createWithLifetime(email, lifetime)
+
+    fun createForAgent(email: String): CreatedUserSession = createWithLifetime(email, Duration.ofHours(1))
+
+    private fun createWithLifetime(email: String, sessionLifetime: Duration): CreatedUserSession {
         require(!sessionLifetime.isNegative && !sessionLifetime.isZero && sessionLifetime <= lifetime)
         val token = randomToken()
         val csrfToken = randomToken()

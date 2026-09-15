@@ -14,7 +14,7 @@ class AgentAccessController(private val access: AgentAccessVerifier, private val
         response.setHeader("Cache-Control", "no-store")
         val email = access.verify(token, body.email, origin)
         if (!config.isAllowed(email)) throw org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN)
-        val session = sessions.create(email, java.time.Duration.ofHours(1))
+        val session = sessions.createForAgent(email)
         response.addHeader("Set-Cookie", org.springframework.http.ResponseCookie.from(UserSessionService.COOKIE_NAME, session.token).httpOnly(true).secure(config.environment != "local").sameSite("Lax").path("/").maxAge(session.expiresIn).build().toString())
         response.addHeader("Set-Cookie", org.springframework.http.ResponseCookie.from(UserSessionService.CSRF_COOKIE_NAME, session.csrfToken).httpOnly(false).secure(config.environment != "local").sameSite("Lax").path("/").maxAge(session.expiresIn).build().toString())
         return mapOf("email" to email, "csrfToken" to session.csrfToken)
