@@ -8,6 +8,7 @@ resources:
 - route.yaml
 - sealed-secret.yaml
 - sealed-secret-ai-access.yaml
+- sealed-central-postgres.yaml
 images:
 - digest: sha256:ae6cc809e1d15e7714aeafc7199512934c0c2feb45996ec1b4fba4f32ad585a7
   name: ghcr.io/robbertvdzon/pvdd-backend
@@ -17,3 +18,6 @@ images:
   newName: ghcr.io/robbertvdzon/pvdd-frontend
 patches:
 - path: agent-access-patch.yaml
+- path: central-postgres-patch.yaml
+- path: pvdd_prod-retired-database.yaml
+- path: retired-backup-patch.yaml
