@@ -35,7 +35,7 @@ class AuthConfig(
         }
     }
 
-    fun isAllowed(email: String): Boolean = email.trim().lowercase() in ALLOWED_EMAILS
+    fun isAllowed(email: String): Boolean = email.trim().lowercase() in ALLOWED_EMAILS || (environment in setOf("local", "acceptance", "preview") && email.trim().lowercase() == ACCEPTANCE_EMAIL)
 
     companion object {
         val ALLOWED_EMAILS = setOf("marchanou@gmail.com", "robbertvdzon@gmail.com")

@@ -16,7 +16,7 @@ class ApiAuthenticationFilter(
 ) : OncePerRequestFilter() {
     override fun shouldNotFilter(request: HttpServletRequest): Boolean =
         !request.requestURI.startsWith("/api/") || request.requestURI == "/api/version" ||
-            request.requestURI == "/api/auth/session" || request.requestURI == "/api/auth/tooling-session"
+            request.requestURI == "/api/auth/session" || request.requestURI == "/api/auth/tooling-session" || request.requestURI == "/api/auth/agent-session" || request.requestURI == "/api/auth/agent-login"
 
     override fun doFilterInternal(
         request: HttpServletRequest,

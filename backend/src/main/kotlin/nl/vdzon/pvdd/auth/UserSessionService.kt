@@ -28,7 +28,8 @@ class UserSessionService(
         }
     }
 
-    fun create(email: String): CreatedUserSession {
+    fun create(email: String, sessionLifetime: Duration = lifetime): CreatedUserSession {
+        require(!sessionLifetime.isNegative && !sessionLifetime.isZero && sessionLifetime <= lifetime)
         val token = randomToken()
         val csrfToken = randomToken()
         if (!authConfig.isAllowed(email)) {
@@ -41,9 +42,9 @@ class UserSessionService(
             """.trimIndent(),
             hash(token),
             email,
-            Timestamp.from(clock.instant().plus(lifetime)),
+            Timestamp.from(clock.instant().plus(sessionLifetime)),
         )
-        return CreatedUserSession(token, csrfToken, lifetime)
+        return CreatedUserSession(token, csrfToken, sessionLifetime)
     }
 
     fun createCsrfToken(): CreatedCsrfToken = CreatedCsrfToken(randomToken(), lifetime)

@@ -124,14 +124,14 @@ class DatabaseIntegrationTest(
 
     @Test
     fun `functional import is idempotent and only success advances the checkpoint`() {
-        val now = Instant.parse("2026-08-31T20:00:00Z")
+        val now = Instant.now()
         val meetingId = UUID.randomUUID()
         val meeting = Meeting(
             id = meetingId,
             sourceId = "meeting-functional-test",
             committee = "Commissie Ruimte",
-            startsAt = Instant.parse("2026-09-14T16:30:00Z"),
-            endsAt = Instant.parse("2026-09-14T20:30:00Z"),
+            startsAt = now.plusSeconds(86400),
+            endsAt = now.plusSeconds(100800),
             location = "Statenzaal",
             title = "Commissie Ruimte 14 september 2026",
             sourceUrl = URI("https://noordholland.bestuurlijkeinformatie.nl/Agenda/Index/meeting-functional-test"),

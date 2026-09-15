@@ -7,6 +7,7 @@ resources:
 - configmap.yaml
 - route.yaml
 - sealed-secret.yaml
+- sealed-secret-ai-access.yaml
 images:
 - digest: sha256:c5ad1746ff8614e6c63705d2f0b8dcfdf7c5307177724e5e2a04665eba1967e9
   name: ghcr.io/robbertvdzon/pvdd-backend
@@ -14,3 +15,5 @@ images:
 - digest: sha256:0efd4604b2d027f3ead07933a1dc0ea466e6a48e50825511669c15d354d00a40
   name: ghcr.io/robbertvdzon/pvdd-frontend
   newName: ghcr.io/robbertvdzon/pvdd-frontend
+patches:
+- path: agent-access-patch.yaml

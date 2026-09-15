@@ -7,6 +7,7 @@ resources:
 - mock.yaml
 - route.yaml
 - sealed-secret.yaml
+- sealed-secret-ai-access.yaml
 images:
 - digest: sha256:c5ad1746ff8614e6c63705d2f0b8dcfdf7c5307177724e5e2a04665eba1967e9
   name: ghcr.io/robbertvdzon/pvdd-backend
@@ -17,3 +18,5 @@ images:
 - digest: sha256:71456e8fbaedd03766d325addcef9238a457c7c3aa4688748d4563f5b567ab73
   name: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
   newName: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
+patches:
+- path: agent-access-patch.yaml

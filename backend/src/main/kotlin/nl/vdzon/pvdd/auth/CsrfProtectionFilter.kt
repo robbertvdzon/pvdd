@@ -16,7 +16,7 @@ class CsrfProtectionFilter(private val config: AuthConfig) : OncePerRequestFilte
             !request.requestURI.startsWith("/api/") ||
             request.method.uppercase() in SAFE_METHODS ||
             request.requestURI == "/api/auth/session" ||
-            request.requestURI == "/api/auth/tooling-session"
+            request.requestURI == "/api/auth/tooling-session" || request.requestURI == "/api/auth/agent-session" || request.requestURI == "/api/auth/agent-login"
 
     override fun doFilterInternal(
         request: HttpServletRequest,

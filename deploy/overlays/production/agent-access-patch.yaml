@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  template:
+    metadata:
+      annotations:
+        ai-access.vdzonsoftware.nl/config-version: '2026-09-15'
+    spec:
+      containers:
+      - name: backend
+        env:
+        - name: AI_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: ai-access
+              key: AI_ACCESS_TOKEN
+        - name: AI_ACCESS_EMAILS
+          valueFrom:
+            secretKeyRef:
+              name: ai-access
+              key: AI_ACCESS_EMAILS
+        - name: AI_ACCESS_ALLOWED_ORIGINS
+          valueFrom:
+            secretKeyRef:
+              name: ai-access
+              key: AI_ACCESS_ALLOWED_ORIGINS
