@@ -20,3 +20,5 @@ images:
   newName: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
 patches:
 - path: agent-access-patch.yaml
+- path: backend-memory.yaml
+- path: frontend-memory.yaml
