@@ -23,3 +23,8 @@ Gebruik eerst alleen-lezen databasequeries en OpenShift-logs/status. Voor explic
 productielogin staat in `robberts-infrastructure/tools/copy-agent-access-token.py` een helper die de
 token alleen naar het macOS-klembord schrijft. Plak rechtstreeks in het gemaskeerde loginveld en
 wis het klembord na gebruik. De applicatie-ingang verleent uitsluitend bestaande rechten.
+
+Acceptatie gebruikt dezelfde cookie-/CSRF-authenticatie als productie. De vroegere automatische
+acceptatie-bypass is in de deployment uitgeschakeld. Het synthetische account is
+`acceptance-tester@pvdd.invalid`; gebruik `PVDD__ACCEPTANCE_AGENT_TOKEN` voor aanmelden.
+De publieke rooktest controleert dat een niet-ingelogde sessie HTTP 401 krijgt.

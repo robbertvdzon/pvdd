@@ -132,7 +132,7 @@ jobs:
             GIT_REVISION=${{ needs.metadata.outputs.revision }}
             BUILD_TIME=${{ needs.metadata.outputs.build_time }}
             ENVIRONMENT=acceptance
-            AUTH_MODE=acceptance-bypass
+            AUTH_MODE=google
             GOOGLE_CLIENT_ID=
           cache-from: type=gha,scope=pvdd-frontend
           cache-to: type=gha,mode=max,scope=pvdd-frontend

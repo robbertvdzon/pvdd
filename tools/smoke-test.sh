@@ -20,12 +20,7 @@ auth_response_file="$(mktemp)"
 trap 'rm -f "$auth_response_file"' EXIT
 auth_status="$(curl --silent --output "$auth_response_file" --write-out '%{http_code}' --connect-timeout 5 --max-time 20 "$base_url/api/auth/me")"
 
-if [[ "$environment_name" = acceptance ]]; then
-  test "$auth_status" = 200
-  test "$(jq -r '.email' "$auth_response_file")" = 'acceptance-tester@pvdd.invalid'
-else
-  test "$auth_status" = 401
-fi
+test "$auth_status" = 401
 test "$(jq -r '.gitRevision' <<<"$frontend_version")" = "$expected_revision"
 test "$(jq -r '.gitRevision' <<<"$backend_version")" = "$expected_revision"
 test "$(jq -r '.environment' <<<"$frontend_version")" = "$environment_name"
