@@ -15,6 +15,7 @@ class ApiAuthenticationFilter(
     private val sessions: UserSessionService,
 ) : OncePerRequestFilter() {
     override fun shouldNotFilter(request: HttpServletRequest): Boolean =
+        request.getAttribute(ProductionReadAccessFilter.ATTRIBUTE) == true ||
         !request.requestURI.startsWith("/api/") || request.requestURI == "/api/version" ||
             request.requestURI == "/api/auth/session" || request.requestURI == "/api/auth/tooling-session" || request.requestURI == "/api/auth/agent-session" || request.requestURI == "/api/auth/agent-login"
 

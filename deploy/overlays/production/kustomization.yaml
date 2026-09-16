@@ -8,6 +8,7 @@ resources:
 - route.yaml
 - sealed-secret.yaml
 - sealed-secret-ai-access.yaml
+- sealed-secret-ai-read-access.yaml
 - sealed-central-postgres.yaml
 images:
 - digest: sha256:ae6cc809e1d15e7714aeafc7199512934c0c2feb45996ec1b4fba4f32ad585a7

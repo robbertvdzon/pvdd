@@ -28,3 +28,18 @@ Acceptatie gebruikt dezelfde cookie-/CSRF-authenticatie als productie. De vroege
 acceptatie-bypass is in de deployment uitgeschakeld. Het synthetische account is
 `acceptance-tester@pvdd.invalid`; gebruik `PVDD__ACCEPTANCE_AGENT_TOKEN` voor aanmelden.
 De publieke rooktest controleert dat een niet-ingelogde sessie HTTP 401 krijgt.
+
+## Productadviseur: expliciet geautoriseerde leestoegang voor PvdD
+
+Robbert heeft op 16 september 2026 een beperkte uitzondering toegestaan voor de PvdD-productadviseur.
+`AI_READ_ACCESS_TOKEN` is een aparte capability; `X-AI-Read-Token` autoriseert alleen de expliciet
+beoordeelde GET/HEAD-routes in `ProductionReadAccessFilter`. `AI_READ_ACCESS_EMAIL` moet een bestaande
+toegestane identiteit zijn. Deze token werkt niet op de loginroutes, maakt geen sessie en kan geen
+analyse starten, instellingen wijzigen of andere mutaties uitvoeren. Nieuwe routes zijn standaard
+ontoegankelijk. De gewone `AI_ACCESS_TOKEN` blijft buiten Agent Runtime.
+
+Alleen de Product Factory-productadviseur krijgt `PVDD__PRODUCTION_READ_ONLY_TOKEN`; testers en
+Software Factory krijgen hem niet. Lees eerst gericht de API; gebruik voor daadwerkelijke visuele
+controle Playwright met een route-handler die de header uitsluitend op de exacte productie-origin
+`https://pvdd.vdzonsoftware.nl` en `/api/` toevoegt. Gebruik geen globale extraHTTPHeaders: externe
+resources mogen de token nooit ontvangen. Toon de token niet en zet hem niet in afbeeldingen.

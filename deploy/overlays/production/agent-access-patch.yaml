@@ -6,7 +6,7 @@ spec:
   template:
     metadata:
       annotations:
-        ai-access.vdzonsoftware.nl/config-version: '2026-09-15'
+        ai-access.vdzonsoftware.nl/config-version: '2026-09-16-read-only'
     spec:
       containers:
       - name: backend
@@ -26,3 +26,13 @@ spec:
             secretKeyRef:
               name: ai-access
               key: AI_ACCESS_ALLOWED_ORIGINS
+        - name: AI_READ_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: ai-read-access
+              key: AI_READ_ACCESS_TOKEN
+        - name: AI_READ_ACCESS_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: ai-read-access
+              key: AI_READ_ACCESS_EMAIL
