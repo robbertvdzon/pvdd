@@ -229,3 +229,71 @@ storygedrag is daarom op rijniveau tegen een echte PostgreSQL bewezen. De review
 dat de testharnasvariabele `PVDD_TEST_DATABASE_URL` nog nergens buiten deze testklasse en dit
 worklog is beschreven; dat vastleggen hoort bij `hkh-260` (documentatie) en het melden ervan bij
 `hkh-259` (oplevering).
+
+## hkh-257 — development, vijfde ronde (2026-09-17)
+
+### Aanleiding
+De testsubtaak `hkh-258` is voor de vierde keer afgekeurd op **testvoorwaarden**, opnieuw zonder
+aangetoonde productbug: de storyrevisie draait nergens (geen PR-previewomgeving) en de
+acceptatiedataset bevat geen voorbije vergadering. Het geautomatiseerde bewijs was volledig groen.
+De enige inhoudelijke opening die de tester noemt en die binnen deze subtaak te dichten is, is
+acceptatiecriterium 6: `POST /api/meetings/check-now` was tot nu toe alleen statisch beoordeeld
+("de route wordt niet geraakt door de diff") en de deelconditie *"ook wanneer de laatst bekende
+vergadering al is geweest"* was nergens vastgelegd. Die is in deze ronde met een echte
+databasetest afgedekt. De productiecode van de story is opnieuw niet aangeraakt; het gedrag van de
+story is ongewijzigd ten opzichte van de eerder goedgekeurde versie.
+
+### Gewijzigd in deze ronde (alleen `DatabaseIntegrationTest`)
+- **Nieuwe test `check now keeps importing while the last known meeting already took place`.**
+  De test zet een synthetische voorbije vergadering neer, maakt die met `markSuccessful` de
+  *laatst bekende* vergadering (`application_metadata.last-successful-meeting-source-id`) en roept
+  daarna `MeetingCheckController.checkNow` aan tegen de echte database. De controleroute draait met
+  de echte `MeetingCheckWorkflow`, de echte `MeetingRepository`, `WorkflowLockRepository`,
+  `AgendaRevisionComparator`, `SourceRevisionRepository` en `MutationGuard`; alleen de
+  bronkoppeling (`MeetingDiscoveryGateway`) en de documentingestie zijn vervangen door synthetische
+  stubs, zodat er geen externe bron en geen download nodig is. `MeetingDiscoveryService` zelf is
+  niet aangeraakt — die valt buiten scope en wordt hier alleen omzeild, niet gewijzigd.
+  Vastgelegd wordt: HTTP 200, status `IMPORTED`, de nieuwe vergadering met agendapunten staat in de
+  database, en de voorbije vergadering blijft ongemoeid (`analysis_meeting_queue` leeg,
+  `analysis_run` leeg, `starts_at` onveranderd). Daarmee is AC6 niet langer alleen statisch, maar
+  op rijniveau aangetoond, inclusief de deelconditie die op acceptatie ontestbaar is.
+- **Gedeelde opruiming `removeSyntheticMeeting`.** De twee bestaande `finally`-blokken en het nieuwe
+  gebruiken nu één helper die in foreign-keyvolgorde opruimt (documentrevisies → agendapuntrevisies
+  → vergaderingrevisies → broncontroles → wachtrij → advies → runs → brondocumenten → agendapunten →
+  vergadering). Nergens in het schema staat `ON DELETE CASCADE`, dus die volgorde is nodig; tabellen
+  die in het groene pad leeg horen te zijn worden toch geruimd, zodat bij een regressie de assertie
+  faalt en niet de opruiming. Dit lost en passant de niet-blokkerende reviewopmerking op dat het
+  `finally` van de toekomstige-vergaderingtest korter was dan dat van de voorbije-vergaderingtest.
+- **Herstel van gedeelde toestand.** De nieuwe test schrijft `last-successful-meeting-source-id` en
+  zet die in het `finally` terug op de waarde die hij aantrof, zodat de metadata niet naar een
+  verwijderde synthetische vergadering blijft wijzen.
+
+### Bewijs dat in deze ronde zelf is gedraaid
+- Mét een rootloos gestarte PostgreSQL 16 en een verse, lege database:
+  `PVDD_TEST_DATABASE_URL=… PVDD_TEST_DATABASE_USER=… PVDD_TEST_DATABASE_PASSWORD= mvn -B
+  --no-transfer-progress clean verify` in `backend/` → **BUILD SUCCESS, 117 tests, 0 failures,
+  0 errors, 1 skipped** (alleen `LiveSourceSpikeTest`). `DatabaseIntegrationTest`
+  `tests="9" failures="0" errors="0" skipped="0"`, inclusief de nieuwe check-now-test.
+- Zonder database en zonder Docker (zoals het factoryvangnet draait):
+  `mvn -B --no-transfer-progress clean verify` → **BUILD SUCCESS, 117 tests, 0 failures, 0 errors,
+  10 skipped**; de 9 databasetests worden overgeslagen met de bestaande reden.
+- Residucontrole ná de databaserun, feitelijk in de database gekeken: in `meeting` stonden alleen de
+  al bestaande `meeting-failed`, `meeting-functional-test` en `meeting-source-revision-test`; geen
+  `meeting-past-*`, `meeting-future-*` of `meeting-check-now-*`. De enige rij in
+  `analysis_meeting_queue` hoort bij `meeting-functional-test` en
+  `last-successful-meeting-source-id` stond weer op `meeting-functional-test`.
+
+### Onveranderd
+Geen wijziging aan productiecode, schema, migraties, frontend, `package-info.java`,
+`MutationGuard`, de `Idempotency-Key`-afhandeling, `MeetingCheckController`,
+`MeetingCheckWorkflow`, `MeetingDiscoveryService`, schedulers, prompts, provider of model. De
+wijziging van deze ronde zit volledig in één testklasse.
+
+### Niet opgelost in deze ronde (hoort bij andere subtaken)
+De twee blokkades uit de testafkeur staan onveranderd en zijn binnen deze subtaak niet op te
+lossen: de storyrevisie uitrollen hoort bij `hkh-261`/`hkh-262`, en een voorbije vergadering in de
+acceptatiedataset kan er niet komen zonder de scope te schenden (`MeetingDiscoveryService` slaat
+kandidaten met `startsAt <= nu` over). Het ketensignaal — testsubtaak vóór merge en deploy terwijl
+er bewust geen PR-previewomgevingen zijn, waardoor de storyrevisie tijdens de testfase per definitie
+nergens draait — is een procesbesluit dat buiten de developerrol valt en dat hier expliciet wordt
+doorgegeven.

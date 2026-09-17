@@ -1,6 +1,7 @@
 package nl.vdzon.pvdd
 
 import java.net.URI
+import java.time.Clock
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.assertEquals
@@ -17,6 +18,8 @@ import nl.vdzon.pvdd.analysis.AnalysisSource
 import nl.vdzon.pvdd.analysis.CitationSourceType
 import nl.vdzon.pvdd.analysis.PreparedAnalysisRun
 import nl.vdzon.pvdd.auth.UserSessionService
+import nl.vdzon.pvdd.documents.DocumentIngestionSummary
+import nl.vdzon.pvdd.documents.DocumentIngestor
 import nl.vdzon.pvdd.documents.DocumentRepository
 import nl.vdzon.pvdd.documents.ExtractedSection
 import nl.vdzon.pvdd.documents.ExtractionStatus
@@ -25,10 +28,17 @@ import nl.vdzon.pvdd.dashboard.DashboardRepository
 import nl.vdzon.pvdd.dashboard.api.DashboardController
 import nl.vdzon.pvdd.meetings.AgendaCategory
 import nl.vdzon.pvdd.meetings.AgendaItem
+import nl.vdzon.pvdd.meetings.DiscoveredMeeting
+import nl.vdzon.pvdd.meetings.DiscoveryOutcome
 import nl.vdzon.pvdd.meetings.ImportStatus
 import nl.vdzon.pvdd.meetings.Meeting
+import nl.vdzon.pvdd.meetings.MeetingCheckStatus
+import nl.vdzon.pvdd.meetings.MeetingCheckWorkflow
+import nl.vdzon.pvdd.meetings.MeetingDiscoveryGateway
 import nl.vdzon.pvdd.meetings.MeetingRepository
 import nl.vdzon.pvdd.meetings.MeetingStatus
+import nl.vdzon.pvdd.meetings.MutationGuard
+import nl.vdzon.pvdd.meetings.ParsedMeetingAgenda
 import nl.vdzon.pvdd.meetings.AgendaParser
 import nl.vdzon.pvdd.meetings.AgendaRevisionComparator
 import nl.vdzon.pvdd.meetings.DifferenceType
@@ -37,6 +47,7 @@ import nl.vdzon.pvdd.meetings.RevisionDocument
 import nl.vdzon.pvdd.meetings.SourceRevisionRepository
 import nl.vdzon.pvdd.meetings.SourceState
 import nl.vdzon.pvdd.meetings.WorkflowLockRepository
+import nl.vdzon.pvdd.meetings.api.MeetingCheckController
 import nl.vdzon.pvdd.persistence.ApplicationMetadataRepository
 import nl.vdzon.pvdd.policy.PolicyChunk
 import nl.vdzon.pvdd.policy.CrawledPolicySource
@@ -52,6 +63,7 @@ import org.junit.jupiter.api.condition.EnabledIf
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.boot.health.actuate.endpoint.HealthEndpoint
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.jdbc.core.JdbcTemplate
@@ -661,11 +673,7 @@ class DatabaseIntegrationTest(
             // Laat niets achter, zodat andere tests en een herhaalde run geen last hebben van deze
             // synthetische vergadering. De wachtrij hoort hier leeg te zijn, maar wordt toch geruimd:
             // regresseert de weigering ooit, dan moet de assertie falen en niet de opruiming.
-            jdbc.update("DELETE FROM analysis_meeting_queue WHERE meeting_id = ?", meetingId)
-            jdbc.update("DELETE FROM agenda_item_advice WHERE agenda_item_id IN (SELECT id FROM agenda_item WHERE meeting_id = ?)", meetingId)
-            jdbc.update("DELETE FROM analysis_run WHERE meeting_id = ?", meetingId)
-            jdbc.update("DELETE FROM agenda_item WHERE meeting_id = ?", meetingId)
-            jdbc.update("DELETE FROM meeting WHERE id = ?", meetingId)
+            removeSyntheticMeeting(meetingId)
         }
     }
 
@@ -689,8 +697,43 @@ class DatabaseIntegrationTest(
             )
         } finally {
             // Other tests read the single upcoming meeting, so this synthetic future meeting must not linger.
-            jdbc.update("DELETE FROM analysis_meeting_queue WHERE meeting_id = ?", meetingId)
-            jdbc.update("DELETE FROM meeting WHERE id = ?", meetingId)
+            removeSyntheticMeeting(meetingId)
+        }
+    }
+
+    @Test
+    fun `check now keeps importing while the last known meeting already took place`() {
+        val startedAt = Instant.now().minusSeconds(7200)
+        val pastId = meetingRepository.upsert(pastMeeting(startedAt))
+        val sourceUrl = URI("https://noordholland.bestuurlijkeinformatie.nl/Agenda/Index/meeting-check-now-${UUID.randomUUID()}")
+        val discovered = AgendaParser().parse(
+            requireNotNull(javaClass.getResource("/fixtures/meetings/agenda-full.html")).readText(),
+            sourceUrl,
+        ).copy(startsAt = Instant.now().plusSeconds(86400), endsAt = Instant.now().plusSeconds(90000))
+        val previousLastSuccessful = meetingRepository.lastSuccessfulSourceId()
+        var importedId: UUID? = null
+        try {
+            // Maak de voorbije vergadering de laatst bekende: precies de situatie uit het acceptatiecriterium.
+            meetingRepository.markSuccessful(pastId)
+            assertEquals(requireNotNull(meetingRepository.findMeeting(pastId)).sourceId, meetingRepository.lastSuccessfulSourceId())
+
+            val response = checkNowController(discovered).checkNow(adviser, "check-now-$pastId")
+
+            assertEquals(HttpStatus.OK, response.statusCode)
+            val result = requireNotNull(response.body)
+            assertEquals(MeetingCheckStatus.IMPORTED, result.status)
+            assertEquals(discovered.sourceId, result.meetingSourceId)
+            importedId = jdbc.queryForList("SELECT id FROM meeting WHERE source_id = ?", UUID::class.java, discovered.sourceId).single()
+            assertTrue(meetingRepository.findAgendaItems(importedId).isNotEmpty())
+
+            // De voorbije vergadering blijft ongemoeid: de controle op nieuwe agenda start er geen werk voor.
+            assertEquals(0, countQueued(pastId))
+            assertEquals(0, countRuns(pastId))
+            assertEquals(startedAt.toEpochMilli(), requireNotNull(meetingRepository.findMeeting(pastId)).startsAt.toEpochMilli())
+        } finally {
+            importedId?.let(::removeSyntheticMeeting)
+            removeSyntheticMeeting(pastId)
+            restoreLastSuccessfulSourceId(previousLastSuccessful)
         }
     }
 
@@ -772,6 +815,70 @@ class DatabaseIntegrationTest(
             completedAt,
         )
         return runId
+    }
+
+    // Een check-now met een synthetische bron: de discovery zelf blijft ongemoeid, alleen de gateway
+    // is vervangen zodat de controleroute zonder externe bron tegen de echte database kan draaien.
+    private fun checkNowController(agenda: ParsedMeetingAgenda) = MeetingCheckController(
+        MeetingCheckWorkflow(
+            StubDiscovery(agenda),
+            meetingRepository,
+            DocumentIngestor { _, _ -> DocumentIngestionSummary(emptyList(), true) },
+            workflowLockRepository,
+            ApplicationEventPublisher { },
+            Clock.systemUTC(),
+            revisionComparator,
+            sourceRevisionRepository,
+        ),
+        MutationGuard(Clock.systemUTC()),
+    )
+
+    private class StubDiscovery(private val agenda: ParsedMeetingAgenda) : MeetingDiscoveryGateway {
+        override fun discover(now: Instant): DiscoveryOutcome =
+            DiscoveryOutcome.Found(DiscoveredMeeting(agenda.sourceId, agenda.startsAt, agenda.sourceUrl))
+
+        override fun fetchAgenda(sourceUrl: URI, enrichReports: Boolean): ParsedMeetingAgenda = agenda
+    }
+
+    // Synthetische vergaderingen mogen niets achterlaten. De volgorde volgt de foreign keys; nergens
+    // in het schema staat ON DELETE CASCADE, dus revisies, wachtrij, advies en runs gaan voor de
+    // agendapunten en de vergadering zelf. Tabellen die in het groene pad leeg horen te zijn worden
+    // toch geruimd, zodat bij een regressie de assertie faalt en niet de opruiming.
+    private fun removeSyntheticMeeting(meetingId: UUID) {
+        jdbc.update(
+            """
+            DELETE FROM document_revision WHERE agenda_item_revision_id IN (
+                SELECT air.id FROM agenda_item_revision air
+                JOIN meeting_revision mr ON mr.id = air.meeting_revision_id
+                WHERE mr.meeting_id = ?
+            )
+            """.trimIndent(),
+            meetingId,
+        )
+        jdbc.update(
+            "DELETE FROM agenda_item_revision WHERE meeting_revision_id IN (SELECT id FROM meeting_revision WHERE meeting_id = ?)",
+            meetingId,
+        )
+        jdbc.update("DELETE FROM meeting_revision WHERE meeting_id = ?", meetingId)
+        jdbc.update("DELETE FROM source_check WHERE meeting_id = ?", meetingId)
+        jdbc.update("DELETE FROM analysis_meeting_queue WHERE meeting_id = ?", meetingId)
+        jdbc.update("DELETE FROM agenda_item_advice WHERE agenda_item_id IN (SELECT id FROM agenda_item WHERE meeting_id = ?)", meetingId)
+        jdbc.update("DELETE FROM analysis_run WHERE meeting_id = ?", meetingId)
+        jdbc.update("DELETE FROM source_document WHERE agenda_item_id IN (SELECT id FROM agenda_item WHERE meeting_id = ?)", meetingId)
+        jdbc.update("DELETE FROM agenda_item WHERE meeting_id = ?", meetingId)
+        jdbc.update("DELETE FROM meeting WHERE id = ?", meetingId)
+    }
+
+    // De laatst bekende vergadering is gedeelde toestand; zet die terug zoals andere tests hem vonden.
+    private fun restoreLastSuccessfulSourceId(sourceId: String?) {
+        if (sourceId == null) {
+            jdbc.update("DELETE FROM application_metadata WHERE metadata_key = 'last-successful-meeting-source-id'")
+        } else {
+            jdbc.update(
+                "UPDATE application_metadata SET metadata_value = ? WHERE metadata_key = 'last-successful-meeting-source-id'",
+                sourceId,
+            )
+        }
     }
 
     private fun countRuns(meetingId: UUID): Int = jdbc.queryForObject(
