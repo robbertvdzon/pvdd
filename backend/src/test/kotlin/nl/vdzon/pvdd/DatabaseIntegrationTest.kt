@@ -4,9 +4,11 @@ import java.net.URI
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import nl.vdzon.pvdd.analysis.AnalysisCommandStatus
 import nl.vdzon.pvdd.analysis.AnalysisRepository
 import nl.vdzon.pvdd.analysis.AnalysisRun
 import nl.vdzon.pvdd.analysis.AnalysisRunType
@@ -20,6 +22,7 @@ import nl.vdzon.pvdd.documents.ExtractedSection
 import nl.vdzon.pvdd.documents.ExtractionStatus
 import nl.vdzon.pvdd.documents.SourceDocument
 import nl.vdzon.pvdd.dashboard.DashboardRepository
+import nl.vdzon.pvdd.dashboard.api.DashboardController
 import nl.vdzon.pvdd.meetings.AgendaCategory
 import nl.vdzon.pvdd.meetings.AgendaItem
 import nl.vdzon.pvdd.meetings.ImportStatus
@@ -44,6 +47,7 @@ import nl.vdzon.pvdd.policy.PolicySyncTrigger
 import nl.vdzon.pvdd.policy.PolicyTheme
 import nl.vdzon.pvdd.policy.PolicyWebSourceType
 import org.junit.jupiter.api.Test
+import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.health.actuate.endpoint.HealthEndpoint
@@ -55,7 +59,9 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import tools.jackson.module.kotlin.jacksonObjectMapper
 
-@Testcontainers
+// Zonder Docker is er geen PostgreSQL om tegen te draaien; dan wordt deze klasse overgeslagen
+// in plaats van te falen. Waar Docker wel beschikbaar is, zoals in CI, draait zij onveranderd.
+@Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest
 class DatabaseIntegrationTest(
     @param:Autowired private val metadataRepository: ApplicationMetadataRepository,
@@ -69,6 +75,7 @@ class DatabaseIntegrationTest(
     @param:Autowired private val revisionComparator: AgendaRevisionComparator,
     @param:Autowired private val jdbc: JdbcTemplate,
     @param:Autowired private val dashboardRepository: DashboardRepository,
+    @param:Autowired private val dashboardController: DashboardController,
     @param:Autowired private val healthEndpoint: HealthEndpoint,
     @param:Autowired private val userSessionService: UserSessionService,
 ) {
@@ -602,6 +609,58 @@ class DatabaseIntegrationTest(
     }
 
     @Test
+    fun `a past meeting refuses analysis while reading it stays free of side effects`() {
+        val startedAt = Instant.now().minusSeconds(7200)
+        val meetingId = meetingRepository.upsert(pastMeeting(startedAt))
+        val itemId = meetingRepository.upsert(pastAgendaItem(meetingId))
+        val succeeded = succeededAdvice(meetingId, itemId, startedAt)
+
+        val runsBefore = countRuns(meetingId)
+        val adviceBefore = adviceSnapshot(itemId)
+        assertEquals(1, runsBefore)
+
+        val refusal = assertFailsWith<ResponseStatusException> {
+            dashboardController.requestAnalysis(meetingId, adviser, "analyse-past-$meetingId")
+        }
+        assertEquals(HttpStatus.CONFLICT, refusal.statusCode)
+        assertEquals("meeting_in_past", refusal.reason)
+        assertEquals(0, countQueued(meetingId))
+
+        assertEquals(itemId, dashboardController.items(meetingId).single().id)
+        assertEquals(succeeded, dashboardController.item(itemId).item.lastAnalysisRun?.id)
+
+        assertEquals(runsBefore, countRuns(meetingId))
+        assertEquals(adviceBefore, adviceSnapshot(itemId))
+        assertEquals(0, countQueued(meetingId))
+        assertEquals(startedAt.toEpochMilli(), requireNotNull(meetingRepository.findMeeting(meetingId)).startsAt.toEpochMilli())
+    }
+
+    @Test
+    fun `a future meeting is still queued and an unknown meeting is still not found`() {
+        val meetingId = meetingRepository.upsert(
+            pastMeeting(Instant.now().plusSeconds(86400)).copy(sourceId = "meeting-future-${UUID.randomUUID()}"),
+        )
+        try {
+            val accepted = dashboardController.requestAnalysis(meetingId, adviser, "analyse-future-$meetingId")
+
+            assertEquals(AnalysisCommandStatus.QUEUED, accepted.status)
+            assertEquals(1, countQueued(meetingId))
+
+            val unknownId = UUID.randomUUID()
+            assertEquals(
+                HttpStatus.NOT_FOUND,
+                assertFailsWith<ResponseStatusException> {
+                    dashboardController.requestAnalysis(unknownId, adviser, "analyse-unknown-$unknownId")
+                }.statusCode,
+            )
+        } finally {
+            // Other tests read the single upcoming meeting, so this synthetic future meeting must not linger.
+            jdbc.update("DELETE FROM analysis_meeting_queue WHERE meeting_id = ?", meetingId)
+            jdbc.update("DELETE FROM meeting WHERE id = ?", meetingId)
+        }
+    }
+
+    @Test
     fun `workflow lock permits at most one owner and is recoverable`() {
         val first = UUID.randomUUID()
         val second = UUID.randomUUID()
@@ -611,6 +670,93 @@ class DatabaseIntegrationTest(
         assertTrue(workflowLockRepository.tryAcquire("integration-lock", second))
         workflowLockRepository.release("integration-lock", second)
     }
+
+    private val adviser = "robbertvdzon@gmail.com"
+
+    private fun pastMeeting(startsAt: Instant) = Meeting(
+        id = UUID.randomUUID(),
+        sourceId = "meeting-past-${UUID.randomUUID()}",
+        committee = "Commissie Ruimte",
+        startsAt = startsAt,
+        endsAt = startsAt.plusSeconds(3600),
+        location = "Statenzaal",
+        title = "Synthetische vergadering",
+        sourceUrl = URI("https://noordholland.bestuurlijkeinformatie.nl/Agenda/Index/meeting-past"),
+        sourceHash = "a".repeat(64),
+        status = MeetingStatus.COMPLETE,
+        checkedAt = startsAt.minusSeconds(3600),
+        importedAt = startsAt.minusSeconds(3600),
+    )
+
+    private fun pastAgendaItem(meetingId: UUID) = AgendaItem(
+        id = UUID.randomUUID(),
+        meetingId = meetingId,
+        sourceId = "item-past",
+        parentSourceId = "section-a",
+        sequence = 1,
+        displayNumber = "1.a",
+        category = AgendaCategory.A,
+        title = "Natuurinclusieve woningen",
+        explanation = "Synthetische toelichting",
+        treatmentProposal = "Bespreken",
+        sourceUrl = URI("https://noordholland.bestuurlijkeinformatie.nl/Agenda/Index/meeting-past"),
+        sourceHash = "b".repeat(64),
+        substantive = true,
+        importStatus = ImportStatus.COMPLETE,
+    )
+
+    private fun succeededAdvice(meetingId: UUID, itemId: UUID, completedAt: Instant): UUID {
+        val prepared = PreparedAnalysisRun(
+            run = AnalysisRun(
+                id = UUID.randomUUID(),
+                agendaItemId = itemId,
+                sourceFingerprint = "c".repeat(64),
+                promptVersion = "advice-v1",
+                selectionVersion = "policy-v1",
+                idempotencyKey = "pvdd-past-${UUID.randomUUID()}",
+                runtimeJobId = null,
+                status = AnalysisStatus.PENDING,
+                errorCode = null,
+                createdAt = completedAt,
+                updatedAt = completedAt,
+                completedAt = null,
+            ),
+            meetingId = meetingId,
+            category = "A",
+            agendaItemSourceId = "item-past",
+            prompt = "synthetisch advies over een voorbije vergadering",
+            responseSchema = jacksonObjectMapper().readTree("""{"type":"object"}"""),
+            allowedSources = emptyList(),
+        )
+        val runId = analysisRepository.createPreparedRun(prepared)
+        analysisRepository.completeWithAdvice(
+            prepared,
+            jacksonObjectMapper().readTree("""{"displayTitle":"Advies","shortConclusion":"Steunen","content":"# Advies"}"""),
+            jacksonObjectMapper().createArrayNode(),
+            "MOCKED",
+            "mock-model",
+            completedAt,
+        )
+        return runId
+    }
+
+    private fun countRuns(meetingId: UUID): Int = jdbc.queryForObject(
+        "SELECT COUNT(*) FROM analysis_run WHERE meeting_id = ?",
+        Int::class.java,
+        meetingId,
+    ) ?: 0
+
+    private fun countQueued(meetingId: UUID): Int = jdbc.queryForObject(
+        "SELECT COUNT(*) FROM analysis_meeting_queue WHERE meeting_id = ?",
+        Int::class.java,
+        meetingId,
+    ) ?: 0
+
+    private fun adviceSnapshot(itemId: UUID): List<String> = jdbc.query(
+        "SELECT id::text || '|' || actuality || '|' || advice::text snapshot FROM agenda_item_advice WHERE agenda_item_id = ? ORDER BY id",
+        { rs, _ -> rs.getString("snapshot") },
+        itemId,
+    )
 
     private fun document(itemId: UUID, hash: String, fetchedAt: Instant) = SourceDocument(
         id = UUID.randomUUID(),
