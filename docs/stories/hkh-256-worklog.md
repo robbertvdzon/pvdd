@@ -46,14 +46,64 @@ queryparameter, configuratiesleutel of feature flag, geen nieuwe metrics of logv
   aanroeper (scheduler, discovery of retry-pad) die door de weigering wordt geraakt.
 - In de omgeving van deze stap is geen Docker beschikbaar. `DatabaseIntegrationTest` brak daardoor
   het volledige vangnet af met `Could not find a valid Docker environment`, ongeacht deze story.
-  De klasse draagt nu `@Testcontainers(disabledWithoutDocker = true)`: zonder Docker wordt zij
-  overgeslagen in plaats van te falen, en waar Docker wel is — CI, ontwikkelmachines — draait zij
-  onveranderd volledig. Dit is de enige wijziging buiten de storyscope en is bewust conditioneel:
-  bij beschikbare Docker verandert er niets.
-- Om de databaseassertions toch te bewijzen is in deze stap een losse PostgreSQL 16 gestart en is
-  `DatabaseIntegrationTest` daar eenmalig tegenaan gedraaid via een tijdelijke, niet-opgeleverde
-  kopie zonder Testcontainers: alle 8 tests groen, inclusief de twee nieuwe. De tijdelijke kopie is
-  weer verwijderd.
+  De klasse kreeg daarom een conditionele start. Zie de tweede ronde hieronder voor de vorm die is
+  opgeleverd; de eerste ronde gebruikte `@Testcontainers(disabledWithoutDocker = true)`, waarmee de
+  databasetests zonder Docker alleen nog via een tijdelijke, niet-opgeleverde kopie te draaien
+  waren.
 - `mvn -B --no-transfer-progress clean verify` is groen: 116 tests, 0 fouten, 9 overgeslagen
   (de 8 databasetests zonder Docker en de bestaande `LiveSourceSpikeTest`), inclusief
   `ModulithArchitectureTest`.
+
+## hkh-257 — development, tweede ronde (2026-09-17)
+
+### Aanleiding
+De testsubtaak `hkh-258` is afgekeurd op testvoorwaarden, niet op de code: de storyrevisie draait
+niet op acceptatie en de acceptatiedataset bevat geen voorbije vergadering. De afkeur vraagt om
+drie dingen voor een hertest: (1) uitrol van de storycommit, (2) een dataset met een voorbije
+vergadering, en (3) aantoonbaar groene `DatabaseIntegrationTest`-resultaten of gelijkwaardig
+rijniveau-bewijs. Punt 3 is in deze ronde opgelost; punt 1 hoort bij de merge- en deploysubtaken.
+
+### Gewijzigd in deze ronde
+- `DatabaseIntegrationTest` start niet langer uitsluitend via Docker. De klasse draait nu wanneer
+  Docker beschikbaar is (dan start Testcontainers de container zoals voorheen) **of** wanneer de
+  al bestaande omgevingsvariabele `PVDD_DATABASE_URL` naar een draaiende PostgreSQL wijst; in dat
+  laatste geval wordt geen container gestart en gebruikt Spring de datasource uit
+  `application.properties`, die `PVDD_DATABASE_URL`, `PVDD_DATABASE_USER` en
+  `PVDD_DATABASE_PASSWORD` al leest. Ontbreken beide, dan wordt de klasse overgeslagen
+  (`@EnabledIf` met `disabledReason`) in plaats van het hele vangnet te laten falen — hetzelfde
+  netto-effect als in de eerste ronde, maar nu reproduceerbaar zonder de testcode aan te passen.
+  Er komt geen nieuwe property, configuratiesleutel of testbean bij; productiecode is niet geraakt.
+
+### Bewijs dat in deze ronde zelf is gedraaid
+- Zonder Docker en zonder database, precies zoals het factoryvangnet draait:
+  `mvn -B --no-transfer-progress clean verify` in `backend/` → BUILD SUCCESS, 116 tests, 0 fouten,
+  9 overgeslagen (de 8 databasetests plus `LiveSourceSpikeTest`), inclusief
+  `ModulithArchitectureTest`.
+- Mét een lokaal gestarte PostgreSQL 16.15, dezelfde opgeleverde testklasse, geen tijdelijke kopie:
+  `PVDD_DATABASE_URL=jdbc:postgresql://127.0.0.1:55432/<db> PVDD_DATABASE_USER=<user>
+  PVDD_DATABASE_PASSWORD= mvn -B --no-transfer-progress clean verify` → BUILD SUCCESS, 116 tests,
+  0 fouten, 1 overgeslagen (alleen `LiveSourceSpikeTest`). `DatabaseIntegrationTest` zelf:
+  8 tests, 0 fouten, 0 overgeslagen, waaronder
+  `a past meeting refuses analysis while reading it stays free of side effects` (409
+  `meeting_in_past`, gelijk aantal `analysis_run`-rijen voor en na, ongewijzigd advies, geen rij in
+  `analysis_meeting_queue`) en
+  `a future meeting is still queued and an unknown meeting is still not found`.
+
+### Reproductie van het rijniveau-bewijs zonder Docker
+1. Start een PostgreSQL die vanaf de testrun bereikbaar is (in een Dockerloze runtime kan dat
+   rootloos: `apt-get download postgresql-16`, `dpkg-deb -x`, daarna `initdb` en `pg_ctl start` op
+   een eigen poort, en `createdb` voor een lege database).
+2. Draai `mvn -B --no-transfer-progress clean verify` in `backend/` met `PVDD_DATABASE_URL`,
+   `PVDD_DATABASE_USER` en `PVDD_DATABASE_PASSWORD` gezet. Flyway migreert de lege database zelf.
+3. Controleer `backend/target/surefire-reports/TEST-nl.vdzon.pvdd.DatabaseIntegrationTest.xml`:
+   `tests="8" failures="0" errors="0" skipped="0"`.
+
+### Niet opgelost in deze ronde (hoort bij andere subtaken)
+- Uitrol van de storycommit naar acceptatie: dat is de merge- en deploysubtaak; een developer
+  deployt niet.
+- Een voorbije vergadering in de acceptatiedataset is met de huidige inrichting niet te maken
+  zonder de scope te schenden: de vergaderingen komen daar uit de synthetische bron via
+  `MeetingDiscoveryService`, die uitsluitend vooruitkijkt, en rechtstreekse databasetoegang is voor
+  de agents verboden. De weigering is daarom op rijniveau bewezen met
+  `DatabaseIntegrationTest` tegen een echte PostgreSQL, zoals hierboven; een functionele controle op
+  acceptatie zou een bron- of datasetuitbreiding vergen die buiten deze story valt.

@@ -47,21 +47,27 @@ import nl.vdzon.pvdd.policy.PolicySyncTrigger
 import nl.vdzon.pvdd.policy.PolicyTheme
 import nl.vdzon.pvdd.policy.PolicyWebSourceType
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.EnabledIf
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.health.actuate.endpoint.HealthEndpoint
 import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.jdbc.core.JdbcTemplate
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
+import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.DynamicPropertySource
+import org.testcontainers.DockerClientFactory
 import org.testcontainers.postgresql.PostgreSQLContainer
 import tools.jackson.module.kotlin.jacksonObjectMapper
 
-// Zonder Docker is er geen PostgreSQL om tegen te draaien; dan wordt deze klasse overgeslagen
-// in plaats van te falen. Waar Docker wel beschikbaar is, zoals in CI, draait zij onveranderd.
-@Testcontainers(disabledWithoutDocker = true)
+// Deze klasse draait tegen een echte PostgreSQL. Met Docker start Testcontainers die zelf, zoals in
+// CI. Zonder Docker kan een al draaiende database worden meegegeven via de bestaande omgevings-
+// variabele PVDD_DATABASE_URL; dan wordt geen container gestart. Is geen van beide er, dan wordt de
+// klasse overgeslagen in plaats van het hele vangnet te laten falen.
+@EnabledIf(
+    value = "nl.vdzon.pvdd.DatabaseIntegrationTest#databaseAvailable",
+    disabledReason = "Geen Docker en geen PVDD_DATABASE_URL, dus geen PostgreSQL om tegen te draaien",
+)
 @SpringBootTest
 class DatabaseIntegrationTest(
     @param:Autowired private val metadataRepository: ApplicationMetadataRepository,
@@ -777,7 +783,27 @@ class DatabaseIntegrationTest(
     private val policyUrl = URI("https://example.invalid/policy.pdf")
 
     companion object {
-        @Container @ServiceConnection @JvmField
-        val postgres = PostgreSQLContainer("postgres:16-alpine")
+        // Een meegegeven database wint van Docker, zodat deze tests ook in een Dockerloze omgeving
+        // tegen een lokaal gestarte PostgreSQL kunnen draaien.
+        private val externalDatabaseUrl: String? = System.getenv("PVDD_DATABASE_URL")
+
+        private val postgres: PostgreSQLContainer? by lazy {
+            if (externalDatabaseUrl != null) null else PostgreSQLContainer("postgres:16-alpine").apply { start() }
+        }
+
+        @JvmStatic
+        fun databaseAvailable(): Boolean =
+            externalDatabaseUrl != null || DockerClientFactory.instance().isDockerAvailable
+
+        @JvmStatic
+        @DynamicPropertySource
+        fun datasource(registry: DynamicPropertyRegistry) {
+            // Zonder container blijft de datasource uit application.properties staan, die
+            // PVDD_DATABASE_URL, PVDD_DATABASE_USER en PVDD_DATABASE_PASSWORD al leest.
+            val container = postgres ?: return
+            registry.add("spring.datasource.url") { container.jdbcUrl }
+            registry.add("spring.datasource.username") { container.username }
+            registry.add("spring.datasource.password") { container.password }
+        }
     }
 }
