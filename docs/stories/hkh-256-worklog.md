@@ -178,3 +178,54 @@ wordt nooit geïmporteerd, en de story verbiedt expliciet een wijziging aan disc
 functionele controle op acceptatie vergt dus een procesbesluit plus een dataset- of bronuitbreiding
 in een eigen story; het gedrag zelf is in deze ronde op rijniveau tegen een echte PostgreSQL
 bewezen.
+
+## hkh-257 — development, vierde ronde (2026-09-17)
+
+### Aanleiding
+De testsubtaak `hkh-258` is voor de derde keer afgekeurd op **testvoorwaarden**, opnieuw zonder
+aangetoonde productbug: de storyrevisie draait nergens en de acceptatiedataset bevat geen voorbije
+vergadering. De reviewerronde gaf akkoord zonder blockers, met één niet-blokkerende suggestie over
+de opruiming in de databasetest. Die suggestie is in deze ronde verwerkt. De productiecode van de
+story (`AnalysisFacade` en `DashboardController`) is opnieuw niet aangeraakt; het gedrag van de
+story is ongewijzigd ten opzichte van de goedgekeurde versie.
+
+### Gewijzigd in deze ronde (alleen `DatabaseIntegrationTest`)
+- **Opruiming van `analysis_meeting_queue` in de voorbije-vergaderingtest.** Het `finally`-blok
+  ruimde advies, `analysis_run`, agendapunt en vergadering op, maar geen wachtrijrij. In het groene
+  pad bestaat die rij niet, dus dit was onschadelijk. Zou de weigering ooit regresseren en
+  `queueMeeting` tóch worden aangeroepen, dan faalt eerst `assertEquals(0, countQueued(meetingId))`,
+  waarna het `finally` op `DELETE FROM meeting` zou struikelen over de foreign key
+  `analysis_meeting_queue.meeting_id REFERENCES meeting(id)` (bevestigd in
+  `V5__durable_analysis_orchestration.sql`; nergens `ON DELETE CASCADE`). De daaruit gegooide
+  `DataIntegrityViolationException` verving dan de AssertionError, zodat de testuitslag een
+  FK-fout toonde in plaats van "expected 0 but was 1". Met de extra `DELETE` blijft de diagnose bij
+  een echte regressie direct leesbaar en zijn de twee `finally`-blokken symmetrisch met de
+  toekomstige-vergaderingtest.
+
+### Bewijs dat in deze ronde zelf is gedraaid
+- Mét een rootloos gestarte PostgreSQL 16 en een verse, lege database:
+  `PVDD_TEST_DATABASE_URL=jdbc:postgresql://127.0.0.1:55432/<db> PVDD_TEST_DATABASE_USER=<user>
+  PVDD_TEST_DATABASE_PASSWORD= mvn -B --no-transfer-progress clean verify` in `backend/` →
+  **BUILD SUCCESS, 116 tests, 0 failures, 0 errors, 1 skipped** (alleen `LiveSourceSpikeTest`).
+  Uit de surefire-rapporten: `DatabaseIntegrationTest` `tests="8" failures="0" errors="0"
+  skipped="0"`, `ModulithArchitectureTest` 2/2, `AnalysisRequestTest` 4/4,
+  `DashboardAnalysisRequestTest` 4/4.
+- Controle op residu na afloop: in `meeting` stonden alleen nog de bestaande
+  `meeting-failed`, `meeting-functional-test` en `meeting-source-revision-test`; geen
+  `meeting-past-*` of `meeting-future-*`. De enige rij in `analysis_meeting_queue` hoort bij het
+  al bestaande `meeting-functional-test`, niet bij de storytests.
+
+### Onveranderd
+Geen wijziging aan productiecode, schema, migraties, frontend, `package-info.java`,
+`MutationGuard`, de `Idempotency-Key`-afhandeling, schedulers, prompts, provider of model. De
+scope blijft binnen de modules `analysis` en `dashboard` plus de testklasse.
+
+### Niet opgelost in deze ronde (hoort bij andere subtaken)
+De twee blokkades uit de testafkeur staan onveranderd en zijn binnen deze subtaak niet op te
+lossen: de storyrevisie uitrollen hoort bij `hkh-261`/`hkh-262`, en een voorbije vergadering in de
+acceptatiedataset kan er niet komen zonder de scope te schenden, omdat `MeetingDiscoveryService`
+kandidaten met `startsAt <= nu` overslaat en die klasse expliciet buiten scope valt. Het
+storygedrag is daarom op rijniveau tegen een echte PostgreSQL bewezen. De reviewer merkte verder op
+dat de testharnasvariabele `PVDD_TEST_DATABASE_URL` nog nergens buiten deze testklasse en dit
+worklog is beschreven; dat vastleggen hoort bij `hkh-260` (documentatie) en het melden ervan bij
+`hkh-259` (oplevering).

@@ -659,7 +659,9 @@ class DatabaseIntegrationTest(
             assertEquals(startedAt.toEpochMilli(), requireNotNull(meetingRepository.findMeeting(meetingId)).startsAt.toEpochMilli())
         } finally {
             // Laat niets achter, zodat andere tests en een herhaalde run geen last hebben van deze
-            // synthetische vergadering.
+            // synthetische vergadering. De wachtrij hoort hier leeg te zijn, maar wordt toch geruimd:
+            // regresseert de weigering ooit, dan moet de assertie falen en niet de opruiming.
+            jdbc.update("DELETE FROM analysis_meeting_queue WHERE meeting_id = ?", meetingId)
             jdbc.update("DELETE FROM agenda_item_advice WHERE agenda_item_id IN (SELECT id FROM agenda_item WHERE meeting_id = ?)", meetingId)
             jdbc.update("DELETE FROM analysis_run WHERE meeting_id = ?", meetingId)
             jdbc.update("DELETE FROM agenda_item WHERE meeting_id = ?", meetingId)
