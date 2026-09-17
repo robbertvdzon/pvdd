@@ -256,7 +256,14 @@ story is ongewijzigd ten opzichte van de eerder goedgekeurde versie.
   Vastgelegd wordt: HTTP 200, status `IMPORTED`, de nieuwe vergadering met agendapunten staat in de
   database, en de voorbije vergadering blijft ongemoeid (`analysis_meeting_queue` leeg,
   `analysis_run` leeg, `starts_at` onveranderd). Daarmee is AC6 niet langer alleen statisch, maar
-  op rijniveau aangetoond, inclusief de deelconditie die op acceptatie ontestbaar is.
+  op rijniveau aangetoond.
+  **Correctie uit de zesde ronde:** de oorspronkelijke tekst claimde hier ook de deelconditie
+  *"ook wanneer de laatst bekende vergadering al is geweest"*. Die claim was te sterk. De
+  `markSuccessful`-stap schrijft `application_metadata.last-successful-meeting-source-id`, maar geen
+  enkele productiecode leest die sleutel, en de stub vervangt juist `MeetingDiscoveryService` — de
+  klasse die met `startsAt <= nu` bepaalt wat er gebeurt als de laatst bekende vergadering voorbij
+  is. Wat deze test aantoont is smaller en staat hierboven; de deelconditie zelf ligt sinds de zesde
+  ronde vast in `MeetingDiscoveryServiceTest`.
 - **Gedeelde opruiming `removeSyntheticMeeting`.** De twee bestaande `finally`-blokken en het nieuwe
   gebruiken nu één helper die in foreign-keyvolgorde opruimt (documentrevisies → agendapuntrevisies
   → vergaderingrevisies → broncontroles → wachtrij → advies → runs → brondocumenten → agendapunten →
@@ -297,3 +304,70 @@ kandidaten met `startsAt <= nu` over). Het ketensignaal — testsubtaak vóór m
 er bewust geen PR-previewomgevingen zijn, waardoor de storyrevisie tijdens de testfase per definitie
 nergens draait — is een procesbesluit dat buiten de developerrol valt en dat hier expliciet wordt
 doorgegeven.
+
+## hkh-257 — development, zesde ronde (2026-09-17)
+
+### Aanleiding
+De testsubtaak `hkh-258` is voor de vijfde keer afgekeurd op **testvoorwaarden**, opnieuw zonder
+aangetoonde productbug; het geautomatiseerde bewijs was volledig groen. De reviewerronde gaf
+opnieuw akkoord zonder blockers, met één niet-blokkerende suggestie die wél binnen deze subtaak
+valt: de nieuwe AC6-test uit de vijfde ronde legt de deelconditie *"ook wanneer de laatst bekende
+vergadering al is geweest"* niet werkelijk vast, en het worklog claimde dat wel. Die opening is in
+deze ronde gedicht. De productiecode van de story (`AnalysisFacade`, `DashboardController`) is voor
+de vierde ronde op rij niet aangeraakt; het storygedrag is ongewijzigd.
+
+### Gewijzigd in deze ronde (alleen tests, fixture en dit worklog)
+- **Nieuwe test `keeps looking ahead when the last known meeting took place earlier today`** in
+  `MeetingDiscoveryServiceTest`, met de nieuwe fixture `year-2026-meeting-today.html`. De jaarpagina
+  bevat een vergadering van vandaag (maandag 31 augustus 2026, `08:00 - 09:30`, dus begonnen én
+  afgelopen vóór de vaste testklok van `2026-08-31T10:00:00Z`) en daarna de bestaande toekomstige
+  vergadering. De dagfilter `!it.date.isBefore(today)` laat die van vandaag door, waarna de regel
+  `if (agenda.startsAt <= now) continue` haar overslaat en de discovery `meeting-future`
+  (`2026-09-14T16:30:00Z`) oplevert. Dit is precies het productiepad dat bepaalt dat de
+  broncontrole vooruit blijft kijken als de laatst bekende vergadering al is geweest — het pad dat
+  de databasetest uit de vijfde ronde juist wegstubte. `MeetingDiscoveryService` zelf is niet
+  gewijzigd; alleen de bronantwoorden in de test zijn synthetisch, zoals in alle bestaande tests
+  van die klasse.
+- **Eerlijker commentaar in `DatabaseIntegrationTest`** bij de check-now-test: de `markSuccessful`-
+  stap zet de database in de toestand uit het acceptatiecriterium, maar stuurt het geteste pad niet,
+  omdat geen enkele productiecode `application_metadata.last-successful-meeting-source-id` leest.
+  Het commentaar verwijst nu naar `MeetingDiscoveryServiceTest` voor de deelconditie en benoemt wat
+  de databasetest wél aantoont: wat de route tegen een echte database schrijft en met rust laat.
+- **Correctie van de AC6-claim in het worklog van de vijfde ronde**, zodat `hkh-258` (test) en
+  `hkh-259` (oplevering) geen dekking overnemen die er niet was. De correctie staat als expliciete
+  noot bij de oorspronkelijke tekst.
+
+### Dekking van AC6 na deze ronde
+- De route `POST /api/meetings/check-now` is in de hele storydiff niet geraakt en loopt niet via
+  `requestMeeting` (statisch, ongewijzigd).
+- Tegen een echte database: `checkNow` levert HTTP 200 met `IMPORTED`, schrijft de nieuwe
+  vergadering met agendapunten weg en laat een naast bestaande voorbije vergadering volledig
+  ongemoeid (`DatabaseIntegrationTest`).
+- De deelconditie "de laatst bekende vergadering is al geweest" ligt nu vast op het niveau waar
+  productiecode de beslissing neemt: `MeetingDiscoveryServiceTest` (nieuw deze ronde), plus de
+  ongewijzigd groene `MeetingCheckWorkflowTest`.
+
+### Bewijs dat in deze ronde zelf is gedraaid
+- Zonder database en zonder Docker (zoals het factoryvangnet draait):
+  `mvn -B --no-transfer-progress clean verify` in `backend/` → **BUILD SUCCESS, 118 tests,
+  0 failures, 0 errors, 10 skipped** (de 9 databasetests plus `LiveSourceSpikeTest`).
+- Mét een rootloos gestarte PostgreSQL 16 en een verse, lege database:
+  `PVDD_TEST_DATABASE_URL=… PVDD_TEST_DATABASE_USER=… PVDD_TEST_DATABASE_PASSWORD= mvn -B
+  --no-transfer-progress clean verify` → **BUILD SUCCESS, 118 tests, 0 failures, 0 errors,
+  1 skipped** (alleen `LiveSourceSpikeTest`); `DatabaseIntegrationTest` `tests="9" failures="0"
+  errors="0" skipped="0"`, `MeetingDiscoveryServiceTest` 7/7, `ModulithArchitectureTest` 2/2.
+- `bash tools/verify-documentation.sh` → groen, nodig omdat `docs/` is geraakt.
+
+### Onveranderd
+Geen wijziging aan productiecode, schema, migraties, frontend, `package-info.java`,
+`MutationGuard`, de `Idempotency-Key`-afhandeling, `MeetingCheckController`, `MeetingCheckWorkflow`,
+`MeetingDiscoveryService`, schedulers, prompts, provider of model. De wijziging van deze ronde zit
+volledig in twee testklassen, één nieuwe testfixture en dit worklog.
+
+### Niet opgelost in deze ronde (hoort bij andere subtaken)
+De blokkades uit de testafkeur staan onveranderd en zijn binnen deze subtaak niet op te lossen: de
+storyrevisie uitrollen hoort bij `hkh-261`/`hkh-262`, en een voorbije vergadering in de
+acceptatiedataset kan er niet komen zonder de scope te schenden. Het ketensignaal — testsubtaak
+vóór merge en deploy terwijl er bewust geen PR-previewomgevingen zijn, waardoor de storyrevisie
+tijdens de testfase per definitie nergens draait — wordt hier voor de tweede keer doorgegeven als
+procesbesluit buiten de developerrol.

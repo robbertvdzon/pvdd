@@ -713,7 +713,12 @@ class DatabaseIntegrationTest(
         val previousLastSuccessful = meetingRepository.lastSuccessfulSourceId()
         var importedId: UUID? = null
         try {
-            // Maak de voorbije vergadering de laatst bekende: precies de situatie uit het acceptatiecriterium.
+            // De voorbije vergadering is ook de laatst bekende, zodat de database in de toestand uit
+            // het acceptatiecriterium staat. Let op: de controleroute leest
+            // `application_metadata.last-successful-meeting-source-id` niet, dus deze regel stuurt het
+            // geteste pad niet. Dat de discovery bij een voorbije laatst bekende vergadering vooruit
+            // blijft kijken, ligt vast in MeetingDiscoveryServiceTest; hier gaat het om wat de route
+            // tegen de echte database doet en laat.
             meetingRepository.markSuccessful(pastId)
             assertEquals(requireNotNull(meetingRepository.findMeeting(pastId)).sourceId, meetingRepository.lastSuccessfulSourceId())
 

@@ -36,6 +36,27 @@ class MeetingDiscoveryServiceTest {
     }
 
     @Test
+    fun `keeps looking ahead when the last known meeting took place earlier today`() {
+        val service = service { uri ->
+            val body = when {
+                uri.path.contains("RetrieveAgendasForYear") -> fixture("year-2026-meeting-today.html")
+                uri.path.endsWith("meeting-today") -> fixture("agenda-full.html")
+                    .replace("maandag 14 september 2026", "maandag 31 augustus 2026")
+                    .replace("18:30 - 22:30", "08:00 - 09:30")
+                uri.path.endsWith("meeting-future") -> fixture("agenda-full.html")
+                else -> error("Unexpected URI $uri")
+            }
+            SourcePage(uri, 200, "text/html", body)
+        }
+
+        // De vergadering van vandaag begon om 08:00 (06:00Z) en is dus al geweest; de dagfilter laat
+        // haar door, maar de controle op `startsAt <= nu` slaat haar over en de discovery kijkt verder.
+        val outcome = assertIs<DiscoveryOutcome.Found>(service.discover())
+        assertEquals("meeting-future", outcome.meeting.sourceId)
+        assertEquals(Instant.parse("2026-09-14T16:30:00Z"), outcome.meeting.startsAt)
+    }
+
+    @Test
     fun `stops safely when there is no future meeting`() {
         val service = service { uri -> SourcePage(uri, 200, "text/html", fixture("no-future-meeting.html")) }
         assertIs<DiscoveryOutcome.NoFutureMeeting>(service.discover())
