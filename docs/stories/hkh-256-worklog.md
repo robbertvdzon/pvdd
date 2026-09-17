@@ -90,6 +90,10 @@ rijniveau-bewijs. Punt 3 is in deze ronde opgelost; punt 1 hoort bij de merge- e
   `a future meeting is still queued and an unknown meeting is still not found`.
 
 ### Reproductie van het rijniveau-bewijs zonder Docker
+> Let op: de sleutelnamen in dit recept zijn in de derde ronde hieronder vervangen door
+> `PVDD_TEST_DATABASE_URL`, `PVDD_TEST_DATABASE_USER` en `PVDD_TEST_DATABASE_PASSWORD`.
+> Gebruik het recept uit de derde ronde.
+
 1. Start een PostgreSQL die vanaf de testrun bereikbaar is (in een Dockerloze runtime kan dat
    rootloos: `apt-get download postgresql-16`, `dpkg-deb -x`, daarna `initdb` en `pg_ctl start` op
    een eigen poort, en `createdb` voor een lege database).
@@ -107,3 +111,70 @@ rijniveau-bewijs. Punt 3 is in deze ronde opgelost; punt 1 hoort bij de merge- e
   de agents verboden. De weigering is daarom op rijniveau bewezen met
   `DatabaseIntegrationTest` tegen een echte PostgreSQL, zoals hierboven; een functionele controle op
   acceptatie zou een bron- of datasetuitbreiding vergen die buiten deze story valt.
+
+## hkh-257 — development, derde ronde (2026-09-17)
+
+### Aanleiding
+De testsubtaak `hkh-258` is opnieuw afgekeurd op testvoorwaarden, zonder productbug; de
+reviewerronde gaf akkoord met drie niet-blokkerende opmerkingen over het in de tweede ronde
+opgeleverde databasepad. Die opmerkingen zijn in deze ronde verwerkt. De productiecode van de
+story (`AnalysisFacade` en `DashboardController`) is niet aangeraakt en het gedrag van de story is
+ongewijzigd.
+
+### Gewijzigd in deze ronde (alleen `DatabaseIntegrationTest`)
+- **Testeigen databasesleutel.** De klasse leest niet langer de runtimesleutel `PVDD_DATABASE_URL`,
+  maar `PVDD_TEST_DATABASE_URL` (met `PVDD_TEST_DATABASE_USER` en `PVDD_TEST_DATABASE_PASSWORD`),
+  en registreert die waarden expliciet via `@DynamicPropertySource`. `PVDD_DATABASE_URL` staat in
+  `docker-compose.yml` en in de acceptatie- en productie-overlays en wees dus naar een echte
+  database; deze schrijvende en migrerende suite kan daar nu niet meer per ongeluk op landen. Dit
+  is een testsleutel: er komt geen property, configuratiesleutel of feature flag in de applicatie
+  bij en `application.properties` is ongewijzigd.
+- **Fail-fast op een al gevulde database.** Een meegegeven database moet leeg zijn; bij hergebruik
+  faalden eerder drie bestaande, ongerelateerde tests met verwarrende assertiefouten. Een
+  `@BeforeEach` controleert eenmalig `meeting`, `policy_sync_run` en `policy_web_source` en faalt
+  met een expliciete melding die vertelt wat er moet gebeuren.
+- **Consistente opruiming.** De test met de voorbije vergadering ruimt zijn advies, `analysis_run`,
+  agendapunt en vergadering nu in een `finally` op, net als de test met de toekomstige vergadering.
+  De suite laat daarmee geen synthetische vergadering meer achter en beïnvloedt de `overview()`-
+  assertions van bestaande tests niet.
+
+### Bewijs dat in deze ronde zelf is gedraaid
+- Zonder Docker en zonder database, zoals het factoryvangnet draait:
+  `mvn -B --no-transfer-progress clean verify` in `backend/` → BUILD SUCCESS, 116 tests, 0 fouten,
+  9 overgeslagen, inclusief `ModulithArchitectureTest`. De skipreden in het surefire-rapport luidt
+  nu `Geen Docker en geen PVDD_TEST_DATABASE_URL, dus geen PostgreSQL om tegen te draaien`.
+- Mét een lokaal gestarte PostgreSQL 16.15 en een lege database:
+  `PVDD_TEST_DATABASE_URL=jdbc:postgresql://127.0.0.1:55432/<db> PVDD_TEST_DATABASE_USER=<user>
+  PVDD_TEST_DATABASE_PASSWORD= mvn -B --no-transfer-progress clean verify` → BUILD SUCCESS,
+  116 tests, 0 fouten, 1 overgeslagen (alleen `LiveSourceSpikeTest`).
+  `TEST-nl.vdzon.pvdd.DatabaseIntegrationTest.xml`: `tests="8" failures="0" errors="0"
+  skipped="0"`.
+- Controle op de fail-fast: dezelfde suite een tweede keer tegen dezelfde, nu gevulde database →
+  alle acht databasetests falen met de expliciete melding over een niet-lege database in plaats van
+  met verwarrende assertiefouten elders.
+- Controle op de veiligheid van de sleutelscheiding: met uitsluitend `PVDD_DATABASE_URL` gezet
+  (naar een lege database) en zonder Docker worden de acht tests overgeslagen en blijft die
+  database onaangeroerd — nul tabellen, dus Flyway heeft er niet gedraaid.
+- `bash tools/verify-documentation.sh` → groen.
+
+### Reproductie van het rijniveau-bewijs zonder Docker (geldende versie)
+1. Start een PostgreSQL die vanaf de testrun bereikbaar is en maak daarin een **lege** database
+   (rootloos kan dat met `apt-get download postgresql-16`, `dpkg-deb -x`, daarna `initdb`,
+   `pg_ctl start` op een eigen poort en `createdb`).
+2. Draai `mvn -B --no-transfer-progress clean verify` in `backend/` met `PVDD_TEST_DATABASE_URL`,
+   `PVDD_TEST_DATABASE_USER` en `PVDD_TEST_DATABASE_PASSWORD` gezet. Flyway migreert de lege
+   database zelf.
+3. Controleer `backend/target/surefire-reports/TEST-nl.vdzon.pvdd.DatabaseIntegrationTest.xml`:
+   `tests="8" failures="0" errors="0" skipped="0"`.
+4. Gebruik voor een volgende run opnieuw een verse database; de fail-fast meldt het anders.
+
+### Signaal voor de keten (onveranderd en niet op te lossen binnen deze subtaak)
+De testsubtaak staat vóór de merge- en deploysubtaak, terwijl er bewust geen
+PR-previewomgevingen zijn (`docs/microservice-specificatie.md`). De storyrevisie kan tijdens de
+testfase daardoor per definitie nergens draaien. Daarnaast bevat de acceptatiedataset geen voorbije
+vergadering en kan die er ook niet komen zonder de scope te schenden: `MeetingDiscoveryService`
+slaat vergaderingen met `startsAt <= nu` over, dus een bronfixture met een datum in het verleden
+wordt nooit geïmporteerd, en de story verbiedt expliciet een wijziging aan discovery. Een
+functionele controle op acceptatie vergt dus een procesbesluit plus een dataset- of bronuitbreiding
+in een eigen story; het gedrag zelf is in deze ronde op rijniveau tegen een echte PostgreSQL
+bewezen.

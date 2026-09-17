@@ -46,6 +46,7 @@ import nl.vdzon.pvdd.policy.PolicySyncRepository
 import nl.vdzon.pvdd.policy.PolicySyncTrigger
 import nl.vdzon.pvdd.policy.PolicyTheme
 import nl.vdzon.pvdd.policy.PolicyWebSourceType
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIf
 import org.springframework.http.HttpStatus
@@ -61,12 +62,13 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import tools.jackson.module.kotlin.jacksonObjectMapper
 
 // Deze klasse draait tegen een echte PostgreSQL. Met Docker start Testcontainers die zelf, zoals in
-// CI. Zonder Docker kan een al draaiende database worden meegegeven via de bestaande omgevings-
-// variabele PVDD_DATABASE_URL; dan wordt geen container gestart. Is geen van beide er, dan wordt de
-// klasse overgeslagen in plaats van het hele vangnet te laten falen.
+// CI. Zonder Docker kan een lege wegwerpdatabase worden meegegeven via PVDD_TEST_DATABASE_URL; dan
+// wordt geen container gestart. Is geen van beide er, dan wordt de klasse overgeslagen in plaats van
+// het hele vangnet te laten falen. De suite migreert en schrijft, en verwacht een lege database:
+// hergebruik van een al gevulde database laat bestaande tests falen (zie requireEmptyDatabase).
 @EnabledIf(
     value = "nl.vdzon.pvdd.DatabaseIntegrationTest#databaseAvailable",
-    disabledReason = "Geen Docker en geen PVDD_DATABASE_URL, dus geen PostgreSQL om tegen te draaien",
+    disabledReason = "Geen Docker en geen PVDD_TEST_DATABASE_URL, dus geen PostgreSQL om tegen te draaien",
 )
 @SpringBootTest
 class DatabaseIntegrationTest(
@@ -85,6 +87,21 @@ class DatabaseIntegrationTest(
     @param:Autowired private val healthEndpoint: HealthEndpoint,
     @param:Autowired private val userSessionService: UserSessionService,
 ) {
+    // Een container is altijd vers, maar een meegegeven database kan al gevuld zijn. Meerdere tests
+    // gaan uit van een lege startsituatie; zonder deze controle falen ze met verwarrende fouten die
+    // niets met de wijziging te maken hebben. Eenmaal per run is genoeg.
+    @BeforeEach
+    fun requireEmptyDatabase() {
+        if (emptyDatabaseVerified) return
+        val filled = listOf("meeting", "policy_sync_run", "policy_web_source")
+            .filter { (jdbc.queryForObject("SELECT COUNT(*) FROM $it", Int::class.java) ?: 0) > 0 }
+        check(filled.isEmpty()) {
+            "Deze suite verwacht een lege database, maar deze tabellen bevatten al rijen: $filled. " +
+                "Gebruik een verse database (Docker, of een lege database via PVDD_TEST_DATABASE_URL)."
+        }
+        emptyDatabaseVerified = true
+    }
+
     @Test
     fun `degraded policy crawl retains the latest known revision`() {
         val now = Instant.parse("2026-09-01T19:00:00Z")
@@ -618,27 +635,36 @@ class DatabaseIntegrationTest(
     fun `a past meeting refuses analysis while reading it stays free of side effects`() {
         val startedAt = Instant.now().minusSeconds(7200)
         val meetingId = meetingRepository.upsert(pastMeeting(startedAt))
-        val itemId = meetingRepository.upsert(pastAgendaItem(meetingId))
-        val succeeded = succeededAdvice(meetingId, itemId, startedAt)
 
-        val runsBefore = countRuns(meetingId)
-        val adviceBefore = adviceSnapshot(itemId)
-        assertEquals(1, runsBefore)
+        try {
+            val itemId = meetingRepository.upsert(pastAgendaItem(meetingId))
+            val succeeded = succeededAdvice(meetingId, itemId, startedAt)
+            val runsBefore = countRuns(meetingId)
+            val adviceBefore = adviceSnapshot(itemId)
+            assertEquals(1, runsBefore)
 
-        val refusal = assertFailsWith<ResponseStatusException> {
-            dashboardController.requestAnalysis(meetingId, adviser, "analyse-past-$meetingId")
+            val refusal = assertFailsWith<ResponseStatusException> {
+                dashboardController.requestAnalysis(meetingId, adviser, "analyse-past-$meetingId")
+            }
+            assertEquals(HttpStatus.CONFLICT, refusal.statusCode)
+            assertEquals("meeting_in_past", refusal.reason)
+            assertEquals(0, countQueued(meetingId))
+
+            assertEquals(itemId, dashboardController.items(meetingId).single().id)
+            assertEquals(succeeded, dashboardController.item(itemId).item.lastAnalysisRun?.id)
+
+            assertEquals(runsBefore, countRuns(meetingId))
+            assertEquals(adviceBefore, adviceSnapshot(itemId))
+            assertEquals(0, countQueued(meetingId))
+            assertEquals(startedAt.toEpochMilli(), requireNotNull(meetingRepository.findMeeting(meetingId)).startsAt.toEpochMilli())
+        } finally {
+            // Laat niets achter, zodat andere tests en een herhaalde run geen last hebben van deze
+            // synthetische vergadering.
+            jdbc.update("DELETE FROM agenda_item_advice WHERE agenda_item_id IN (SELECT id FROM agenda_item WHERE meeting_id = ?)", meetingId)
+            jdbc.update("DELETE FROM analysis_run WHERE meeting_id = ?", meetingId)
+            jdbc.update("DELETE FROM agenda_item WHERE meeting_id = ?", meetingId)
+            jdbc.update("DELETE FROM meeting WHERE id = ?", meetingId)
         }
-        assertEquals(HttpStatus.CONFLICT, refusal.statusCode)
-        assertEquals("meeting_in_past", refusal.reason)
-        assertEquals(0, countQueued(meetingId))
-
-        assertEquals(itemId, dashboardController.items(meetingId).single().id)
-        assertEquals(succeeded, dashboardController.item(itemId).item.lastAnalysisRun?.id)
-
-        assertEquals(runsBefore, countRuns(meetingId))
-        assertEquals(adviceBefore, adviceSnapshot(itemId))
-        assertEquals(0, countQueued(meetingId))
-        assertEquals(startedAt.toEpochMilli(), requireNotNull(meetingRepository.findMeeting(meetingId)).startsAt.toEpochMilli())
     }
 
     @Test
@@ -783,27 +809,30 @@ class DatabaseIntegrationTest(
     private val policyUrl = URI("https://example.invalid/policy.pdf")
 
     companion object {
-        // Een meegegeven database wint van Docker, zodat deze tests ook in een Dockerloze omgeving
-        // tegen een lokaal gestarte PostgreSQL kunnen draaien.
-        private val externalDatabaseUrl: String? = System.getenv("PVDD_DATABASE_URL")
+        // Een meegegeven wegwerpdatabase wint van Docker, zodat deze tests ook in een Dockerloze
+        // omgeving tegen een lokaal gestarte PostgreSQL kunnen draaien. De sleutel is bewust
+        // testeigen: de runtimesleutel PVDD_DATABASE_URL wijst in acceptatie en productie naar een
+        // echte database en mag deze schrijvende en migrerende suite daar nooit heen sturen.
+        private val testDatabaseUrl: String? = System.getenv("PVDD_TEST_DATABASE_URL")
 
         private val postgres: PostgreSQLContainer? by lazy {
-            if (externalDatabaseUrl != null) null else PostgreSQLContainer("postgres:16-alpine").apply { start() }
+            if (testDatabaseUrl != null) null else PostgreSQLContainer("postgres:16-alpine").apply { start() }
         }
+
+        private var emptyDatabaseVerified = false
 
         @JvmStatic
         fun databaseAvailable(): Boolean =
-            externalDatabaseUrl != null || DockerClientFactory.instance().isDockerAvailable
+            testDatabaseUrl != null || DockerClientFactory.instance().isDockerAvailable
 
         @JvmStatic
         @DynamicPropertySource
         fun datasource(registry: DynamicPropertyRegistry) {
-            // Zonder container blijft de datasource uit application.properties staan, die
-            // PVDD_DATABASE_URL, PVDD_DATABASE_USER en PVDD_DATABASE_PASSWORD al leest.
-            val container = postgres ?: return
-            registry.add("spring.datasource.url") { container.jdbcUrl }
-            registry.add("spring.datasource.username") { container.username }
-            registry.add("spring.datasource.password") { container.password }
+            val container = postgres
+            val url = container?.jdbcUrl ?: testDatabaseUrl ?: return
+            registry.add("spring.datasource.url") { url }
+            registry.add("spring.datasource.username") { container?.username ?: (System.getenv("PVDD_TEST_DATABASE_USER") ?: "pvdd") }
+            registry.add("spring.datasource.password") { container?.password ?: (System.getenv("PVDD_TEST_DATABASE_PASSWORD") ?: "") }
         }
     }
 }
