@@ -36,6 +36,13 @@ class DashboardController(
     @GetMapping("/meetings/next")
     fun next(): MeetingOverviewDto = dashboard.overview()
 
+    // Leesroute voor één vergadering, met hetzelfde antwoordmodel als `/api/meetings/next`. De
+    // bestaansvraag wordt vóór elke andere controle beantwoord, dus een geldige maar onbekende id
+    // levert 404 zonder verdere informatie. Een id dat geen geldige UUID is valt op het bestaande
+    // conversiegedrag van het framework (400).
+    @GetMapping("/meetings/{id}")
+    fun meeting(@PathVariable id: UUID): MeetingOverviewDto = dashboard.meeting(id) ?: notFound()
+
     @GetMapping("/meetings/{id}/agenda-items")
     fun items(@PathVariable id: UUID): List<AgendaItemSummaryDto> = dashboard.agendaItems(id) ?: notFound()
 

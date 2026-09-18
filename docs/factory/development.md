@@ -34,3 +34,18 @@ stopt met een duidelijke melding wanneer er al rijen staan; ruim een tijdelijke 
 op. Ontbreken zowel Docker als `PVDD_TEST_DATABASE_URL`, dan wordt de klasse overgeslagen in plaats
 van het hele vangnet te laten falen. Overgeslagen databasetests zijn dus geen bewijs; vermeld ze in
 een testrapport.
+
+## Cachecontract van de frontend
+
+`tools/test-frontend-cache.sh` bouwt de webapp twee keer en controleert daarna het cachecontract:
+een nieuwe bundelnaam per build, `no-cache` op `index.html`, `public, max-age=31536000, immutable`
+op de bundel, `no-store` op `version.json` en de service worker, en 404 op de vorige bundelnaam. Die
+controle draait tegen een echte nginx-container en vereist dus Docker.
+
+Zonder Docker valt het script niet om, maar controleert het dezelfde regels statisch op
+`frontend/nginx.conf` en `frontend/nginx-acceptance.conf` — inclusief de SPA-fallback
+`try_files $uri $uri/ /index.html` — plus de buildoutput zelf (bundelnaam volgens het patroon
+`main.<16 hex>.js`, aanwezige `index.html` en `version.json`, geen achtergebleven service worker).
+Dit volgt dezelfde lijn als de databasetests hierboven: overslaan in plaats van het hele vangnet
+laten falen. De statische variant is geen bewijs voor de daadwerkelijk verstuurde headers; die
+dekking komt van CI, waar Docker wel beschikbaar is.

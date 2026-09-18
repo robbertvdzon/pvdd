@@ -6,6 +6,10 @@ import 'csrf_token.dart';
 
 abstract interface class DashboardGateway {
   Future<MeetingOverview> overview();
+
+  /// Leest één bekende vergadering, met hetzelfde antwoordmodel als [overview].
+  Future<MeetingOverview> meeting(String meetingId);
+
   Future<List<AgendaItemSummary>> agendaItems(String meetingId);
   Future<AgendaItemDetail> agendaItem(String itemId);
   Future<MeetingCheckOutcome> checkNow();
@@ -21,6 +25,12 @@ class HttpDashboardGateway implements DashboardGateway {
   Future<MeetingOverview> overview() async => MeetingOverview.fromJson(
     await _get('/api/meetings/next') as Map<String, dynamic>,
   );
+
+  @override
+  Future<MeetingOverview> meeting(String meetingId) async =>
+      MeetingOverview.fromJson(
+        await _get('/api/meetings/$meetingId') as Map<String, dynamic>,
+      );
 
   @override
   Future<List<AgendaItemSummary>> agendaItems(String meetingId) async {
@@ -127,6 +137,7 @@ class MeetingInfo {
     required this.revisionNumber,
     required this.canonicalFingerprint,
     required this.revisionStatus,
+    this.past = false,
   });
   factory MeetingInfo.fromJson(Map<String, dynamic> json) => MeetingInfo(
     id: json['id'] as String,
@@ -140,6 +151,9 @@ class MeetingInfo {
     revisionNumber: json['revisionNumber'] as int,
     canonicalFingerprint: json['canonicalFingerprint'] as String?,
     revisionStatus: json['revisionStatus'] as String?,
+    // Tolerant: een antwoord zonder `past` (oudere backend, bestaande fixture) telt als
+    // 'nog niet geweest'. De waarde komt van de server, nooit van de browserklok.
+    past: json['past'] as bool? ?? false,
   );
   final String id;
   final String title;
@@ -152,6 +166,7 @@ class MeetingInfo {
   final int revisionNumber;
   final String? canonicalFingerprint;
   final String? revisionStatus;
+  final bool past;
 }
 
 class Progress {

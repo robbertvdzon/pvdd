@@ -7,6 +7,7 @@ import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import nl.vdzon.pvdd.analysis.AnalysisCommandStatus
@@ -25,6 +26,7 @@ import nl.vdzon.pvdd.documents.ExtractedSection
 import nl.vdzon.pvdd.documents.ExtractionStatus
 import nl.vdzon.pvdd.documents.SourceDocument
 import nl.vdzon.pvdd.dashboard.DashboardRepository
+import nl.vdzon.pvdd.dashboard.ProgressDto
 import nl.vdzon.pvdd.dashboard.api.DashboardController
 import nl.vdzon.pvdd.meetings.AgendaCategory
 import nl.vdzon.pvdd.meetings.AgendaItem
@@ -702,6 +704,65 @@ class DatabaseIntegrationTest(
     }
 
     @Test
+    fun `reading one meeting returns its header progress and past marker without touching stored work`() {
+        // Ruime marges: `past` volgt `starts_at < CURRENT_TIMESTAMP` op databasetijd, dus twee uur
+        // terug en een dag vooruit leggen het gedrag vast zonder op de microseconde te leunen.
+        val past = seedMeetingWithAdvice(Instant.now().minusSeconds(7200))
+        var future: SeededMeeting? = null
+        try {
+            // Zolang de voorbije vergadering de enige is, levert /api/meetings/next haar terug en
+            // moet ook daar `past` waar zijn: de markering hangt aan de databasetijd, niet aan een client.
+            val nextWhenOnlyPast = requireNotNull(dashboardController.next().meeting)
+            assertEquals(past.meetingId, nextWhenOnlyPast.id)
+            assertTrue(nextWhenOnlyPast.past)
+
+            future = seedMeetingWithAdvice(Instant.now().plusSeconds(86400))
+            val nextWhenFutureExists = requireNotNull(dashboardController.next().meeting)
+            assertEquals(future.meetingId, nextWhenFutureExists.id)
+            assertFalse(nextWhenFutureExists.past)
+
+            val runsBefore = countAllRuns()
+            val adviceBefore = adviceSnapshot(past.agendaItemId)
+            val queuedBefore = countQueued(past.meetingId)
+
+            val overview = requireNotNull(dashboardController.meeting(past.meetingId))
+            val meeting = requireNotNull(overview.meeting)
+            assertEquals(past.meetingId, meeting.id)
+            assertEquals("Synthetische vergadering", meeting.title)
+            assertEquals("Commissie Ruimte", meeting.committee)
+            assertEquals("Statenzaal", meeting.location)
+            assertEquals(URI("https://noordholland.bestuurlijkeinformatie.nl/Agenda/Index/meeting-past"), meeting.sourceUrl)
+            assertEquals(MeetingStatus.COMPLETE.name, meeting.status)
+            assertEquals(meeting.status, overview.status)
+            assertEquals(0, meeting.revisionNumber)
+            assertTrue(meeting.past)
+            assertEquals(ProgressDto(1, 1, 0), overview.progress)
+            assertNotNull(overview.lastCheckedAt)
+
+            assertFalse(requireNotNull(dashboardController.meeting(future.meetingId).meeting).past)
+
+            val unknownId = UUID.randomUUID()
+            assertEquals(
+                HttpStatus.NOT_FOUND,
+                assertFailsWith<ResponseStatusException> { dashboardController.meeting(unknownId) }.statusCode,
+            )
+
+            // Terugkijken is strikt lezen: de agendapunten en het itemdetail erbij mogen geen enkele
+            // rij in analysis_run of de wachtrij opleveren en geen bestaand advies wijzigen.
+            assertEquals(past.agendaItemId, dashboardController.items(past.meetingId).single().id)
+            assertEquals(past.analysisRunId, dashboardController.item(past.agendaItemId).item.lastAnalysisRun?.id)
+
+            assertEquals(runsBefore, countAllRuns())
+            assertEquals(adviceBefore, adviceSnapshot(past.agendaItemId))
+            assertEquals(queuedBefore, countQueued(past.meetingId))
+            assertEquals(0, countQueued(past.meetingId))
+        } finally {
+            future?.let { removeSyntheticMeeting(it.meetingId) }
+            removeSyntheticMeeting(past.meetingId)
+        }
+    }
+
+    @Test
     fun `check now keeps importing while the last known meeting already took place`() {
         val startedAt = Instant.now().minusSeconds(7200)
         val pastId = meetingRepository.upsert(pastMeeting(startedAt))
@@ -786,6 +847,21 @@ class DatabaseIntegrationTest(
         substantive = true,
         importStatus = ImportStatus.COMPLETE,
     )
+
+    private data class SeededMeeting(val meetingId: UUID, val agendaItemId: UUID, val analysisRunId: UUID)
+
+    // Testvoorziening voor terugkijkgedrag: schrijft één vergadering weg met agendapunt, een leesbaar
+    // document en een afgerond advies. Met een `startsAt` in het verleden of in de toekomst levert
+    // dit de twee situaties die de `past`-markering moet onderscheiden. Opruimen doet
+    // `removeSyntheticMeeting(meetingId)`.
+    private fun seedMeetingWithAdvice(startsAt: Instant): SeededMeeting {
+        val unique = UUID.randomUUID()
+        val meetingId = meetingRepository.upsert(pastMeeting(startsAt).copy(sourceId = "meeting-seed-$unique"))
+        val itemId = meetingRepository.upsert(pastAgendaItem(meetingId))
+        // Zonder leesbaar document telt het agendapunt niet mee in de voortgangstelling.
+        assertTrue(documentRepository.insertVersion(document(itemId, unique.toString().replace("-", "").repeat(2), startsAt)))
+        return SeededMeeting(meetingId, itemId, succeededAdvice(meetingId, itemId, startsAt))
+    }
 
     private fun succeededAdvice(meetingId: UUID, itemId: UUID, completedAt: Instant): UUID {
         val prepared = PreparedAnalysisRun(
@@ -891,6 +967,9 @@ class DatabaseIntegrationTest(
         Int::class.java,
         meetingId,
     ) ?: 0
+
+    // Telt de hele tabel, zodat een leesaanroep ook geen rij kan toevoegen voor een andere vergadering.
+    private fun countAllRuns(): Int = jdbc.queryForObject("SELECT COUNT(*) FROM analysis_run", Int::class.java) ?: 0
 
     private fun countQueued(meetingId: UUID): Int = jdbc.queryForObject(
         "SELECT COUNT(*) FROM analysis_meeting_queue WHERE meeting_id = ?",

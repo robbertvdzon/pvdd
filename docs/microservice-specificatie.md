@@ -269,10 +269,28 @@ promptversie.
 6. **Bronnen** — klikbare bronlinks, documenthash/ophaaldatum en programmapassages.
 7. **Runstatus** — voortgang en een veilige foutmelding; opnieuw proberen gebeurt via “Nu
    controleren” of de volgende 05:00-run.
+8. **Voorbije vergadering (alleen-lezen)** — rechtstreeks te openen op
+   `/archief/<vergadering-id>`. Het scherm hergebruikt de agendaweergave van **Agenda**: dezelfde
+   A/B/C-indeling, dezelfde filters, dezelfde agendapuntkaarten en dezelfde detailweergave met
+   officiële titel, AI-titel, korte conclusie, volledige analyse, bronverwijzingen en de meldingen
+   over ontbrekende of onleesbare stukken.
 
-De MVP heeft geen editor, goedkeuringsworkflow of historie-scherm. Resultaten zijn read-only en
-kunnen worden geselecteerd/gekopieerd. Alle geïmporteerde en gegenereerde gegevens blijven wel in
-de database staan.
+Op het alleen-lezen scherm staat bovenaan “Deze vergadering is al geweest — <vergaderdatum>”, met
+de mededeling dat bekijken geen analyse start en niets verandert. Alle acties die nieuw werk zouden
+starten ontbreken daar: geen “Nu controleren”, geen analyseaanvraag en geen herstartactie per
+agendapunt. De 15-secondenverversing van de agendaweergave blijft uit, omdat een voorbije
+vergadering niet meer verandert. In de zijbalk blijft **Agenda** het geselecteerde menu-item; het
+scherm krijgt geen eigen menu-item en de terugactie brengt de gebruiker terug naar de
+agendaweergave. Mislukt het laden van de agendapunten, dan blijft de al geladen vergaderkop staan
+en verschijnt een begrijpelijke melding met **Opnieuw proberen**. Omdat Nginx SPA-paden al op
+`index.html` laat terugvallen, werkt een rechtstreekse aanroep of een herlaad van dit pad zonder
+serverwijziging.
+
+De MVP heeft geen editor en geen goedkeuringsworkflow. Terugkijken beperkt zich tot het alleen-lezen
+scherm hierboven, dat het laatste advies per agendapunt toont; er is geen scherm met eerdere
+adviesversies en geen overzicht van voorbije vergaderingen. Resultaten zijn read-only en kunnen
+worden geselecteerd/gekopieerd. Alle geïmporteerde en gegenereerde gegevens blijven wel in de
+database staan.
 
 De UI toont conceptstatus prominent: “AI-concept — controleer bronnen en formulering vóór gebruik”.
 
@@ -372,6 +390,7 @@ geldige backend-sessiecookie. Het openen van een sessie vereist een geldig Googl
 | --- | --- |
 | `GET /api/auth/me` | token valideren en ingelogde gebruiker retourneren |
 | `GET /api/meetings/next` | eerstvolgende vergadering en import-/analysestatus |
+| `GET /api/meetings/{id}` | één bekende vergadering, met hetzelfde antwoordmodel als `/api/meetings/next` |
 | `POST /api/meetings/check-now` | dezelfde nieuwe-vergaderingcontrole als de 05:00-scheduler uitvoeren |
 | `POST /api/meetings/{id}/analyses` | idempotente analyse starten voor een vergadering die nog moet beginnen |
 | `GET /api/meetings/{id}/agenda-items` | agenda en actuele adviesstatus ophalen |
@@ -394,8 +413,22 @@ geeft `409` met foutcode `meeting_in_past`, in dezelfde stijl als `not_cancellab
 `not_retryable`. In dat
 geweigerde pad wordt geen analyse ingepland en vindt geen enkele schrijfactie plaats. Een
 vergadering die nog moet beginnen levert onveranderd `202`. De leesroutes
-`GET /api/meetings/{id}/agenda-items` en `GET /api/agenda-items/{id}` starten nooit werk, ook niet
-voor een voorbije vergadering.
+`GET /api/meetings/{id}`, `GET /api/meetings/{id}/agenda-items` en `GET /api/agenda-items/{id}`
+starten nooit werk, ook niet voor een voorbije vergadering: zij maken geen rij in `analysis_run` en
+wijzigen geen bestaand advies.
+
+`GET /api/meetings/{id}` levert de vergaderkop (titel, commissie, begintijdstip, locatie, bron-URL,
+status en revisiegegevens) plus de voortgangstelling. Een geldige maar onbekende vergadering-ID
+geeft `404`; een ID dat geen geldige UUID is valt op het gewone conversiegedrag van het framework
+(`400`). De bestaansvraag wordt vóór elke andere controle beantwoord, zodat er geen
+bestaansinformatie lekt. De route staat niet in de uitzonderingenlijst van de sessiecontrole:
+zonder geldige sessie geldt dezelfde weigering als op de overige beschermde leesroutes.
+
+Het antwoordmodel van `/api/meetings/next` en `/api/meetings/{id}` bevat het veld `past`, dat
+aangeeft of de vergadering al is geweest. De waarde wordt server-side berekend als
+`starts_at < CURRENT_TIMESTAMP` op databasetijd, niet op de browserklok; begint een vergadering
+precies nu, dan is `past` nog `false`. De huidige agendaweergave verandert haar gedrag niet door
+dit veld.
 
 ## 7. Agent Runtime-integratie
 
@@ -630,6 +663,9 @@ niet gecommit. Scripts lezen env-bestanden als data en voeren ze niet uit met `s
 - minimaal JSON-schema en niet-lege Markdownvalidatie;
 - Agent Runtime HTTP-contracttest en verloren-submitresponse;
 - reconciliatie na applicatieherstart;
+- de leesroute voor één vergadering: `404` bij een geldige maar onbekende UUID, de server-side
+  bepaalde waarde van `past` op zowel `/api/meetings/next` als `/api/meetings/{id}`, en een
+  ongewijzigd aantal rijen in `analysis_run` vóór en ná het leesverkeer;
 - Google-tokenvalidatie, allowlist, gehashte duurzame sessies en intrekken bij uitloggen;
 - repositorytests met echte PostgreSQL via Testcontainers;
 - Spring Modulith-architectuurverificatie.
@@ -646,6 +682,10 @@ smoketest mag gecontroleerd de publieke bronnen lezen.
 - bronlinks en conceptwaarschuwing;
 - builddialoog en updatebeschikbaarheid;
 - responsive gedrag, toetsenbordfocus en semantiek;
+- het alleen-lezen scherm van een voorbije vergadering: de markering ‘al geweest’ met vergaderdatum,
+  het ontbreken van iedere startactie, uitsluitend leesaanroepen en de fouttoestand met behoud van
+  de vergaderkop, tegenover een regressietest op de ongewijzigde huidige agendaweergave;
+- de padherkenning van `/archief/<vergadering-id>` en de aanwezigheid van de SPA-fallback;
 - Nginx-cachecontract en gehashte bundlenaam.
 
 ### 13.3 Deployment

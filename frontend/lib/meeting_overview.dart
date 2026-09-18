@@ -9,8 +9,25 @@ import 'external_link.dart';
 import 'pvdd_theme.dart';
 
 class MeetingOverviewPage extends StatefulWidget {
-  const MeetingOverviewPage({required this.gateway, super.key});
+  const MeetingOverviewPage({
+    required this.gateway,
+    this.archivedMeetingId,
+    this.readOnly = false,
+    this.onBack,
+    super.key,
+  });
   final DashboardGateway gateway;
+
+  /// Is deze gezet, dan toont de pagina die ene vergadering via `gateway.meeting(id)` in plaats van
+  /// de eerstvolgende vergadering, en blijft de ververstimer uit.
+  final String? archivedMeetingId;
+
+  /// Alleen lezen: geen 'Nu controleren' en geen herstartactie per agendapunt. De agendaweergave
+  /// zelf (filters, vergaderkaart, agendapuntkaarten en detailweergave) blijft dezelfde code.
+  final bool readOnly;
+
+  /// Terugactie boven aan het scherm; alleen zichtbaar wanneer die is meegegeven.
+  final VoidCallback? onBack;
 
   @override
   State<MeetingOverviewPage> createState() => _MeetingOverviewPageState();
@@ -30,10 +47,14 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
   void initState() {
     super.initState();
     unawaited(_load());
-    _timer = Timer.periodic(
-      const Duration(seconds: 15),
-      (_) => unawaited(_load(silent: true)),
-    );
+    // Een voorbije vergadering verandert niet meer: het archiefscherm ververst daarom niet en
+    // veroorzaakt na het laden geen enkel verkeer meer.
+    if (widget.archivedMeetingId == null) {
+      _timer = Timer.periodic(
+        const Duration(seconds: 15),
+        (_) => unawaited(_load(silent: true)),
+      );
+    }
     _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -50,14 +71,26 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
     if (!silent && mounted) {
       setState(() => _loading = true);
     }
+    final archivedId = widget.archivedMeetingId;
+    var headerLoaded = false;
     try {
-      final overview = await widget.gateway.overview();
+      final overview = archivedId == null
+          ? await widget.gateway.overview()
+          : await widget.gateway.meeting(archivedId);
+      headerLoaded = true;
+      // De vergaderkop wordt meteen vastgelegd, zodat hij blijft staan wanneer het laden van de
+      // agendapunten daarna alsnog mislukt.
+      if (mounted) {
+        setState(() {
+          _overview = overview;
+          _error = null;
+        });
+      }
       final items = overview.meeting == null
           ? <AgendaItemSummary>[]
           : await widget.gateway.agendaItems(overview.meeting!.id);
       if (mounted) {
         setState(() {
-          _overview = overview;
           _items = items;
           _error = null;
           _loading = false;
@@ -66,7 +99,13 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
     } on Object {
       if (mounted) {
         setState(() {
-          _error = 'Het vergaderingsoverzicht is tijdelijk niet beschikbaar.';
+          // De huidige agendaweergave houdt haar bestaande melding; alleen het archiefscherm
+          // benoemt welk deel is mislukt, omdat daar de al geladen vergaderkop blijft staan.
+          _error = !widget.readOnly
+              ? 'Het vergaderingsoverzicht is tijdelijk niet beschikbaar.'
+              : headerLoaded
+              ? 'De agendapunten van deze vergadering konden niet worden geladen'
+              : 'Deze vergadering kon niet worden geladen';
           _loading = false;
         });
       }
@@ -113,8 +152,11 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _header(context),
-                  if (_error != null) ...[
+                  if (widget.readOnly)
+                    _archiveHeader(context)
+                  else
+                    _header(context),
+                  if (_error != null && !widget.readOnly) ...[
                     const SizedBox(height: 12),
                     _message(
                       Icons.error_outline,
@@ -123,24 +165,46 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
                     ),
                   ],
                   const SizedBox(height: 16),
-                  if (_overview?.meeting == null)
-                    _message(
-                      Icons.event_busy_outlined,
-                      'Er is nog geen toekomstige vergadering gevonden.',
-                      PvddColors.primary,
-                    )
-                  else ...[
+                  if (_overview?.meeting == null) ...[
+                    if (!widget.readOnly)
+                      _message(
+                        Icons.event_busy_outlined,
+                        'Er is nog geen toekomstige vergadering gevonden.',
+                        PvddColors.primary,
+                      ),
+                  ] else ...[
                     _meetingCard(context, _overview!.meeting!),
-                    const SizedBox(height: 16),
-                    _filters(),
+                    // Bij een mislukt agendapunt-laden heeft filteren geen betekenis; de
+                    // huidige agendaweergave houdt haar filters onveranderd.
+                    if (!widget.readOnly || _items.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      _filters(),
+                    ],
                     const SizedBox(height: 8),
                     ..._filteredItems.map(
                       (item) => _AgendaItemCard(
                         key: ValueKey(item.id),
                         item: item,
                         gateway: widget.gateway,
+                        readOnly: widget.readOnly,
                         onChanged: () => _load(silent: true),
                       ),
+                    ),
+                  ],
+                  // Alleen-lezen: de melding staat onder de vergaderkop, zodat zichtbaar blijft
+                  // welke gegevens gewoon zijn blijven staan.
+                  if (_error != null && widget.readOnly) ...[
+                    const SizedBox(height: 16),
+                    _retryableError(context, _error!),
+                  ],
+                  if (widget.readOnly && _items.isEmpty) ...[
+                    const SizedBox(height: 16),
+                    _message(
+                      Icons.inbox_outlined,
+                      _error == null
+                          ? 'Deze vergadering heeft geen agendapunten.'
+                          : 'Zodra het laden lukt, verschijnen hier de agendapunten met hun bewaarde adviezen.',
+                      PvddColors.primary,
                     ),
                   ],
                 ],
@@ -148,6 +212,124 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // Alleen-lezen kop: terugactie en, wanneer de server de vergadering als voorbij markeert, de
+  // duidelijke melding dat bekijken geen analyse start. Geen 'Nu controleren'.
+  Widget _archiveHeader(BuildContext context) {
+    final meeting = _overview?.meeting;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.onBack != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: widget.onBack,
+              icon: const Icon(Icons.chevron_left),
+              label: const Text('Terug naar agenda'),
+            ),
+          ),
+        if (meeting != null && meeting.past) ...[
+          const SizedBox(height: 4),
+          _pastMeetingNotice(context, meeting),
+        ],
+      ],
+    );
+  }
+
+  Widget _pastMeetingNotice(BuildContext context, MeetingInfo meeting) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerLow,
+          border: Border(left: BorderSide(color: PvddColors.primary, width: 6)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(
+              Icons.event_available_outlined,
+              color: PvddColors.primary,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Deze vergadering is al geweest — ${_longDate(meeting.startsAt)}',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Je leest bewaarde adviezen terug. Bekijken start geen analyse en verandert niets.',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Fouttoestand met behoud van wat al geladen is: de vergaderkop blijft staan en alleen het
+  // mislukte deel wordt opnieuw geprobeerd.
+  Widget _retryableError(BuildContext context, String title) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: colors.errorContainer,
+          border: Border(left: BorderSide(color: colors.error, width: 6)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.error_outline, color: colors.error),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: colors.error,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _overview?.meeting == null
+                        ? 'Er is niets veranderd; probeer het zo opnieuw.'
+                        : 'De gegevens van de vergadering hierboven blijven staan. '
+                              'Er is geen advies verdwenen of gewijzigd; probeer het zo opnieuw.',
+                  ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: () => unawaited(_load()),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Opnieuw proberen'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -271,11 +453,16 @@ class _AgendaItemCard extends StatefulWidget {
     required this.item,
     required this.gateway,
     required this.onChanged,
+    this.readOnly = false,
     super.key,
   });
   final AgendaItemSummary item;
   final DashboardGateway gateway;
   final Future<void> Function() onChanged;
+
+  /// Alleen lezen: de herstartactie voor dit agendapunt wordt niet gerenderd. De rest van de kaart
+  /// en de detailweergave blijven ongewijzigd.
+  final bool readOnly;
   @override
   State<_AgendaItemCard> createState() => _AgendaItemCardState();
 }
@@ -474,7 +661,7 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _AgendaFactsTable(facts: facts),
-              if (item.canRetryAnalysis) ...[
+              if (item.canRetryAnalysis && !widget.readOnly) ...[
                 const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerRight,
@@ -884,6 +1071,35 @@ String _checkOutcomeLabel(
   'NO_FUTURE_MEETING' => 'Er is geen toekomstige vergadering gevonden.',
   _ => 'De broncontrole is afgerond.',
 };
+
+// Lange Nederlandse datum voor de markering 'al geweest', bijvoorbeeld 'maandag 7 september 2026'.
+String _longDate(DateTime value) {
+  const days = [
+    'maandag',
+    'dinsdag',
+    'woensdag',
+    'donderdag',
+    'vrijdag',
+    'zaterdag',
+    'zondag',
+  ];
+  const months = [
+    'januari',
+    'februari',
+    'maart',
+    'april',
+    'mei',
+    'juni',
+    'juli',
+    'augustus',
+    'september',
+    'oktober',
+    'november',
+    'december',
+  ];
+  final local = value.toLocal();
+  return '${days[local.weekday - 1]} ${local.day} ${months[local.month - 1]} ${local.year}';
+}
 
 String _dateTime(DateTime value) {
   final local = value.toLocal();

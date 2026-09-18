@@ -29,6 +29,10 @@ data class MeetingDto(
     val revisionNumber: Int,
     val canonicalFingerprint: String?,
     val revisionStatus: String?,
+    // Of de vergadering al is geweest. Wordt server-side op databasetijd bepaald
+    // (`starts_at < CURRENT_TIMESTAMP`), zodat de markering niet aan de browserklok hangt.
+    // Grensgeval: begint de vergadering precies nu, dan is `past` nog false.
+    val past: Boolean,
 )
 
 data class ProgressDto(val total: Int, val complete: Int, val failed: Int)
@@ -84,31 +88,41 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
     fun overview(): MeetingOverviewDto {
         val meeting = jdbc.query(
             """
-            SELECT m.id, m.source_id, m.title, m.committee, m.starts_at, m.ends_at, m.location,
-                   m.source_url, m.status, m.checked_at, m.publication_status,
-                   m.current_revision_number, m.canonical_fingerprint, latest.revision_status
-            FROM meeting m
-            LEFT JOIN LATERAL (
-                SELECT revision_status FROM meeting_revision mr
-                WHERE mr.meeting_id = m.id ORDER BY revision_number DESC LIMIT 1
-            ) latest ON TRUE
+            $MEETING_SELECT
             ORDER BY CASE WHEN starts_at >= CURRENT_TIMESTAMP THEN 0 ELSE 1 END, starts_at ASC
             LIMIT 1
             """.trimIndent(),
-            { rs, _ ->
-                MeetingDto(
-                    rs.getObject("id", UUID::class.java), rs.getString("source_id"), rs.getString("title"),
-                    rs.getString("committee"), rs.getTimestamp("starts_at").toInstant(),
-                    rs.getTimestamp("ends_at")?.toInstant(), rs.getString("location"),
-                    URI(rs.getString("source_url")), rs.getString("status"),
-                    rs.getString("publication_status"), rs.getInt("current_revision_number"),
-                    rs.getString("canonical_fingerprint"), rs.getString("revision_status"),
-                ) to rs.getTimestamp("checked_at").toInstant()
-            },
+            { rs, _ -> meetingRow(rs) },
         ).singleOrNull() ?: return MeetingOverviewDto("NO_MEETING", null, null, ProgressDto(0, 0, 0))
-        val progress = progress(meeting.first.id)
-        return MeetingOverviewDto(meeting.first.status, meeting.first, meeting.second, progress)
+        return overviewOf(meeting)
     }
+
+    // Dezelfde SELECT en hetzelfde antwoordmodel als `overview()`, maar voor één bekende
+    // vergadering. Een onbekende id levert null, zodat de route er 404 van maakt.
+    fun meeting(id: UUID): MeetingOverviewDto? {
+        val meeting = jdbc.query(
+            """
+            $MEETING_SELECT
+            WHERE m.id = ?
+            """.trimIndent(),
+            { rs, _ -> meetingRow(rs) },
+            id,
+        ).singleOrNull() ?: return null
+        return overviewOf(meeting)
+    }
+
+    private fun overviewOf(meeting: Pair<MeetingDto, Instant>) =
+        MeetingOverviewDto(meeting.first.status, meeting.first, meeting.second, progress(meeting.first.id))
+
+    private fun meetingRow(rs: java.sql.ResultSet): Pair<MeetingDto, Instant> = MeetingDto(
+        rs.getObject("id", UUID::class.java), rs.getString("source_id"), rs.getString("title"),
+        rs.getString("committee"), rs.getTimestamp("starts_at").toInstant(),
+        rs.getTimestamp("ends_at")?.toInstant(), rs.getString("location"),
+        URI(rs.getString("source_url")), rs.getString("status"),
+        rs.getString("publication_status"), rs.getInt("current_revision_number"),
+        rs.getString("canonical_fingerprint"), rs.getString("revision_status"),
+        rs.getBoolean("past"),
+    ) to rs.getTimestamp("checked_at").toInstant()
 
     fun agendaItems(meetingId: UUID): List<AgendaItemSummaryDto>? {
         if (!exists("meeting", meetingId)) return null
@@ -321,5 +335,21 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
         readableDocumentCount == 0 -> "DOCUMENTS_UNREADABLE"
         readableDocumentCount < documentCount -> "DOCUMENTS_PARTIALLY_READABLE"
         else -> "DOCUMENTS_READY"
+    }
+
+    private companion object {
+        // Gedeeld tussen `overview()` en `meeting(id)`: beide leveren exact hetzelfde antwoordmodel
+        // en dus ook hetzelfde `past`-veld, berekend op databasetijd.
+        private val MEETING_SELECT = """
+            SELECT m.id, m.source_id, m.title, m.committee, m.starts_at, m.ends_at, m.location,
+                   m.source_url, m.status, m.checked_at, m.publication_status,
+                   m.current_revision_number, m.canonical_fingerprint, latest.revision_status,
+                   m.starts_at < CURRENT_TIMESTAMP AS past
+            FROM meeting m
+            LEFT JOIN LATERAL (
+                SELECT revision_status FROM meeting_revision mr
+                WHERE mr.meeting_id = m.id ORDER BY revision_number DESC LIMIT 1
+            ) latest ON TRUE
+        """.trimIndent()
     }
 }
