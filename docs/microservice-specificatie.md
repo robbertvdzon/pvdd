@@ -373,7 +373,7 @@ geldige backend-sessiecookie. Het openen van een sessie vereist een geldig Googl
 | `GET /api/auth/me` | token valideren en ingelogde gebruiker retourneren |
 | `GET /api/meetings/next` | eerstvolgende vergadering en import-/analysestatus |
 | `POST /api/meetings/check-now` | dezelfde nieuwe-vergaderingcontrole als de 05:00-scheduler uitvoeren |
-| `POST /api/meetings/{id}/analyses` | idempotente analyse starten |
+| `POST /api/meetings/{id}/analyses` | idempotente analyse starten voor een vergadering die nog moet beginnen |
 | `GET /api/meetings/{id}/agenda-items` | agenda en actuele adviesstatus ophalen |
 | `GET /api/agenda-items/{id}` | detail, bronnen en advies ophalen |
 | `GET /api/analysis-runs/{id}` | lokale plus Runtime-status ophalen |
@@ -384,6 +384,18 @@ geldige backend-sessiecookie. Het openen van een sessie vereist een geldig Googl
 
 Muterende requests krijgen een idempotentiesleutel. API-DTO’s staan op alle publieke grenzen;
 database- en Runtime-modellen lekken niet naar de frontend.
+
+Terugkijken start nooit een AI-analyse; die belofte wordt in de backend afgedwongen en niet alleen
+in de gebruikersweergave. `POST /api/meetings/{id}/analyses` controleert eerst of de vergadering
+bestaat en daarna of het begintijdstip strikt later is dan het huidige tijdstip van de
+injecteerbare klok. Een onbekende vergadering-ID geeft onveranderd `404`; een bestaande
+vergadering waarvan het begintijdstip niet later ligt dan nu — gelijkheid telt als verleden —
+geeft `409` met foutcode `meeting_in_past`, in dezelfde stijl als `not_cancellable` en
+`not_retryable`. In dat
+geweigerde pad wordt geen analyse ingepland en vindt geen enkele schrijfactie plaats. Een
+vergadering die nog moet beginnen levert onveranderd `202`. De leesroutes
+`GET /api/meetings/{id}/agenda-items` en `GET /api/agenda-items/{id}` starten nooit werk, ook niet
+voor een voorbije vergadering.
 
 ## 7. Agent Runtime-integratie
 

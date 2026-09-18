@@ -6,7 +6,7 @@ import nl.vdzon.pvdd.meetings.MeetingRepository
 import nl.vdzon.pvdd.runtime.AgentRuntimeGateway
 import org.springframework.stereotype.Service
 
-enum class AnalysisCommandStatus { QUEUED, RETRIED, CANCELLED, NOT_FOUND, NOT_CANCELLABLE, NOT_RETRYABLE }
+enum class AnalysisCommandStatus { QUEUED, RETRIED, CANCELLED, NOT_FOUND, NOT_CANCELLABLE, NOT_RETRYABLE, MEETING_IN_PAST }
 
 data class AnalysisCommandResult(val status: AnalysisCommandStatus, val id: UUID?)
 
@@ -18,7 +18,8 @@ class AnalysisFacade(
     private val clock: Clock,
 ) {
     fun requestMeeting(meetingId: UUID): AnalysisCommandResult {
-        if (meetings.findMeeting(meetingId) == null) return AnalysisCommandResult(AnalysisCommandStatus.NOT_FOUND, null)
+        val meeting = meetings.findMeeting(meetingId) ?: return AnalysisCommandResult(AnalysisCommandStatus.NOT_FOUND, null)
+        if (!meeting.startsAt.isAfter(clock.instant())) return AnalysisCommandResult(AnalysisCommandStatus.MEETING_IN_PAST, meetingId)
         repository.queueMeeting(meetingId)
         return AnalysisCommandResult(AnalysisCommandStatus.QUEUED, meetingId)
     }

@@ -66,7 +66,13 @@ class DashboardController(
         @RequestAttribute(ApiAuthenticationFilter.AUTHENTICATED_EMAIL_ATTRIBUTE) email: String,
         @RequestHeader("Idempotency-Key") key: String,
     ) = guard.execute(email, "analyse-$id", key) {
-        analyses.requestMeeting(id).also { if (it.status == AnalysisCommandStatus.NOT_FOUND) notFound<Nothing>() }
+        analyses.requestMeeting(id).also {
+            when (it.status) {
+                AnalysisCommandStatus.NOT_FOUND -> notFound<Nothing>()
+                AnalysisCommandStatus.MEETING_IN_PAST -> throw ResponseStatusException(HttpStatus.CONFLICT, "meeting_in_past")
+                else -> Unit
+            }
+        }
     }
 
     @PostMapping("/analysis-runs/{id}/cancel")
