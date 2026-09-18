@@ -174,3 +174,78 @@ filtert kandidaten met `!it.date.isBefore(today)` en slaat agenda's met `startsA
 visuele controle op acceptatie is dus alleen mogelijk op een moment dat er feitelijk geen toekomstige
 vergadering bewaard is; is die er wel, dan is het verwachte resultaat de ongewijzigde startweergave en
 is het scenario niet reproduceerbaar. Zo'n controle is nooit een merge-poort.
+
+## hkh-288 — documentation (2026-09-18)
+
+### Doel
+De documentatie in lijn brengen met de storydiff van `ai/hkh-284`: `DashboardRepository.overview()`
+kiest zonder toekomstige vergadering voortaan de **meest recente** voorbije vergadering in plaats
+van de oudste, en de startweergave meldt dat expliciet, markeert de vergadering als 'al geweest',
+biedt een doorstap naar het overzicht van eerdere vergaderingen en biedt de startacties voor die
+vergadering niet aan, terwijl 'Nu controleren' blijft werken.
+
+### Bijgewerkt
+- `docs/microservice-specificatie.md`
+  - §4.1 (hoofdflow, stap 2): toegevoegd dat de app zonder toekomstige vergadering de vergadering
+    met het meest recente begintijdstip uit het verleden toont, met de melding dat er nog geen
+    nieuwe agenda is.
+  - §5.2 (schermlijst, scherm 2 **Overzicht**): dezelfde terugval plus de melding "Er is nog geen
+    nieuwe agenda" benoemd.
+  - §5.2 (nieuwe alinea direct na de schermlijst): de volledige regel van de terugval —
+    sorteerkeuze, de melding met kop, uitleg en vergaderdatum boven de vergaderkaart, de doorstap
+    **Alle eerdere vergaderingen** naar `/archief`, de markering **AL GEWEEST**, de herkomst uit
+    het antwoordveld `past` (niet de browserklok), het ongewijzigd blijven van 'Nu controleren' en
+    de 15-secondenverversing, het niet aanbieden van de startacties via dezelfde alleen-lezen vlag
+    als het terugkijkscherm, en het ongewijzigde gedrag bij een toekomstige vergadering en bij
+    `NO_MEETING`, inclusief het gestapelde gedrag op een smal scherm.
+  - §6.3 (routetabel): de omschrijving van `GET /api/meetings/next` vermeldt nu dat de route de
+    vergadering van de startweergave levert — eerstvolgende toekomstige, anders de meest recente
+    voorbije.
+  - §6.3 (nieuwe alinea vóór de `past`-alinea): de keuzeregel met de drie sorteersleutels, het
+    grensgeval `starts_at` gelijk aan nu, het ongewijzigde `NO_MEETING`-antwoord met telling 0/0/0
+    en de vaststelling dat er geen route, index of migratie bij komt.
+  - §13.1 (backendtests): bullet toegevoegd voor de vijf keuzescenario's van de startroute,
+    inclusief de assertie op de voortgangstelling.
+  - §13.2 (frontendtests): bullet toegevoegd voor de startweergave zonder toekomstige vergadering
+    (melding, markering, 'Nu controleren', ontbrekende startacties, doorstap, twee
+    vensterbreedtes) met de regressies op het toekomstgeval en de lege toestand.
+- `docs/functionele-werking-commissie-assistent.md`
+  - §11 (opsomming webapp, **Agenda**): de bullet noemt nu ook de meest recente voorbije
+    vergadering zolang er geen toekomstige is.
+  - §11 (nieuwe alinea vóór het blok over **Eerdere vergaderingen**): de gebruikersuitleg van de
+    terugval — melding met datum, knop **Alle eerdere vergaderingen**, markering **AL GEWEEST**,
+    werkende **Nu controleren**, de niet aangeboden start- en herstartacties, de ongewijzigde lege
+    melding en het gedrag op een smal scherm.
+- `docs/factory/functional-spec.md`
+  - 'Gebruikersflow': terugval op de meest recente voorbije vergadering toegevoegd.
+  - 'Frontend en API' (nieuwe alinea vóór de `GET /api/meetings/{id}`-alinea): de sorteerclausule
+    van `/api/meetings/next`, het ongewijzigde `NO_MEETING`-antwoord, de melding met doorstap en
+    badge bij `past = true`, het ongewijzigde gedrag bij `past = false`, en 'geen migratie, geen
+    nieuwe route, geen extra AI-aanroep'.
+- `docs/stories/hkh-284-worklog.md`: deze sectie.
+
+### Bewust niet gewijzigd
+- `README.md` — beschrijft de repo-indeling en het lokaal starten; niets daarvan is geraakt.
+- `docs/agent-access.md` — er komt geen route bij en `ProductionReadAccessFilter` is ongewijzigd,
+  dus het leestoken gedraagt zich onveranderd; de bestaande tekst klopt nog.
+- `docs/factory/technical-spec.md`, `docs/factory/development.md`, `docs/factory/deployment.md`,
+  `docs/factory/secrets-local.md`, `docs/factory/agent-runtime.md` — stack, testopzet en
+  uitrolketen zijn niet geraakt; de drie nieuwe testhelpers in `DatabaseIntegrationTest` draaien
+  binnen de al gedocumenteerde databasetestopzet en veranderen de aanroepwijze niet.
+- `docs/stappenplannen/*` — uitvoeringsplannen per fase; die beschrijven geen huidig gedrag.
+- `docs/operations.md`, `docs/adr/*`, `deploy/README.md` — geen migratie, geen index, geen
+  configuratie- of uitrolwijziging.
+- `docs/functional-acceptance-verification.md`, `docs/source-revision-verification.md`,
+  `docs/technical-baseline-verification.md`, `docs/production-source-spike.md` — vastgelegde
+  verificatierapporten van een eerder moment; die worden niet met terugwerkende kracht
+  herschreven.
+- `docs/uitbreidingsspecificatie-standpunten-en-ai-inzicht.md` — gaat over standpunten en
+  AI-inzicht; niet geraakt.
+- De datumregels bovenaan bestaande documenten ('Laatste actualisatie', 'Datum'/'Status') zijn
+  conform de bestaande conventie niet bijgewerkt.
+
+### Verificatie
+- `bash tools/verify-documentation.sh` → `Documentatie en repositoryhygiëne zijn in orde.`
+  (exitcode 0)
+- `git status --short` toont uitsluitend wijzigingen onder `docs/`; geen productiecode, tests of
+  infrastructuur geraakt.

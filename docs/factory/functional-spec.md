@@ -8,12 +8,13 @@ Ruimte van Provincie Noord-Holland.
 ## Gebruikersflow
 
 Na Google-login toont de app de eerstvolgende vergadering, bronstatus, laatste controle en
-analysevoortgang. Dezelfde orkestratie draait dagelijks om 05:00 uur in `Europe/Amsterdam` en via
-**Nu controleren**. Zonder toekomstige vergadering, bij hetzelfde reeds succesvol verwerkte
-bron-ID én dezelfde canonieke inhoud, of bij een ongepubliceerde agenda zonder zichtbare
-verwerkbare stukken ontstaan geen documentdownloads en geen AI-jobs. Zichtbare voorlopige stukken
-worden direct gedownload en geanalyseerd; het voorlopige advies wordt bij een nieuwe bronversie
-gericht vervangen.
+analysevoortgang. Bestaat er geen toekomstige vergadering, dan toont de startweergave de meest
+recente vergadering die al is geweest, met de melding dat er nog geen nieuwe agenda is. Dezelfde
+orkestratie draait dagelijks om 05:00 uur in `Europe/Amsterdam` en via **Nu controleren**. Zonder
+toekomstige vergadering, bij hetzelfde reeds succesvol verwerkte bron-ID én dezelfde canonieke
+inhoud, of bij een ongepubliceerde agenda zonder zichtbare verwerkbare stukken ontstaan geen
+documentdownloads en geen AI-jobs. Zichtbare voorlopige stukken worden direct gedownload en
+geanalyseerd; het voorlopige advies wordt bij een nieuwe bronversie gericht vervangen.
 
 ## Vergadering en agenda
 
@@ -104,6 +105,18 @@ A/B/C-filters, voortgang, bronlinks, de laatste gedetecteerde wijziging, laatste
 AI-titel, korte conclusie en het vrije Markdownadvies. Aparte secties tonen de actuele
 PvdD-standpunten met herleidbare officiële bronnen en lopende plus afgeronde AI-runs. Het label
 **AI-concept — controleer bronnen en formulering vóór gebruik** blijft altijd zichtbaar.
+
+`GET /api/meetings/next` kiest de vergadering met het dichtstbijzijnde toekomstige begintijdstip
+en, bestaat die niet, die met het meest recente begintijdstip uit het verleden (`CASE WHEN
+starts_at >= CURRENT_TIMESTAMP THEN 0 ELSE 1 END`, dan toekomst oplopend, dan aflopend, met
+ongewijzigde `LIMIT 1`). Zonder bewaarde vergadering blijft het antwoord `NO_MEETING` met telling
+0/0/0; voortgangstelling en antwoordmodel veranderen niet. Toont de startweergave een vergadering
+met `past = true`, dan staat boven de vergaderkaart de melding “Er is nog geen nieuwe agenda” met
+de vergaderdatum en de doorstap **Alle eerdere vergaderingen** naar `/archief`, draagt de
+vergaderkaart de badge **AL GEWEEST** en worden de startacties niet aangeboden, via dezelfde
+alleen-lezen vlag als het archiefscherm; “Nu controleren” blijft beschikbaar en de verversing
+blijft lopen. Bij `past = false` en bij `NO_MEETING` verandert de startweergave niet. Geen
+migratie, geen nieuwe route, geen extra AI-aanroep.
 
 `GET /api/meetings/{id}` leest één bekende vergadering met hetzelfde antwoordmodel als
 `/api/meetings/next`: een geldige maar onbekende ID geeft `404`, een niet-UUID `400`. Beide routes

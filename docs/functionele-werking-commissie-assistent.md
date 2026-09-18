@@ -372,8 +372,9 @@ geen AI-opdracht gestart.
 
 De webapp heeft vier hoofdonderdelen:
 
-- **Agenda**: eerstvolgende vergadering, bronstatus, A/B/C-filters, agendapunten, wijzigingstijd,
-  analyse-status, AI-titel, korte conclusie, volledige analyse en bronlinks;
+- **Agenda**: eerstvolgende vergadering — of, zolang er geen toekomstige vergadering is, de meest
+  recente vergadering die al is geweest — met bronstatus, A/B/C-filters, agendapunten,
+  wijzigingstijd, analyse-status, AI-titel, korte conclusie, volledige analyse en bronlinks;
 - **Standpunten**: het actieve overzicht met thema, samenvatting, richting en verwijzingen naar
   programma of website;
 - **AI-runs**: lopende en afgeronde agenda- en standpuntenruns met tijdstippen en fasen;
@@ -382,6 +383,21 @@ De webapp heeft vier hoofdonderdelen:
 
 De planning, bronadressen en vaste systeemprompt zijn zichtbaar maar niet via de webpagina
 bewerkbaar. Alleen de aanvullende analyse-instructie is daar functioneel aanpasbaar.
+
+Zolang er een toekomstige vergadering bekend is, toont **Agenda** die en verandert er niets aan
+het scherm. Is er geen toekomstige vergadering meer, dan toont **Agenda** de meest recente
+vergadering die al is geweest — niet de oudste. Boven de vergaderkaart staat dan “Er is nog geen
+nieuwe agenda”, met de uitleg dat je de meest recente vergadering ziet en dat die al is geweest,
+de vergaderdatum erbij, en de mededeling dat een nieuwe agenda hier verschijnt zodra de provincie
+die publiceert. In die melding staat de knop **Alle eerdere vergaderingen**, die in één handeling
+het overzicht `/archief` opent; op de vergaderkaart staat de markering **AL GEWEEST**. **Nu
+controleren** blijft gewoon beschikbaar en werkt onveranderd, zodat een nieuwe agenda direct kan
+worden opgehaald. Wat het scherm niet aanbiedt, zijn de acties die voor die voorbije vergadering
+nieuw werk zouden starten: het aanvragen van een analyse en **Opnieuw proberen** per agendapunt.
+Is er nog geen enkele vergadering bewaard, dan blijft de bestaande melding staan dat er nog geen
+toekomstige vergadering is gevonden en verschijnt de nieuwe melding niet. Op een smal scherm staan
+melding, vergaderkaart en knoppen onder elkaar, lopen de knoppen over de volle breedte en blijft
+de uitleg volledig leesbaar.
 
 Daarnaast is er het overzicht **Eerdere vergaderingen** op het adres `/archief`. Vanaf **Agenda**
 is dat met één handeling te openen: naast **Nu controleren** staat de knop **Eerdere

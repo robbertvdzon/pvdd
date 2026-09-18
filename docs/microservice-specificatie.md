@@ -102,7 +102,9 @@ JavaScript origins** van de bestaande Google OAuth-client `Robberts applicaties`
 
 1. Een gebruiker logt in.
 2. De app toont de eerstvolgende vergadering van commissie Ruimte, inclusief datum, tijd,
-   bronlink, laatst gecontroleerd tijdstip en bronstatus.
+   bronlink, laatst gecontroleerd tijdstip en bronstatus. Is er geen toekomstige vergadering meer,
+   dan toont zij de vergadering met het meest recente begintijdstip uit het verleden, met de
+   melding dat er nog geen nieuwe agenda is.
 3. Iedere ochtend om 05:00 uur in `Europe/Amsterdam` controleert de backend of de eerstvolgende
    vergadering een ander bron-ID heeft dan de laatst succesvol verwerkte vergadering.
 4. Is er geen eerstvolgende vergadering, of is dit bron-ID al succesvol verwerkt, dan stopt de run
@@ -262,7 +264,8 @@ promptversie.
 
 1. **Login** — Google-login en veilige configuratiefout.
 2. **Overzicht** — eerstvolgende vergadering, bronstatus, laatst gecontroleerd, laatst geanalyseerd,
-   buildinformatie en knop “Nu controleren”.
+   buildinformatie en knop “Nu controleren”. Zonder toekomstige vergadering toont dit scherm de
+   meest recente vergadering die al is geweest, met de melding “Er is nog geen nieuwe agenda”.
 3. **Agenda** — tabs of filters A, B en C; status per punt; zoeken op titel.
 4. **A/B-detail** — bronstukken en het vrije Markdownadvies.
 5. **C-detail** — bronstukken en het vrije Markdownadvies met de gevraagde bespreekafweging.
@@ -277,6 +280,24 @@ promptversie.
 9. **Eerdere vergaderingen** — alleen-lezen overzicht op `/archief` van alle bewaarde
    vergaderingen die al zijn geweest, de meest recente bovenaan, met per rij datum, titel,
    locatie, het aantal inhoudelijke agendapunten en het aantal punten met afgerond advies.
+
+Zolang er ten minste één vergadering bestaat waarvan het begintijdstip nu of later ligt, toont de
+agendaweergave die met het dichtstbijzijnde toekomstige begintijdstip en verandert er niets.
+Bestaat die niet, dan valt de weergave terug op de vergadering met het meest recente begintijdstip
+uit het verleden. Boven de vergaderkaart staat dan de melding “Er is nog geen nieuwe agenda”, met
+de uitleg “Je ziet de meest recente vergadering, en die is al geweest: <vergaderdatum>. Zodra de
+provincie een nieuwe agenda publiceert, staat die hier.” en de doorstap **Alle eerdere
+vergaderingen**, die in één handeling naar `/archief` navigeert. Op de vergaderkaart staat
+daarnaast de markering **AL GEWEEST** naast de bestaande statusbadges. Melding en markering hangen
+uitsluitend aan het antwoordveld `past`, nooit aan de browserklok. “Nu controleren” blijft
+zichtbaar en werkt onveranderd, en de 15-secondenverversing van de agendaweergave blijft lopen. De
+acties die voor de getoonde voorbije vergadering nieuw werk zouden starten — een analyseaanvraag
+en **Opnieuw proberen** per agendapunt — worden dan niet aangeboden, via dezelfde alleen-lezen
+vlag als het terugkijkscherm en zonder dat de agendaweergave wordt gekopieerd. Bij een toekomstige
+vergadering (`past` is `false`) en bij de lege toestand `NO_MEETING` verandert er niets: de
+melding verschijnt dan niet en de bestaande lege melding blijft alleen staan. Op een smal scherm
+stapelen melding, vergaderkaart en knoppen, loopt de doorstap over de volle breedte en blijven
+markering en uitleg even prominent; er komt geen inklapper, tooltip of afgekorte tekst.
 
 Op het alleen-lezen scherm staat bovenaan “Deze vergadering is al geweest — <vergaderdatum>”, met
 de mededeling dat bekijken geen analyse start en niets verandert. Alle acties die nieuw werk zouden
@@ -443,7 +464,7 @@ geldige backend-sessiecookie. Het openen van een sessie vereist een geldig Googl
 | Methode en route | Doel |
 | --- | --- |
 | `GET /api/auth/me` | token valideren en ingelogde gebruiker retourneren |
-| `GET /api/meetings/next` | eerstvolgende vergadering en import-/analysestatus |
+| `GET /api/meetings/next` | de vergadering van de startweergave — eerstvolgende toekomstige, anders de meest recente voorbije — en import-/analysestatus |
 | `GET /api/meetings?state=past&limit=20&cursor=...` | gepagineerd overzicht van bewaarde vergaderingen die al zijn geweest |
 | `GET /api/meetings/{id}` | één bekende vergadering, met hetzelfde antwoordmodel als `/api/meetings/next` |
 | `POST /api/meetings/check-now` | dezelfde nieuwe-vergaderingcontrole als de 05:00-scheduler uitvoeren |
@@ -479,6 +500,16 @@ geeft `404`; een ID dat geen geldige UUID is valt op het gewone conversiegedrag 
 (`400`). De bestaansvraag wordt vóór elke andere controle beantwoord, zodat er geen
 bestaansinformatie lekt. De route staat niet in de uitzonderingenlijst van de sessiecontrole:
 zonder geldige sessie geldt dezelfde weigering als op de overige beschermde leesroutes.
+
+`GET /api/meetings/next` kiest één vergadering. Bestaat er ten minste één rij met `starts_at >=
+CURRENT_TIMESTAMP`, dan levert de route die met het dichtstbijzijnde toekomstige begintijdstip;
+bestaat die niet, dan die met het meest recente begintijdstip uit het verleden. De sortering is
+`CASE WHEN starts_at >= CURRENT_TIMESTAMP THEN 0 ELSE 1 END`, daarna binnen de toekomst
+`starts_at` oplopend, en daarna `starts_at` aflopend, met ongewijzigde `LIMIT 1`. Een vergadering
+die precies nu begint valt in de toekomsttak, gelijk aan de `past`-berekening hieronder. Zijn er
+geen vergaderingen bewaard, dan blijft het antwoord `NO_MEETING` met `meeting = null` en de
+telling 0/0/0. De voortgangstelling en het antwoordmodel veranderen hier niet door, en er komt
+geen route, index of migratie bij.
 
 Het antwoordmodel van `/api/meetings/next` en `/api/meetings/{id}` bevat het veld `past`, dat
 aangeeft of de vergadering al is geweest. De waarde wordt server-side berekend als
@@ -777,6 +808,12 @@ niet gecommit. Scripts lezen env-bestanden als data en voeren ze niet uit met `s
 - minimaal JSON-schema en niet-lege Markdownvalidatie;
 - Agent Runtime HTTP-contracttest en verloren-submitresponse;
 - reconciliatie na applicatieherstart;
+- de keuze van de vergadering op de startroute: de eerstvolgende toekomstige bij een mix van
+  toekomstige en voorbije vergaderingen, de vroegste bij uitsluitend toekomstige vergaderingen, de
+  meest recente voorbije wanneer er geen toekomstige bestaat, het grensgeval `starts_at` gelijk
+  aan nu dat als toekomst telt, en de lege tabel met `NO_MEETING` en telling 0/0/0; in de
+  keuzetests hoort een assertie op de voortgangstelling, zodat een sorteerwijziging de telling
+  aantoonbaar niet raakt;
 - de leesroute voor één vergadering: `404` bij een geldige maar onbekende UUID, de server-side
   bepaalde waarde van `past` op zowel `/api/meetings/next` als `/api/meetings/{id}`, en een
   ongewijzigd aantal rijen in `analysis_run` vóór en ná het leesverkeer;
@@ -808,6 +845,12 @@ smoketest mag gecontroleerd de publieke bronnen lezen.
 - bronlinks en conceptwaarschuwing;
 - builddialoog en updatebeschikbaarheid;
 - responsive gedrag, toetsenbordfocus en semantiek;
+- de startweergave zonder toekomstige vergadering: de melding met kop, uitleg en vergaderdatum
+  boven de vergaderkaart, de markering ‘al geweest’, een beschikbare “Nu controleren” die precies
+  één controle uitvoert, het ontbreken van iedere startactie met uitsluitend leesaanroepen, de
+  doorstap naar het overzicht van eerdere vergaderingen in één handeling, en dezelfde situatie op
+  een smal en een breed venster zonder overflow, tegenover regressietests op de ongewijzigde
+  weergave bij een toekomstige vergadering en op de bestaande lege melding;
 - het alleen-lezen scherm van een voorbije vergadering: de markering ‘al geweest’ met vergaderdatum,
   het ontbreken van iedere startactie, uitsluitend leesaanroepen en de fouttoestand met behoud van
   de vergaderkop, tegenover een regressietest op de ongewijzigde huidige agendaweergave;
