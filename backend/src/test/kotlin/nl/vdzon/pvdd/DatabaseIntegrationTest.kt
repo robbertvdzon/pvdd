@@ -73,6 +73,8 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
 import org.testcontainers.DockerClientFactory
 import org.testcontainers.postgresql.PostgreSQLContainer
 import tools.jackson.module.kotlin.jacksonObjectMapper
@@ -102,6 +104,7 @@ class DatabaseIntegrationTest(
     @param:Autowired private val dashboardController: DashboardController,
     @param:Autowired private val healthEndpoint: HealthEndpoint,
     @param:Autowired private val userSessionService: UserSessionService,
+    @param:Autowired private val transactionManager: PlatformTransactionManager,
 ) {
     // Een container is altijd vers, maar een meegegeven database kan al gevuld zijn. Meerdere tests
     // gaan uit van een lege startsituatie; zonder deze controle falen ze met verwarrende fouten die
@@ -765,6 +768,84 @@ class DatabaseIntegrationTest(
     }
 
     @Test
+    fun `the overview keeps choosing the nearest upcoming meeting`() = inRolledBackTransaction {
+        // De vergaderingen die andere tests achterlaten zouden de keuze kunnen bepalen; ze gaan
+        // daarom tijdelijk ver vooruit, zodat ze wel toekomstig blijven maar altijd verliezen.
+        parkExistingMeetings(Instant.now().plusSeconds(315_360_000))
+        val soon = seedMeetingWithAdvice(Instant.now().plusSeconds(86_400))
+        seedMeetingWithAgendaItem(Instant.now().plusSeconds(864_000))
+        seedMeetingWithAgendaItem(Instant.now().minusSeconds(86_400))
+
+        val overview = dashboardRepository.overview()
+        val meeting = requireNotNull(overview.meeting)
+
+        assertEquals(soon.meetingId, meeting.id)
+        assertFalse(meeting.past)
+        // De sorteerwijziging raakt de telling niet: het ene inhoudelijke punt met leesbaar stuk
+        // heeft een afgerond advies.
+        assertEquals(ProgressDto(1, 1, 0), overview.progress)
+    }
+
+    @Test
+    fun `with only upcoming meetings the overview picks the earliest`() = inRolledBackTransaction {
+        parkExistingMeetings(Instant.now().plusSeconds(315_360_000))
+        val earliest = seedMeetingWithAgendaItem(Instant.now().plusSeconds(172_800))
+        seedMeetingWithAgendaItem(Instant.now().plusSeconds(432_000))
+        seedMeetingWithAgendaItem(Instant.now().plusSeconds(1_728_000))
+
+        val meeting = requireNotNull(dashboardRepository.overview().meeting)
+
+        assertEquals(earliest.meetingId, meeting.id)
+        assertFalse(meeting.past)
+    }
+
+    @Test
+    fun `without an upcoming meeting the overview falls back to the most recent past one`() = inRolledBackTransaction {
+        // Alles wat er al stond gaat ver terug in de tijd: er blijven uitsluitend voorbije
+        // vergaderingen over, en de gezaaide van gisteren hoort de meest recente te zijn.
+        parkExistingMeetings(Instant.now().minusSeconds(315_360_000))
+        val yesterday = seedMeetingWithAdvice(Instant.now().minusSeconds(86_400))
+        seedMeetingWithAgendaItem(Instant.now().minusSeconds(2_592_000))
+        seedMeetingWithAgendaItem(Instant.now().minusSeconds(7_776_000))
+
+        val overview = dashboardRepository.overview()
+        val meeting = requireNotNull(overview.meeting)
+
+        // Niet de oudste maar de meest recente voorbije vergadering.
+        assertEquals(yesterday.meetingId, meeting.id)
+        assertTrue(meeting.past)
+        assertEquals(ProgressDto(1, 1, 0), overview.progress)
+    }
+
+    @Test
+    fun `a meeting that starts exactly now still counts as upcoming`() = inRolledBackTransaction {
+        parkExistingMeetings(Instant.now().minusSeconds(315_360_000))
+        seedMeetingWithAgendaItem(Instant.now().minusSeconds(86_400))
+        val starting = seedMeetingWithAgendaItem(Instant.now().plusSeconds(86_400))
+        // CURRENT_TIMESTAMP ligt binnen deze transactie vast, dus `starts_at` is hier exact gelijk
+        // aan het moment waartegen `overview()` straks vergelijkt.
+        jdbc.update("UPDATE meeting SET starts_at = CURRENT_TIMESTAMP WHERE id = ?", starting.meetingId)
+
+        val meeting = requireNotNull(dashboardRepository.overview().meeting)
+
+        assertEquals(starting.meetingId, meeting.id)
+        assertFalse(meeting.past)
+    }
+
+    @Test
+    fun `without any stored meeting the overview keeps its empty answer`() = inRolledBackTransaction {
+        removeAllMeetings()
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM meeting", Int::class.java))
+
+        val overview = dashboardRepository.overview()
+
+        assertEquals("NO_MEETING", overview.status)
+        assertNull(overview.meeting)
+        assertNull(overview.lastCheckedAt)
+        assertEquals(ProgressDto(0, 0, 0), overview.progress)
+    }
+
+    @Test
     fun `check now keeps importing while the last known meeting already took place`() {
         val startedAt = Instant.now().minusSeconds(7200)
         val pastId = meetingRepository.upsert(pastMeeting(startedAt))
@@ -1283,6 +1364,38 @@ class DatabaseIntegrationTest(
         val future = java.sql.Timestamp.from(Instant.now().plusSeconds(864000))
         existing.forEach { jdbc.update("UPDATE meeting SET starts_at = ? WHERE id = ?", future, it.first) }
         return existing
+    }
+
+    /**
+     * Voert [block] uit in één transactie die daarna altijd wordt teruggedraaid.
+     *
+     * Zo kan een test de volledige `meeting`-tabel naar zijn hand zetten zonder de gegevens van
+     * andere tests aan te tasten, en ziet de reconcile-scheduler op zijn eigen verbinding niets van
+     * de gezaaide rijen. Extra winst voor de keuzevolgorde van `overview()`: `CURRENT_TIMESTAMP`
+     * ligt binnen één transactie vast, dus het grensgeval `starts_at == nu` is aantoonbaar.
+     */
+    private fun inRolledBackTransaction(block: () -> Unit) {
+        TransactionTemplate(transactionManager).execute { status ->
+            try {
+                block()
+            } finally {
+                status.setRollbackOnly()
+            }
+        }
+    }
+
+    /**
+     * Schuift álle bewaarde vergaderingen naar [at], zodat alleen de vergaderingen die de test zelf
+     * zaait de keuze van `overview()` kunnen bepalen. Bedoeld binnen [inRolledBackTransaction];
+     * daarbuiten hoort `hideExistingPastMeetings`/`restoreStartTimes` erbij.
+     */
+    private fun parkExistingMeetings(at: Instant) {
+        jdbc.update("UPDATE meeting SET starts_at = ?", java.sql.Timestamp.from(at))
+    }
+
+    /** Leegt de `meeting`-tabel in foreign-keyvolgorde. Alleen zinvol binnen [inRolledBackTransaction]. */
+    private fun removeAllMeetings() {
+        jdbc.queryForList("SELECT id FROM meeting", UUID::class.java).forEach(::removeSyntheticMeeting)
     }
 
     private fun restoreStartTimes(rows: List<Pair<UUID, java.sql.Timestamp>>) {
