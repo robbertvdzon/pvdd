@@ -36,8 +36,9 @@ Robbert heeft op 16 september 2026 een beperkte uitzondering toegestaan voor de 
 beoordeelde GET/HEAD-routes in `ProductionReadAccessFilter`. `AI_READ_ACCESS_EMAIL` moet een bestaande
 toegestane identiteit zijn. Deze token werkt niet op de loginroutes, maakt geen sessie en kan geen
 analyse starten, instellingen wijzigen of andere mutaties uitvoeren. Nieuwe routes zijn standaard
-ontoegankelijk; zo staan de leesroutes `GET /api/meetings/{id}` en `GET /api/meetings?state=past`
-er bewust nog niet in en geven zij met deze token `403`. Gebruik voor productieonderzoek
+ontoegankelijk; zo staan de leesroutes `GET /api/meetings/{id}`, `GET /api/meetings?state=past` en
+`GET /api/agenda-items/{id}/advice-versions` er bewust nog niet in en geven zij met deze token
+`403`. Gebruik voor productieonderzoek
 `GET /api/meetings/next` en `GET /api/meetings/{id}/agenda-items`. De gewone `AI_ACCESS_TOKEN`
 blijft buiten Agent Runtime.
 

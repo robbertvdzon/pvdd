@@ -236,3 +236,71 @@ merge-poort.
   nieuwe eindpunt staat daar naast de bestaande leesroutes.
 - Bestaande codewaarden voor de reden van vernieuwing bestonden niet (zie hierboven), dus de codes
   `MANUAL_RETRY`, `CONTEXT_CHANGED` en `FIRST_ANALYSIS` uit de opdracht zijn gebruikt.
+
+## hkh-281 — documentation (2026-09-18)
+
+### Doel
+De documentatie laten kloppen met wat in hkh-277 is gebouwd: het nieuwe leesendpoint
+`GET /api/agenda-items/{id}/advice-versions` en de versiekeuze in de gedeelde detailweergave,
+inclusief de meldingen bij een eerdere versie en het bewuste ontbreken van een bronnenlijst daar.
+Alleen documentatie gewijzigd; geen productiecode, tests of infrastructuur.
+
+### Bijgewerkt
+- `docs/microservice-specificatie.md`
+  - §5.2 Schermen: drie nieuwe alinea's over de versiekeuze boven de analyse (`Laatste advies ·
+    <datum>` / `Eerdere versie · <datum>`), de vervangregel bij het laatste advies, de expliciete
+    melding bij precies één bewaarde versie en het ongewijzigde gedrag bij nul versies; de badge
+    `EERDERE VERSIE`, het vervallen van de metadatatabel, de meldingen met aanmaakdatum,
+    vervangdatum, reden en `Aanvullende analyse-instructie van toen` met `niet vastgelegd`; het
+    ontbreken van de bronnenlijst met de bijbehorende melding; het eenmalig ophalen bij uitklappen
+    zonder uitbreiding van de 15-secondenverversing en de fouttoestand met **Versies opnieuw
+    laden**. De zin “er is geen scherm met eerdere adviesversies” was achterhaald en is vervangen
+    door de afbakening dat een eerdere versie wel te lezen maar niet te bewerken is.
+  - §6.3 Voorgestelde backend-API: nieuwe tabelregel voor de route; drie alinea's met het contract
+    (alleen `status = 'SUCCEEDED'`, de ordening van `item()`, geen paginering, `404`/lege lijst/
+    `400`), de velden per versie inclusief `latest`, `analysisGuidance` als `null` en de drie
+    waarden van `refreshReason` met de gedeelde afleiding naast de ongewijzigde soortcodes van de
+    AI-runslijst, en de belofte dat er geen citaten, bronlijst, migratie of index bij komen en dat
+    het vervangmoment client-side uit de volgorde volgt. De opsomming van leesroutes die nooit werk
+    starten is met de nieuwe route aangevuld.
+  - §13.1 en §13.2 Teststrategie: één bullet per laag met de dekking die op de branch is
+    geautomatiseerd (ordening, `404`, lege lijst, uitsluiten van mislukte en geannuleerde runs, de
+    drie redenen naast de AI-runsweergave, lege guidance als `null`, geen bronvelden met gelijke
+    rijaantallen; respectievelijk de versiekeuze, de meldingen, `niet vastgelegd`, de afwezige
+    bronnenlijst, beide vensterbreedtes, de fouttoestand en uitsluitend leesverkeer).
+- `docs/functionele-werking-commissie-assistent.md`
+  - §9 Wijzigingen en gerichte heranalyse: alinea dat een vervangen advies ook achteraf terug te
+    lezen is, met datum, vervangmoment en reden, met verwijzing naar §11 en de afbakening dat
+    lezen nooit een analyse start.
+  - §11 Informatie in de webapp: drie alinea's in gebruikerstaal over de versiekeuze, de markering
+    en meldingen bij een eerdere versie, `niet vastgelegd`, het nooit tonen van de huidige
+    instructie, het ontbreken van de bronnenlijst en het gedrag bij een mislukte versieaanvraag.
+- `docs/factory/functional-spec.md` — sectie Frontend en API: compacte ontwikkelvertaling van het
+  responsecontract en van de versiekeuze in de detailweergave.
+- `docs/agent-access.md` — de nieuwe route toegevoegd aan de expliciet genoemde leesroutes die
+  bewust níet in `ProductionReadAccessFilter` staan en met `X-AI-Read-Token` dus `403` geven.
+- `docs/stories/hkh-277-worklog.md` — deze sectie.
+
+### Bewust niet gewijzigd
+- `README.md` — verwijst alleen naar de documentatie-index en de lokale start; niets daarin raakt
+  deze story.
+- `docs/stappenplannen/*` — uitvoeringsplannen per fase; die beschrijven niet het huidige gedrag en
+  worden bij storydocumentatie niet bijgewerkt.
+- `docs/factory/technical-spec.md`, `docs/factory/development.md`, `docs/factory/deployment.md`,
+  `docs/factory/agent-runtime.md`, `docs/factory/secrets-local.md` — stack, testcommando's,
+  uitrol en Runtime-contract zijn ongewijzigd; er kwam geen migratie, geen index, geen nieuw
+  testcommando en geen nieuwe omgevingsvariabele bij.
+- `docs/operations.md`, `docs/technical-integrations.md`, `docs/adr/*` — geen nieuw beheerpad, geen
+  nieuwe integratie en geen architectuurbesluit; de route deelt sessiecontrole, database en module
+  met de bestaande dashboardleesroutes.
+- `docs/uitbreidingsspecificatie-standpunten-en-ai-inzicht.md`,
+  `docs/functional-acceptance-verification.md`, `docs/source-revision-verification.md`,
+  `docs/technical-baseline-verification.md`, `docs/production-source-spike.md` — beschrijven andere
+  onderwerpen respectievelijk afgeronde verificatierondes.
+- De datumregels bovenaan bestaande documenten (`Laatste actualisatie`, `Datum`/`Status`) zijn
+  ongemoeid gelaten, conform de bestaande conventie bij storydocumentatie.
+
+### Verificatie
+- `bash tools/verify-documentation.sh` → `Documentatiecontrole geslaagd`.
+- `git status --short` toont uitsluitend bestanden onder `docs/`; geen productiecode, tests of
+  infrastructuur geraakt.

@@ -310,10 +310,41 @@ ververstimer, houdt **Agenda** geselecteerd zonder eigen menu-item, en de teruga
 gebruiker naar de agendaweergave. Op een smal scherm stapelen de gegevens per rij en lopen de
 knoppen over de volle breedte.
 
+In de detailweergave van een agendapunt — dezelfde gedeelde weergave bij de huidige agenda én bij
+een voorbije vergadering — is naast het laatste advies ook een eerdere adviesversie terug te lezen.
+Zijn er meer bewaarde versies, dan staat boven de analyse een keuze met één optie per versie,
+nieuwste eerst: “Laatste advies · <datum>” en daarna “Eerdere versie · <datum>”. Onder die keuze
+staat bij het laatste advies één regel: “Dit advies verving de versie van <datum van de
+eerstvolgende oudere versie>. Reden: <reden van het laatste advies>.” Is er precies één bewaarde
+versie, dan verschijnt geen keuze maar op dezelfde plek de melding “Van dit agendapunt is geen
+eerdere versie bewaard. Je ziet het enige advies, gemaakt op <datum>.” Is er nog geen enkele
+bewaarde versie, dan verandert er niets aan de bestaande toestand ‘nog geen advies’.
+
+Bij het bekijken van een eerdere versie vervangt de badge “EERDERE VERSIE” de statusbadge in de
+kaartkop en vervalt de metadatatabel (AI-titel, korte conclusie en laatste AI-analyse horen bij het
+laatste advies). Bovenaan staan dan “Je bekijkt een eerdere versie van <aanmaakdatum>”, “Vervangen
+op <aanmaakdatum van de eerstvolgende nieuwere versie>. Reden: <reden van díe nieuwere versie>.” en
+“Aanvullende analyse-instructie van toen: <instructie>.”, waarbij “niet vastgelegd” verschijnt
+wanneer er geen instructie is bewaard; de huidige instructie wordt bij een eerdere versie nooit
+getoond. Levert de afleiding van de vervangreden ‘eerste analyse’ op, dan blijft de redenzin weg in
+plaats van dat er een placeholder verschijnt.
+
+Bij een eerdere versie verschijnt bewust geen bronnenlijst. In plaats daarvan staat onder het rode
+AI-voorbehoud: “Bij deze eerdere versie is niet apart bewaard welke stukken toen zijn gebruikt. De
+bronnenlijst hoort daarom alleen bij het laatste advies.” Het AI-voorbehoud en de melding over
+niet-leesbare stukken blijven bij elke getoonde versie zichtbaar; de bronnenlijst met leesbaarheid
+per stuk hoort uitsluitend bij het laatste advies en blijft daar ongewijzigd. De versies worden één
+keer opgehaald bij het uitklappen van een agendapunt dat een advies heeft; wisselen tussen versies
+doet geen nieuwe aanroep en de 15-secondenverversing van de agendaweergave is hier niet mee
+uitgebreid. Mislukt het ophalen, dan blijft het reeds getoonde laatste advies volledig staan en
+verschijnt de melding “De adviesversies konden niet worden geladen. Het advies hieronder blijft
+staan.” met de knop **Versies opnieuw laden**, die exact dezelfde leesaanvraag herhaalt.
+
 De MVP heeft geen editor en geen goedkeuringsworkflow. Terugkijken beperkt zich tot de alleen-lezen
-schermen hierboven, die het laatste advies per agendapunt tonen; er is geen scherm met eerdere
-adviesversies. Resultaten zijn read-only en kunnen worden geselecteerd/gekopieerd. Alle
-geïmporteerde en gegenereerde gegevens blijven wel in de database staan.
+schermen hierboven: eerdere adviesversies zijn wel terug te lezen, maar niet te bewerken, aan te
+vullen, te exporteren of te delen. Resultaten zijn read-only en kunnen worden
+geselecteerd/gekopieerd. Alle geïmporteerde en gegenereerde gegevens blijven wel in de database
+staan.
 
 De UI toont conceptstatus prominent: “AI-concept — controleer bronnen en formulering vóór gebruik”.
 
@@ -419,6 +450,7 @@ geldige backend-sessiecookie. Het openen van een sessie vereist een geldig Googl
 | `POST /api/meetings/{id}/analyses` | idempotente analyse starten voor een vergadering die nog moet beginnen |
 | `GET /api/meetings/{id}/agenda-items` | agenda en actuele adviesstatus ophalen |
 | `GET /api/agenda-items/{id}` | detail, bronnen en advies ophalen |
+| `GET /api/agenda-items/{id}/advice-versions` | bewaarde adviesversies van één agendapunt ophalen, nieuwste eerst |
 | `GET /api/analysis-runs/{id}` | lokale plus Runtime-status ophalen |
 | `POST /api/analysis-runs/{id}/cancel` | annuleringsverzoek doorgeven |
 | `GET /api/version` | backend-buildidentiteit |
@@ -437,9 +469,9 @@ geeft `409` met foutcode `meeting_in_past`, in dezelfde stijl als `not_cancellab
 `not_retryable`. In dat
 geweigerde pad wordt geen analyse ingepland en vindt geen enkele schrijfactie plaats. Een
 vergadering die nog moet beginnen levert onveranderd `202`. De leesroutes
-`GET /api/meetings/{id}`, `GET /api/meetings/{id}/agenda-items` en `GET /api/agenda-items/{id}`
-starten nooit werk, ook niet voor een voorbije vergadering: zij maken geen rij in `analysis_run` en
-wijzigen geen bestaand advies.
+`GET /api/meetings/{id}`, `GET /api/meetings/{id}/agenda-items`, `GET /api/agenda-items/{id}` en
+`GET /api/agenda-items/{id}/advice-versions` starten nooit werk, ook niet voor een voorbije
+vergadering: zij maken geen rij in `analysis_run` en wijzigen geen bestaand advies.
 
 `GET /api/meetings/{id}` levert de vergaderkop (titel, commissie, begintijdstip, locatie, bron-URL,
 status en revisiegegevens) plus de voortgangstelling. Een geldige maar onbekende vergadering-ID
@@ -479,6 +511,38 @@ pagina nooit een cursor levert, ook niet wanneer zij precies `limit` items bevat
 geen schemawijziging: er is geen migratie en geen nieuwe index, en elke query is met een limiet
 begrensd. Ook deze route staat niet in de uitzonderingenlijst van de sessiecontrole en start nooit
 werk.
+
+`GET /api/agenda-items/{id}/advice-versions` levert de bewaarde adviesversies van één agendapunt.
+Het antwoord is één object met het veld `versions`. De lijst komt uit `agenda_item_advice` gekoppeld
+aan `analysis_run` en bevat uitsluitend runs met `status = 'SUCCEEDED'`; mislukte en geannuleerde
+runs blijven eruit, ook wanneer er een adviesrij bij hoort. De ordening is exact die waarmee de
+detailweergave het laatste advies kiest: `actuality` CURRENT vóór STALE vóór overig, daarna
+`created_at DESC, id DESC`. Er is geen paginering en geen limiet; de lijst groeit alleen met het
+aantal geslaagde analyses van dat ene punt. Een onbekend agendapunt geeft `404`, een bestaand
+agendapunt zonder geslaagde adviesrun geeft `200` met een lege lijst, en een ID dat geen geldige
+UUID is valt op het gewone conversiegedrag van het framework (`400`).
+
+Per versie bevat het antwoord `adviceId`, `analysisRunId`, `createdAt` (`analysis_run.created_at`
+als ISO-8601 instant), `actuality` zoals opgeslagen, `latest`, de adviesinhoud met dezelfde
+veldnamen en vorm als het laatste advies op `GET /api/agenda-items/{id}` (`advice` plus
+`displayTitle` en `shortConclusion`), `provider`, `model`, `promptVersion`, `analysisGuidance` en
+`refreshReason`. `latest` is uitsluitend `true` voor de eerste rij in bovenstaande ordening; een
+ingetrokken advies dat chronologisch nieuwer is sorteert dus ná CURRENT en STALE en krijgt de vlag
+niet, zodat de vlag steeds het advies aanwijst dat de detailweergave als ‘laatste advies’ toont.
+`analysisGuidance` is de bewaarde `analysis_run.analysis_guidance`; leeg of alleen witruimte wordt
+`null`. `refreshReason` is `MANUAL_RETRY` (`retry_of_run_id` is gevuld), `CONTEXT_CHANGED` (geen
+retry, maar er bestond al een oudere `FINAL_ADVICE`-run) of `FIRST_ANALYSIS`. Die afleiding is
+gedeeld met de AI-runslijst — één SQL-fragment en één beslissing — zodat beide weergaven dezelfde
+run nooit anders kunnen duiden; de AI-runslijst blijft daarnaast haar eigen soortcodes
+`AGENDA_RETRY`, `AGENDA_REANALYSIS` en `AGENDA_ADVICE` ongewijzigd teruggeven.
+
+Het antwoord bevat géén citaten, géén bronlijst en geen veld dat daarnaar verwijst:
+`agenda_item_advice.citations` wordt niet gelezen en er wordt niets afgeleid uit `meeting_revision`,
+`agenda_item_revision` of `document_revision`. Bij een eerdere versie is immers niet apart bewaard
+welke stukken toen zijn gebruikt. De route vergt geen schemawijziging — geen migratie en geen nieuwe
+index — start nooit werk en staat niet in de uitzonderingenlijst van de sessiecontrole. Het moment
+van vervanging wordt niet als extra veld geleverd maar door de webapp afgeleid uit de volgorde: de
+versie direct boven een getoonde versie is de versie die haar verving.
 
 ## 7. Agent Runtime-integratie
 
@@ -721,6 +785,13 @@ niet gecommit. Scripts lezen env-bestanden als data en voeren ze niet uit met `s
   gaten met `nextCursor = null` op de laatste pagina, de lege lijst, de tellingen per vergadering
   gelijk aan de voortgangstelling, en ongeldige queryparameters met `400` en
   `invalid_meeting_query` vóór elke databasetoegang;
+- de adviesversies van één agendapunt: twee geslaagde runs in de vastgelegde ordening met `latest`
+  op uitsluitend de eerste rij, `404` bij een onbekend agendapunt en een lege lijst bij een
+  bestaand punt zonder geslaagde run, het uitsluiten van mislukte en geannuleerde runs, de drie
+  waarden van `refreshReason` naast dezelfde soortcodes in de AI-runsweergave, lege
+  `analysis_guidance` als `null`, een ingetrokken maar chronologisch nieuwere rij die de vlag
+  `latest` niet krijgt, en een antwoord zonder bron- of citaatvelden met ongewijzigde rijaantallen
+  in `analysis_run` en `agenda_item_advice` vóór en ná de aanroep;
 - Google-tokenvalidatie, allowlist, gehashte duurzame sessies en intrekken bij uitloggen;
 - repositorytests met echte PostgreSQL via Testcontainers;
 - Spring Modulith-architectuurverificatie.
@@ -745,6 +816,14 @@ smoketest mag gecontroleerd de publieke bronnen lezen.
   de laatste pagina, de lege toestand, de fouttoestand met behoud van de al geladen rijen,
   uitsluitend leesaanroepen zonder herhaalde verversing, en de terugactie vanuit een voorbije
   vergadering terug naar het overzicht tegenover een rechtstreekse aanroep;
+- de versiekeuze in de detailweergave: beide opties met hun datum en wisselen tussen de inhoud, de
+  meldingen bij een eerdere versie met aanmaakdatum, vervangdatum en beide redenen, `niet
+  vastgelegd` zonder bewaarde instructie terwijl de huidige instructie wegblijft, de afwezige
+  bronnenlijst met de bijbehorende melding, het AI-voorbehoud en de melding over niet-leesbare
+  stukken bij elke versie, de expliciete melding bij precies één bewaarde versie, dezelfde
+  weergave met en zonder de alleen-lezen/archiefvlag, de fouttoestand met **Versies opnieuw laden**
+  die dezelfde aanvraag herhaalt, uitsluitend leesverkeer zonder extra aanroep bij het wisselen, en
+  de keuze plus meldingen op een smal en een breed venster zonder overflow;
 - de padherkenning van `/archief` en `/archief/<vergadering-id>` en de aanwezigheid van de
   SPA-fallback;
 - Nginx-cachecontract en gehashte bundlenaam.

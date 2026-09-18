@@ -136,6 +136,29 @@ kent geen ververstimer en geen eigen menu-item; de terugactie gaat naar `/agenda
 voorbije vergadering keert de terugactie naar `/archief` wanneer de gebruiker daarvandaan kwam
 (expliciete navigatievlag), en bij een deeplink onveranderd naar `/agenda`.
 
+`GET /api/agenda-items/{id}/advice-versions` levert de bewaarde adviesversies van één agendapunt
+als één object met het veld `versions`: alleen runs met `status = 'SUCCEEDED'`, in exact de ordening
+waarmee de detailweergave het laatste advies kiest (`actuality` CURRENT vóór STALE vóór overig,
+daarna `created_at DESC, id DESC`), zonder paginering of limiet. Onbekend agendapunt geeft `404`,
+een bestaand punt zonder geslaagde run `200` met een lege lijst. Per versie: `adviceId`,
+`analysisRunId`, `createdAt`, `actuality`, `latest` (alleen de eerste rij), de adviesinhoud met
+dezelfde veldnamen als het laatste advies, `provider`, `model`, `promptVersion`, `analysisGuidance`
+(leeg of witruimte wordt `null`) en `refreshReason` (`MANUAL_RETRY`, `CONTEXT_CHANGED` of
+`FIRST_ANALYSIS`). Die redenafleiding is gedeeld met de AI-runslijst, die haar eigen soortcodes
+ongewijzigd houdt. Het antwoord bevat geen citaten en geen bronlijst: `citations` en de
+revisietabellen worden niet gelezen. Geen migratie, geen index, uitsluitend leesverkeer.
+
+In de gedeelde detailweergave staat boven de analyse een versiekeuze zodra er meer dan één versie
+is: **Laatste advies · <datum>** en **Eerdere versie · <datum>**, met daaronder één regel over wat
+het laatste advies verving en waarom. Bij precies één versie staat daar de melding dat geen eerdere
+versie is bewaard; bij nul versies verandert er niets. Een eerdere versie krijgt de badge
+**EERDERE VERSIE**, geen metadatatabel, meldingen met aanmaakdatum, vervangdatum, reden en de
+bewaarde analyse-instructie (`niet vastgelegd` wanneer leeg), en bewust geen bronnenlijst maar de
+melding dat niet apart is bewaard welke stukken toen zijn gebruikt. AI-voorbehoud en de melding over
+niet-leesbare stukken blijven bij elke versie staan. De versies worden één keer opgehaald bij het
+uitklappen van een punt met advies; wisselen doet geen aanroep en de 15-secondenverversing is niet
+uitgebreid. Mislukt het ophalen, dan blijft het advies staan met de knop **Versies opnieuw laden**.
+
 Google wordt alleen voor de eerste identificatie gebruikt. De backend geeft daarna een veilige,
 180 dagen geldige sessiecookie uit, zodat sluiten van een tab of verlopen van het korte Google
 ID-token niet opnieuw inloggen vereist. Uitloggen trekt de sessie direct in.
