@@ -311,6 +311,13 @@ nieuwe poging controleert zij opnieuw of dit nog de nieuwste analyse van het age
 vergadering nog moet beginnen. Achterhaalde analyses en analyses van voorbije vergaderingen worden
 niet opnieuw gestart. Na de derde mislukking blijft de logische run zichtbaar als mislukt.
 
+Terugkijken start nooit een AI-analyse. Zodra een vergadering is begonnen, weigert de applicatie
+iedere nieuwe analyseaanvraag voor die vergadering, ook wanneer die aanvraag rechtstreeks op de API
+wordt gedaan in plaats van via de webapp. Een vergadering waarvan het begintijdstip exact het
+huidige tijdstip is, telt daarbij al als voorbij. Zo'n geweigerde aanvraag zet niets in de wachtrij
+en verandert niets aan bestaande adviezen of runs. Het openen van de agenda of van een agendapunt
+van een voorbije vergadering start eveneens geen enkel nieuw AI-werk.
+
 Bij het betreffende punt op de pagina **Agenda** kan een gebruiker de nieuwste toepasselijke
 mislukte analyse met **Opnieuw proberen** opnieuw starten. Op **Instellingen** kan een gebruiker na
 bevestiging alle nieuwste mislukte analyses van toekomstige vergaderingen opnieuw starten, ook als

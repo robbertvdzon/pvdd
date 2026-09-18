@@ -96,11 +96,14 @@ onbeperkt bewaard; er bestaat geen cleanup- of deletepad.
 
 De beveiligde API levert het actuele vergaderingsoverzicht, agendapunten, details, AI-runs,
 actuele standpunten en dezelfde `check-now`-orkestratie. DTO's lekken geen database-, prompt-,
-token- of Runtime-interne gegevens. De frontend toont A/B/C-filters, voortgang, bronlinks, de
-laatste gedetecteerde wijziging, laatste analyserun, AI-titel, korte conclusie en het vrije
-Markdownadvies. Aparte secties tonen de actuele PvdD-standpunten met herleidbare officiële bronnen
-en lopende plus afgeronde AI-runs. Het label **AI-concept — controleer bronnen en formulering vóór
-gebruik** blijft altijd zichtbaar.
+token- of Runtime-interne gegevens. Een analyseaanvraag via `POST /api/meetings/{id}/analyses`
+wordt alleen ingepland voor een vergadering die nog moet beginnen: een onbekende ID geeft `404` en
+een vergadering waarvan het begintijdstip niet later ligt dan nu geeft `409` met foutcode
+`meeting_in_past`, zonder enige schrijfactie. Leesroutes starten nooit AI-werk. De frontend toont
+A/B/C-filters, voortgang, bronlinks, de laatste gedetecteerde wijziging, laatste analyserun,
+AI-titel, korte conclusie en het vrije Markdownadvies. Aparte secties tonen de actuele
+PvdD-standpunten met herleidbare officiële bronnen en lopende plus afgeronde AI-runs. Het label
+**AI-concept — controleer bronnen en formulering vóór gebruik** blijft altijd zichtbaar.
 
 Google wordt alleen voor de eerste identificatie gebruikt. De backend geeft daarna een veilige,
 180 dagen geldige sessiecookie uit, zodat sluiten van een tab of verlopen van het korte Google

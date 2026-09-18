@@ -371,3 +371,40 @@ acceptatiedataset kan er niet komen zonder de scope te schenden. Het ketensignaa
 vóór merge en deploy terwijl er bewust geen PR-previewomgevingen zijn, waardoor de storyrevisie
 tijdens de testfase per definitie nergens draait — wordt hier voor de tweede keer doorgegeven als
 procesbesluit buiten de developerrol.
+
+## hkh-260 — documentation (2026-09-18)
+
+### Doel
+De projectdocumentatie laten kloppen met het opgeleverde gedrag van `hkh-256`, op basis van de
+volledige storydiff ten opzichte van de base branch.
+
+### Bijgewerkt
+- `docs/microservice-specificatie.md` (normatief, §6.3) — de tabelregel van
+  `POST /api/meetings/{id}/analyses` benoemt nu dat de route alleen voor een vergadering die nog
+  moet beginnen inplant, met daaronder een alinea over de volgorde bestaan-vóór-datum, `404` bij
+  een onbekende ID, `409` met `meeting_in_past` bij `startsAt <= nu` (gelijkheid telt als verleden),
+  het ontbreken van iedere schrijfactie in dat pad, het ongewijzigde `202`-pad en het feit dat de
+  leesroutes nooit werk starten.
+- `docs/functionele-werking-commissie-assistent.md` (§8) — functionele formulering van dezelfde
+  belofte: terugkijken start nooit een AI-analyse, ook niet via een rechtstreekse API-aanroep, en
+  het openen van agenda of agendapunt van een voorbije vergadering start geen AI-werk.
+- `docs/factory/functional-spec.md` (Frontend en API) — compacte ontwikkelvertaling van het nieuwe
+  routecontract.
+- `docs/factory/development.md` — nieuwe sectie **Databasetests**: `DatabaseIntegrationTest` draait
+  met Docker via Testcontainers en zonder Docker tegen een lege wegwerpdatabase via
+  `PVDD_TEST_DATABASE_URL`, `PVDD_TEST_DATABASE_USER` en `PVDD_TEST_DATABASE_PASSWORD`. Het verschil
+  met de runtimesleutel `PVDD_DATABASE_URL`, de eis van een lege database en het overslaan zonder
+  beide bronnen staan er expliciet bij.
+
+### Bewust niet gewijzigd
+- `docs/stappenplannen/*` beschrijven de uitvoeringsvolgorde van fasen en zijn geen beschrijving
+  van het huidige gedrag; de bestaande tekst is niet onjuist geworden.
+- §4.2 van de normatieve specificatie beschrijft discovery al correct als "de vroegste vergadering
+  waarvan het begintijdstip in de toekomst ligt"; de nieuwe discoverytest legt bestaand gedrag vast.
+- `docs/operations.md`, `deploy/README.md`, de ADR's en de frontenddocumentatie zijn niet geraakt:
+  geen migratie, geen schemawijziging, geen frontendwijziging, geen nieuwe configuratiesleutel in
+  runtime, deployment of herstelprocedures.
+
+### Verificatie
+- `bash tools/verify-documentation.sh` → groen.
+- Alleen bestanden onder `docs/` gewijzigd; geen productiecode, tests of infrastructuur geraakt.
