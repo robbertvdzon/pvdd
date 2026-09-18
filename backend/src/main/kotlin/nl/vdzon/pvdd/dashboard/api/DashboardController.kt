@@ -12,6 +12,7 @@ import nl.vdzon.pvdd.dashboard.LogicalAiRunDetailDto
 import nl.vdzon.pvdd.dashboard.LogicalAiRunPageDto
 import nl.vdzon.pvdd.dashboard.DashboardRepository
 import nl.vdzon.pvdd.dashboard.MeetingOverviewDto
+import nl.vdzon.pvdd.dashboard.PastMeetingPageDto
 import nl.vdzon.pvdd.meetings.MutationGuard
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
@@ -35,6 +36,27 @@ class DashboardController(
 ) {
     @GetMapping("/meetings/next")
     fun next(): MeetingOverviewDto = dashboard.overview()
+
+    /**
+     * Het alleen-lezen overzicht van bewaarde vergaderingen die al zijn geweest.
+     *
+     * De queryparameters gaan ongewijzigd naar de querylaag, die ze vóór elke databasetoegang
+     * valideert. Een ontbrekende of afwijkende `state`, een `limit` buiten 1..50 of niet-numeriek en
+     * een onleesbare `cursor` leveren daar `IllegalArgumentException` en hier HTTP 400 met de
+     * foutcode als reason — exact hetzelfde mechanisme als `invalid_ai_run_query`. `limit` komt
+     * bewust als tekst binnen, zodat ook `limit=abc` deze foutcode krijgt in plaats van de
+     * standaardconversiefout van het framework.
+     */
+    @GetMapping("/meetings")
+    fun meetings(
+        @RequestParam(required = false) state: String?,
+        @RequestParam(required = false) limit: String?,
+        @RequestParam(required = false) cursor: String?,
+    ): PastMeetingPageDto = try {
+        dashboard.pastMeetings(state, limit, cursor)
+    } catch (_: IllegalArgumentException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_meeting_query")
+    }
 
     // Leesroute voor één vergadering, met hetzelfde antwoordmodel als `/api/meetings/next`. De
     // bestaansvraag wordt vóór elke andere controle beantwoord, dus een geldige maar onbekende id

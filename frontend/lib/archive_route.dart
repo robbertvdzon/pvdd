@@ -12,3 +12,9 @@ final RegExp _archivePath = RegExp(
 /// De vergadering-id in [path], of `null` als dit geen archiefpad is.
 String? archivedMeetingIdFromPath(String path) =>
     _archivePath.firstMatch(path)?.group(1)?.toLowerCase();
+
+/// Of [path] het overzicht van eerdere vergaderingen is (`/archief`, met of zonder slash).
+///
+/// Bewust los van [archivedMeetingIdFromPath]: `/archief/<uuid>` is het detailscherm en valt hier
+/// dus niet onder. Alles anders levert `false` en valt terug op de agendaweergave.
+bool isArchiveOverviewPath(String path) => path == '/archief' || path == '/archief/';

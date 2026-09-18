@@ -2,6 +2,7 @@ package nl.vdzon.pvdd.dashboard
 
 import java.net.URI
 import java.time.Instant
+import java.time.ZoneOffset
 import java.util.UUID
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
@@ -36,6 +37,27 @@ data class MeetingDto(
 )
 
 data class ProgressDto(val total: Int, val complete: Int, val failed: Int)
+
+/**
+ * Eén bewaarde vergadering die al is geweest, zoals het archiefoverzicht haar toont.
+ * [substantiveItemCount] en [completedAdviceCount] gebruiken exact hetzelfde filter als de
+ * voortgangstelling van de agendaweergave, maar dan gegroepeerd per vergadering.
+ */
+data class PastMeetingDto(
+    val id: UUID,
+    val title: String,
+    val startsAt: Instant,
+    val location: String?,
+    val substantiveItemCount: Int,
+    val completedAdviceCount: Int,
+)
+
+/**
+ * Eén pagina voorbije vergaderingen. [nextCursor] is alleen gevuld wanneer er bewijsbaar nog een
+ * rij volgt; [total] telt alle bewaarde voorbije vergaderingen, ongeacht cursor en limiet, en is
+ * een momentopname per aanvraag.
+ */
+data class PastMeetingPageDto(val items: List<PastMeetingDto>, val nextCursor: String?, val total: Int)
 
 data class AgendaItemSummaryDto(
     val id: UUID,
@@ -123,6 +145,76 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
         rs.getString("canonical_fingerprint"), rs.getString("revision_status"),
         rs.getBoolean("past"),
     ) to rs.getTimestamp("checked_at").toInstant()
+
+    /**
+     * Een pagina bewaarde vergaderingen die al zijn geweest, de meest recente bovenaan.
+     *
+     * De parameters komen ongewijzigd van de route binnen en worden hier gevalideerd, vóór elke
+     * databasetoegang: een ontbrekende of afwijkende [state], een [limit] buiten 1..50 of niet
+     * numeriek, en een onleesbare [cursor] leveren [IllegalArgumentException]. De controller
+     * vertaalt die naar HTTP 400 met foutcode `invalid_meeting_query`, net zoals bij de AI-runlijst.
+     */
+    fun pastMeetings(state: String?, limit: String?, cursor: String?): PastMeetingPageDto {
+        require(state == "past")
+        val size = if (limit == null) DEFAULT_PAST_MEETING_LIMIT else limit.toIntOrNull()
+        require(size != null && size in 1..50)
+        val after = cursor?.let(KeysetCursor::decode)
+
+        // Eén rij meer ophalen dan gevraagd: die extra rij valt buiten `items` en bewijst alleen dat
+        // er nog een volgende pagina is. Zo levert de laatste pagina nooit een cursor, ook niet als
+        // zij precies `limit` items bevat.
+        val rows = jdbc.query(
+            """
+            WITH page AS (
+                SELECT m.id, m.title, m.starts_at, m.location
+                FROM meeting m
+                WHERE m.starts_at < CURRENT_TIMESTAMP
+                  ${if (after == null) "" else "AND (m.starts_at, m.id) < (?::timestamptz, ?::uuid)"}
+                ORDER BY m.starts_at DESC, m.id DESC
+                LIMIT ?
+            )
+            SELECT page.id, page.title, page.starts_at, page.location,
+                   counts.substantive_count, counts.completed_count
+            FROM page
+            JOIN LATERAL (
+                SELECT COUNT(*) substantive_count,
+                       COUNT(*) FILTER (WHERE latest.status = 'SUCCEEDED') completed_count
+                FROM agenda_item ai
+                JOIN agenda_item_document_status documents ON documents.agenda_item_id = ai.id
+                LEFT JOIN LATERAL (
+                    SELECT status FROM analysis_run ar
+                    WHERE ar.agenda_item_id = ai.id AND ar.run_type = 'FINAL_ADVICE'
+                    ORDER BY created_at DESC LIMIT 1
+                ) latest ON TRUE
+                WHERE ai.meeting_id = page.id AND ai.source_state <> 'WITHDRAWN'
+                  AND ai.substantive AND ai.category IN ('A', 'B', 'C')
+                  AND documents.readable_document_count > 0
+            ) counts ON TRUE
+            ORDER BY page.starts_at DESC, page.id DESC
+            """.trimIndent(),
+            { rs, _ ->
+                PastMeetingDto(
+                    rs.getObject("id", UUID::class.java), rs.getString("title"),
+                    rs.getTimestamp("starts_at").toInstant(), rs.getString("location"),
+                    rs.getInt("substantive_count"), rs.getInt("completed_count"),
+                )
+            },
+            // De cursorwaarde gaat als expliciete timestamptz mee (zie de cast hierboven), zodat de
+            // keysetvergelijking niet van de sessietijdzone afhangt.
+            *listOfNotNull(
+                after?.let { it.first.atOffset(ZoneOffset.UTC) }, after?.second, size + 1,
+            ).toTypedArray(),
+        )
+        val items = rows.take(size)
+        // De telling is een aggregaat en levert altijd precies één rij; de LIMIT legt die grens
+        // ook letterlijk vast, zodat geen enkele nieuwe query onbegrensd is.
+        val total = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM meeting m WHERE m.starts_at < CURRENT_TIMESTAMP LIMIT 1",
+            Int::class.java,
+        ) ?: 0
+        val next = if (rows.size > size) items.lastOrNull()?.let { KeysetCursor.encode(it.startsAt, it.id) } else null
+        return PastMeetingPageDto(items, next, total)
+    }
 
     fun agendaItems(meetingId: UUID): List<AgendaItemSummaryDto>? {
         if (!exists("meeting", meetingId)) return null
@@ -338,6 +430,9 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
     }
 
     private companion object {
+        // De standaardpaginagrootte van het archiefoverzicht; de webapp vraagt dezelfde 20.
+        private const val DEFAULT_PAST_MEETING_LIMIT = 20
+
         // Gedeeld tussen `overview()` en `meeting(id)`: beide leveren exact hetzelfde antwoordmodel
         // en dus ook hetzelfde `past`-veld, berekend op databasetijd.
         private val MEETING_SELECT = """

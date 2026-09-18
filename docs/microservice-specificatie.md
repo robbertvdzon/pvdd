@@ -274,23 +274,46 @@ promptversie.
    A/B/C-indeling, dezelfde filters, dezelfde agendapuntkaarten en dezelfde detailweergave met
    officiële titel, AI-titel, korte conclusie, volledige analyse, bronverwijzingen en de meldingen
    over ontbrekende of onleesbare stukken.
+9. **Eerdere vergaderingen** — alleen-lezen overzicht op `/archief` van alle bewaarde
+   vergaderingen die al zijn geweest, de meest recente bovenaan, met per rij datum, titel,
+   locatie, het aantal inhoudelijke agendapunten en het aantal punten met afgerond advies.
 
 Op het alleen-lezen scherm staat bovenaan “Deze vergadering is al geweest — <vergaderdatum>”, met
 de mededeling dat bekijken geen analyse start en niets verandert. Alle acties die nieuw werk zouden
 starten ontbreken daar: geen “Nu controleren”, geen analyseaanvraag en geen herstartactie per
 agendapunt. De 15-secondenverversing van de agendaweergave blijft uit, omdat een voorbije
 vergadering niet meer verandert. In de zijbalk blijft **Agenda** het geselecteerde menu-item; het
-scherm krijgt geen eigen menu-item en de terugactie brengt de gebruiker terug naar de
-agendaweergave. Mislukt het laden van de agendapunten, dan blijft de al geladen vergaderkop staan
-en verschijnt een begrijpelijke melding met **Opnieuw proberen**. Omdat Nginx SPA-paden al op
+scherm krijgt geen eigen menu-item. De terugactie keert terug naar het overzicht **Eerdere
+vergaderingen** wanneer de gebruiker daarvandaan kwam, en brengt de gebruiker bij een rechtstreekse
+aanroep van `/archief/<vergadering-id>` onveranderd terug naar de agendaweergave. Of de gebruiker
+van het overzicht kwam, wordt met een expliciete navigatievlag bepaald en niet uit browserhistorie
+afgeleid. Mislukt het laden van de agendapunten, dan blijft de al geladen vergaderkop staan en
+verschijnt een begrijpelijke melding met **Opnieuw proberen**. Omdat Nginx SPA-paden al op
 `index.html` laat terugvallen, werkt een rechtstreekse aanroep of een herlaad van dit pad zonder
 serverwijziging.
 
-De MVP heeft geen editor en geen goedkeuringsworkflow. Terugkijken beperkt zich tot het alleen-lezen
-scherm hierboven, dat het laatste advies per agendapunt toont; er is geen scherm met eerdere
-adviesversies en geen overzicht van voorbije vergaderingen. Resultaten zijn read-only en kunnen
-worden geselecteerd/gekopieerd. Alle geïmporteerde en gegenereerde gegevens blijven wel in de
-database staan.
+Het overzicht **Eerdere vergaderingen** is vanaf de agendaweergave met één handeling te openen:
+naast “Nu controleren” staat de knop **Eerdere vergaderingen**, met een korte regel die uitlegt dat
+je daar bewaarde adviezen terugleest en dat terugkijken alleen lezen is. Het overzicht draagt de
+titel “Eerdere vergaderingen” met de ondertitel dat de meest recente bovenaan staat, en meldt
+bovenaan dat terugkijken alleen lezen is. Per rij staan een datumblok (dag, maand, jaar), titel,
+locatie, de telling “x inhoudelijke agendapunten · y met afgerond advies” en de knop **Openen**,
+die naar `/archief/<vergadering-id>` navigeert. Onderaan haalt **Meer vergaderingen laden** de
+volgende twintig op, met de stand “x van y vergaderingen getoond”; die knop verdwijnt zodra er geen
+volgende pagina meer is. Bijgeladen pagina's worden ontdubbeld op vergadering-ID, zodat geen
+vergadering dubbel verschijnt of wordt overgeslagen. Zijn er nog geen voorbije vergaderingen, dan
+toont het scherm geen lege lijst maar de uitleg “Er is nog geen vergadering voorbij” met een knop
+naar de huidige vergadering. Mislukt de eerste laadpoging of het bijladen, dan staat bovenaan een
+begrijpelijke melding met **Opnieuw proberen**, die exact dezelfde aanvraag herhaalt; al geladen
+rijen blijven staan. Ook dit scherm bevat geen enkele actie die nieuw werk start en geen
+ververstimer, houdt **Agenda** geselecteerd zonder eigen menu-item, en de terugactie brengt de
+gebruiker naar de agendaweergave. Op een smal scherm stapelen de gegevens per rij en lopen de
+knoppen over de volle breedte.
+
+De MVP heeft geen editor en geen goedkeuringsworkflow. Terugkijken beperkt zich tot de alleen-lezen
+schermen hierboven, die het laatste advies per agendapunt tonen; er is geen scherm met eerdere
+adviesversies. Resultaten zijn read-only en kunnen worden geselecteerd/gekopieerd. Alle
+geïmporteerde en gegenereerde gegevens blijven wel in de database staan.
 
 De UI toont conceptstatus prominent: “AI-concept — controleer bronnen en formulering vóór gebruik”.
 
@@ -390,6 +413,7 @@ geldige backend-sessiecookie. Het openen van een sessie vereist een geldig Googl
 | --- | --- |
 | `GET /api/auth/me` | token valideren en ingelogde gebruiker retourneren |
 | `GET /api/meetings/next` | eerstvolgende vergadering en import-/analysestatus |
+| `GET /api/meetings?state=past&limit=20&cursor=...` | gepagineerd overzicht van bewaarde vergaderingen die al zijn geweest |
 | `GET /api/meetings/{id}` | één bekende vergadering, met hetzelfde antwoordmodel als `/api/meetings/next` |
 | `POST /api/meetings/check-now` | dezelfde nieuwe-vergaderingcontrole als de 05:00-scheduler uitvoeren |
 | `POST /api/meetings/{id}/analyses` | idempotente analyse starten voor een vergadering die nog moet beginnen |
@@ -429,6 +453,32 @@ aangeeft of de vergadering al is geweest. De waarde wordt server-side berekend a
 `starts_at < CURRENT_TIMESTAMP` op databasetijd, niet op de browserklok; begint een vergadering
 precies nu, dan is `past` nog `false`. De huidige agendaweergave verandert haar gedrag niet door
 dit veld.
+
+`GET /api/meetings` levert de lijst met bewaarde vergaderingen die al zijn geweest. De parameter
+`state` is verplicht en kent uitsluitend de waarde `past`; `limit` is optioneel met standaard `20`
+en geldig bereik `1..50`; `cursor` is optioneel en ondoorzichtig. Een ontbrekende of afwijkende
+`state`, een `limit` buiten het bereik of niet-numeriek, en een onleesbare cursor geven `400` met
+foutcode `invalid_meeting_query` — via hetzelfde mechanisme als `invalid_ai_run_query`, dus zonder
+nieuw foutbodyformaat. De validatie gebeurt vóór elke databasetoegang, zodat een ongeldige aanvraag
+nooit gedeeltelijke gegevens oplevert. De cursor heeft exact hetzelfde formaat als die van
+`GET /api/ai-runs` (base64url zonder padding van `<instant>|<uuid>`); beide lijsten delen die
+codering.
+
+De lijst selecteert `starts_at < CURRENT_TIMESTAMP` op databasetijd en sorteert op begintijdstip
+aflopend en bij gelijk tijdstip op ID aflopend; een vergadering die precies nu begint telt dus niet
+als voorbij. Het antwoord bevat `items`, `nextCursor` en `total`. Per item: vergadering-ID, titel,
+begintijdstip, locatie, het aantal inhoudelijke agendapunten en het aantal punten met afgerond
+advies. Die tellingen gebruiken exact hetzelfde filter als de voortgangstelling van de
+agendaweergave — niet ingetrokken, inhoudelijk, categorie A, B of C en minstens één leesbaar stuk,
+met afgerond als de laatste `FINAL_ADVICE`-run is geslaagd — maar gegroepeerd per vergadering en
+uitsluitend berekend voor de vergaderingen op de opgehaalde pagina. `total` telt alle bewaarde
+voorbije vergaderingen, ongeacht cursor en limiet, gaat met elke pagina mee en is een momentopname
+per aanvraag. `nextCursor` is alleen gevuld wanneer er bewijsbaar nog een rij volgt: de query haalt
+één rij meer op dan gevraagd en gebruikt die extra rij alleen als cursorsignaal, zodat de laatste
+pagina nooit een cursor levert, ook niet wanneer zij precies `limit` items bevat. De route vergt
+geen schemawijziging: er is geen migratie en geen nieuwe index, en elke query is met een limiet
+begrensd. Ook deze route staat niet in de uitzonderingenlijst van de sessiecontrole en start nooit
+werk.
 
 ## 7. Agent Runtime-integratie
 
@@ -666,6 +716,11 @@ niet gecommit. Scripts lezen env-bestanden als data en voeren ze niet uit met `s
 - de leesroute voor één vergadering: `404` bij een geldige maar onbekende UUID, de server-side
   bepaalde waarde van `past` op zowel `/api/meetings/next` als `/api/meetings/{id}`, en een
   ongewijzigd aantal rijen in `analysis_run` vóór en ná het leesverkeer;
+- de lijstroute voor voorbije vergaderingen: uitsluitend voorbije vergaderingen met de meest
+  recente bovenaan, het grensgeval `starts_at` gelijk aan nu, cursorpaginering zonder duplicaten of
+  gaten met `nextCursor = null` op de laatste pagina, de lege lijst, de tellingen per vergadering
+  gelijk aan de voortgangstelling, en ongeldige queryparameters met `400` en
+  `invalid_meeting_query` vóór elke databasetoegang;
 - Google-tokenvalidatie, allowlist, gehashte duurzame sessies en intrekken bij uitloggen;
 - repositorytests met echte PostgreSQL via Testcontainers;
 - Spring Modulith-architectuurverificatie.
@@ -685,7 +740,13 @@ smoketest mag gecontroleerd de publieke bronnen lezen.
 - het alleen-lezen scherm van een voorbije vergadering: de markering ‘al geweest’ met vergaderdatum,
   het ontbreken van iedere startactie, uitsluitend leesaanroepen en de fouttoestand met behoud van
   de vergaderkop, tegenover een regressietest op de ongewijzigde huidige agendaweergave;
-- de padherkenning van `/archief/<vergadering-id>` en de aanwezigheid van de SPA-fallback;
+- het overzicht van eerdere vergaderingen: de ingang vanaf de agendaweergave, bijladen zonder
+  duplicaten met de stand van getoonde tegenover het totaal, het verdwijnen van de bijlaadknop op
+  de laatste pagina, de lege toestand, de fouttoestand met behoud van de al geladen rijen,
+  uitsluitend leesaanroepen zonder herhaalde verversing, en de terugactie vanuit een voorbije
+  vergadering terug naar het overzicht tegenover een rechtstreekse aanroep;
+- de padherkenning van `/archief` en `/archief/<vergadering-id>` en de aanwezigheid van de
+  SPA-fallback;
 - Nginx-cachecontract en gehashte bundlenaam.
 
 ### 13.3 Deployment

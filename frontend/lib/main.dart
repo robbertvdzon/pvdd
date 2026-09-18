@@ -6,6 +6,7 @@ import 'authentication.dart';
 import 'ai_runs_api.dart';
 import 'ai_runs_page.dart';
 import 'app_path.dart';
+import 'archive_page.dart';
 import 'archive_route.dart';
 import 'build_identity.dart';
 import 'configuration.dart';
@@ -332,6 +333,14 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
   // Gezet zolang /archief/<vergadering-id> open staat. De zijbalk krijgt er geen item bij: Agenda
   // blijft het geselecteerde menu-item.
   String? _archivedMeetingId;
+
+  // Gezet zolang het overzicht /archief open staat. Ook hier blijft Agenda geselecteerd.
+  bool _archiveOverview = false;
+
+  // Of de gebruiker een voorbije vergadering vanuit het overzicht opende. Bewust een expliciete
+  // navigatievlag en geen browserhistorie: bij een directe deeplink naar /archief/<id> blijft de
+  // bestaande terugactie naar de agendaweergave ongewijzigd.
+  bool _cameFromArchive = false;
   bool _updateAvailable = false;
   Timer? _timer;
   final _current = BuildIdentity.frontend();
@@ -342,7 +351,8 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
     super.initState();
     final path = widget.appPath();
     _archivedMeetingId = archivedMeetingIdFromPath(path);
-    _selected = _archivedMeetingId != null
+    _archiveOverview = _archivedMeetingId == null && isArchiveOverviewPath(path);
+    _selected = _archivedMeetingId != null || _archiveOverview
         ? 0
         : switch (path) {
             '/standpunten' => 1,
@@ -380,12 +390,21 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
     builder: (context, constraints) {
       final desktop = constraints.maxWidth >= 800;
       final content = switch (_selected) {
+        0 when _archiveOverview => ArchivePage(
+          gateway: widget.dashboardGateway,
+          onBack: _leaveArchiveOverview,
+          onOpen: _openArchivedMeeting,
+        ),
         0 => MeetingOverviewPage(
           key: ValueKey(_archivedMeetingId),
           gateway: widget.dashboardGateway,
           archivedMeetingId: _archivedMeetingId,
           readOnly: _archivedMeetingId != null,
           onBack: _archivedMeetingId == null ? null : _leaveArchive,
+          backLabel: _cameFromArchive
+              ? 'Terug naar eerdere vergaderingen'
+              : 'Terug naar agenda',
+          onOpenArchive: _archivedMeetingId == null ? _openArchive : null,
         ),
         1 => PolicyPage(gateway: HttpPolicyGateway()),
         2 => AiRunsPage(gateway: widget.aiRunsGateway),
@@ -475,14 +494,49 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
     },
   );
 
-  // De terugactie van het archiefscherm: terug naar de agendaweergave. Het archiefoverzicht
-  // /archief bestaat nog niet; die story past bestemming en label later aan.
-  void _leaveArchive() {
+  // Vanaf de agendaweergave naar het overzicht van eerdere vergaderingen.
+  void _openArchive() {
     setState(() {
+      _archiveOverview = true;
       _archivedMeetingId = null;
       _selected = 0;
     });
+    widget.navigate('/archief');
+  }
+
+  // De terugactie van het overzicht: terug naar de agendaweergave.
+  void _leaveArchiveOverview() {
+    setState(() {
+      _archiveOverview = false;
+      _cameFromArchive = false;
+      _selected = 0;
+    });
     widget.navigate('/agenda');
+  }
+
+  // 'Openen' op een rij van het overzicht: het alleen-lezen scherm van die vergadering. De vlag
+  // legt vast dat de gebruiker van het overzicht kwam, zodat de terugactie daarheen terugkeert.
+  void _openArchivedMeeting(String meetingId) {
+    setState(() {
+      _archivedMeetingId = meetingId;
+      _archiveOverview = false;
+      _cameFromArchive = true;
+      _selected = 0;
+    });
+    widget.navigate('/archief/$meetingId');
+  }
+
+  // De terugactie van het archiefscherm: terug naar het overzicht wanneer de gebruiker daarvandaan
+  // kwam, en anders — bij een directe deeplink — ongewijzigd naar de agendaweergave.
+  void _leaveArchive() {
+    final toOverview = _cameFromArchive;
+    setState(() {
+      _archivedMeetingId = null;
+      _archiveOverview = toOverview;
+      _cameFromArchive = false;
+      _selected = 0;
+    });
+    widget.navigate(toOverview ? '/archief' : '/agenda');
   }
 
   Widget _navigation({bool close = false}) => Material(
@@ -529,8 +583,10 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
       onTap: () {
         setState(() {
           _selected = index;
-          // Elke menukeuze verlaat het archiefscherm; het archief heeft geen eigen menu-item.
+          // Elke menukeuze verlaat het archief; het archief heeft geen eigen menu-item.
           _archivedMeetingId = null;
+          _archiveOverview = false;
+          _cameFromArchive = false;
         });
         widget.navigate(switch (index) {
           1 => '/standpunten',

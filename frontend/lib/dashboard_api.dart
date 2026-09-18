@@ -4,11 +4,20 @@ import 'package:http/http.dart' as http;
 
 import 'csrf_token.dart';
 
+/// De vaste paginagrootte van het archiefoverzicht.
+const int pastMeetingPageSize = 20;
+
 abstract interface class DashboardGateway {
   Future<MeetingOverview> overview();
 
   /// Leest één bekende vergadering, met hetzelfde antwoordmodel als [overview].
   Future<MeetingOverview> meeting(String meetingId);
+
+  /// Eén pagina bewaarde vergaderingen die al zijn geweest, de meest recente bovenaan.
+  ///
+  /// De paginagrootte ligt vast op [pastMeetingPageSize] en is niet instelbaar in de UI; [cursor]
+  /// is de ondoorzichtige cursor uit de vorige pagina.
+  Future<PastMeetingPage> pastMeetings({String? cursor});
 
   Future<List<AgendaItemSummary>> agendaItems(String meetingId);
   Future<AgendaItemDetail> agendaItem(String itemId);
@@ -30,6 +39,16 @@ class HttpDashboardGateway implements DashboardGateway {
   Future<MeetingOverview> meeting(String meetingId) async =>
       MeetingOverview.fromJson(
         await _get('/api/meetings/$meetingId') as Map<String, dynamic>,
+      );
+
+  @override
+  Future<PastMeetingPage> pastMeetings({String? cursor}) async =>
+      PastMeetingPage.fromJson(
+        await _get(
+              '/api/meetings?state=past&limit=$pastMeetingPageSize'
+              '${cursor == null ? '' : '&cursor=${Uri.encodeQueryComponent(cursor)}'}',
+            )
+            as Map<String, dynamic>,
       );
 
   @override
@@ -167,6 +186,51 @@ class MeetingInfo {
   final String? canonicalFingerprint;
   final String? revisionStatus;
   final bool past;
+}
+
+/// Eén pagina van het archiefoverzicht: de rijen, de cursor voor de volgende pagina en het totaal
+/// aantal bewaarde voorbije vergaderingen (ongeacht cursor en limiet).
+class PastMeetingPage {
+  const PastMeetingPage({
+    required this.items,
+    required this.nextCursor,
+    required this.total,
+  });
+  factory PastMeetingPage.fromJson(Map<String, dynamic> json) => PastMeetingPage(
+    items: (json['items'] as List<dynamic>)
+        .map((value) => PastMeeting.fromJson(value as Map<String, dynamic>))
+        .toList(growable: false),
+    nextCursor: json['nextCursor'] as String?,
+    total: json['total'] as int,
+  );
+  final List<PastMeeting> items;
+  final String? nextCursor;
+  final int total;
+}
+
+class PastMeeting {
+  const PastMeeting({
+    required this.id,
+    required this.title,
+    required this.startsAt,
+    required this.location,
+    required this.substantiveItemCount,
+    required this.completedAdviceCount,
+  });
+  factory PastMeeting.fromJson(Map<String, dynamic> json) => PastMeeting(
+    id: json['id'] as String,
+    title: json['title'] as String,
+    startsAt: DateTime.parse(json['startsAt'] as String),
+    location: json['location'] as String?,
+    substantiveItemCount: json['substantiveItemCount'] as int,
+    completedAdviceCount: json['completedAdviceCount'] as int,
+  );
+  final String id;
+  final String title;
+  final DateTime startsAt;
+  final String? location;
+  final int substantiveItemCount;
+  final int completedAdviceCount;
 }
 
 class Progress {
