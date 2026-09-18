@@ -348,6 +348,13 @@ idempotentiesleutels zorgen ervoor dat ongewijzigde punten geen dubbele actuele 
 Oude bronversies, runs en adviezen blijven als historie bewaard. Tijdens heranalyse kan het vorige
 advies zichtbaar blijven, maar dan met een status zoals verouderd, voorlopig of wordt vernieuwd.
 
+Is een advies tussentijds vernieuwd, dan is de eerdere versie ook achteraf nog terug te lezen in de
+detailweergave van het agendapunt, met de datum waarop zij is gemaakt, het moment waarop zij is
+vervangen en de reden van vernieuwing: handmatig opnieuw gestart na een technische fout, of de
+bron- of beleidscontext veranderde. Zie [paragraaf 11](#11-informatie-in-de-webapp). Een eerdere
+versie is alleen te lezen; zij is niet te bewerken, aan te vullen, te exporteren of te delen, en
+het openen ervan start nooit een nieuwe analyse.
+
 ## 10. Planning van de achtergrondtaken
 
 | Taak | Planning | Direct AI-gebruik |
@@ -413,6 +420,29 @@ agendapunten niet, dan blijft de vergaderkop gewoon staan en verschijnt een begr
 met **Opnieuw proberen**, zonder dat eerder getoonde informatie verdwijnt. Kwam de gebruiker via
 het overzicht **Eerdere vergaderingen**, dan keert de terugactie daarheen terug; bij een
 rechtstreekse aanroep van het adres blijft die onveranderd naar de agendaweergave gaan.
+
+Bij een agendapunt waarvan het advies tussentijds is vernieuwd, is naast het laatste advies ook de
+eerdere versie terug te lezen. Dat gebeurt in dezelfde detailweergave, zowel bij de huidige agenda
+als bij een voorbije vergadering. Zijn er meer bewaarde versies, dan staat boven de analyse een
+keuze met één optie per versie, de nieuwste eerst: **Laatste advies · <datum>** en daarna
+**Eerdere versie · <datum>**. Onder die keuze staat bij het laatste advies één regel die vertelt
+welke versie het verving en waarom. Is er maar één versie bewaard, dan verschijnt geen keuze maar de
+melding dat van dit agendapunt geen eerdere versie is bewaard, met de datum van het enige advies.
+Is er nog helemaal geen advies, dan verandert er niets aan de bestaande weergave.
+
+Bekijk je een eerdere versie, dan zegt het scherm dat ook: in de kaartkop staat de markering
+**EERDERE VERSIE**, en bovenaan staan de datum waarop die versie is gemaakt, de datum waarop zij is
+vervangen, de reden daarvan en de aanvullende analyse-instructie zoals die toen gold. Was er toen
+geen instructie bewaard, dan staat er **niet vastgelegd**; de instructie die nú is ingesteld wordt
+bij een eerdere versie nooit getoond. De tabel met AI-titel, korte conclusie en laatste AI-analyse
+hoort bij het laatste advies en verdwijnt daarom bij een eerdere versie.
+
+Bij een eerdere versie verschijnt bewust geen bronnenlijst: welke stukken toen precies zijn
+gebruikt, is niet apart bewaard. Het scherm zegt dat met zoveel woorden en verwijst voor de
+bronnenlijst naar het laatste advies. Het AI-voorbehoud en de melding over niet-leesbare stukken
+blijven bij elke getoonde versie even zichtbaar. Wisselen tussen versies leest niets nieuws op en
+start nooit werk; lukt het ophalen van de versies niet, dan blijft het getoonde advies gewoon staan
+en verschijnt een korte melding met de knop **Versies opnieuw laden**.
 
 ## 12. Samenvatting voor de Commissie-assistent
 

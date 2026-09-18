@@ -522,6 +522,57 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
   Future<AgendaItemDetail>? _detail;
   bool _retrying = false;
 
+  /// De bewaarde adviesversies van dit agendapunt, `null` zolang er niets is opgehaald. Ze worden
+  /// één keer opgehaald bij het uitklappen van de detailweergave.
+  List<AdviceVersion>? _versions;
+
+  /// Het ophalen van de versies is mislukt. Het al getoonde laatste advies blijft staan.
+  bool _versionsFailed = false;
+  bool _loadingVersions = false;
+
+  /// De getoonde versie; 0 is het laatste advies, hoger is een eerdere versie.
+  int _selectedVersion = 0;
+
+  /// Heeft dit agendapunt een bewaard advies? Alleen dan valt er iets te kiezen.
+  bool get _hasAdvice => widget.item.adviceActuality != null;
+
+  /// Toont de kaart op dit moment een bewaarde eerdere versie in plaats van het laatste advies?
+  bool get _viewingEarlierVersion => _selectedEarlierVersion != null;
+
+  AdviceVersion? get _selectedEarlierVersion {
+    final versions = _versions;
+    if (versions == null) return null;
+    if (_selectedVersion < 1 || _selectedVersion >= versions.length) return null;
+    return versions[_selectedVersion];
+  }
+
+  /// Haalt de adviesversies op. Uitsluitend leesverkeer, precies één keer per uitklapactie; de
+  /// ververstimer van de agendaweergave wordt hier bewust niet mee uitgebreid.
+  Future<void> _loadVersions() async {
+    if (_loadingVersions) return;
+    setState(() {
+      _loadingVersions = true;
+      _versionsFailed = false;
+    });
+    try {
+      final versions = await widget.gateway.adviceVersions(widget.item.id);
+      if (mounted) {
+        setState(() {
+          _versions = versions;
+          _selectedVersion = 0;
+          _loadingVersions = false;
+        });
+      }
+    } on Object {
+      if (mounted) {
+        setState(() {
+          _versionsFailed = true;
+          _loadingVersions = false;
+        });
+      }
+    }
+  }
+
   Future<void> _retryAnalysis() async {
     if (_retrying) return;
     setState(() => _retrying = true);
@@ -654,6 +705,17 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
               _detail = detail;
             });
           }
+          // Eén keer bij het uitklappen, en alleen wanneer er een advies is. Wisselen tussen
+          // versies leest daarna uit deze lijst en doet geen nieuwe aanroep.
+          if (open && _versions == null && !_versionsFailed && _hasAdvice) {
+            unawaited(_loadVersions());
+          }
+          // Een dichtgeklapte kaart hoort altijd het agendapunt zelf te beschrijven: de keuze voor
+          // een eerdere versie vervalt, zodat badge en metadatatabel weer die van het laatste
+          // advies zijn. De al opgehaalde lijst blijft staan, dus opnieuw uitklappen leest niets.
+          if (!open && _selectedVersion != 0) {
+            setState(() => _selectedVersion = 0);
+          }
         },
         title: LayoutBuilder(
           builder: (context, constraints) {
@@ -682,13 +744,17 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
                 ),
               ],
             );
+            // Bij een eerdere versie beschrijft de status van het laatste advies niet wat er in
+            // beeld staat; de kaartkop meldt daarom uitsluitend dat dit een eerdere versie is.
             final statuses = Wrap(
               spacing: 8,
               runSpacing: 6,
-              children: [
-                _statusChip(primaryStatus),
-                if (secondaryStatus != null) _statusChip(secondaryStatus),
-              ],
+              children: _viewingEarlierVersion
+                  ? [_statusChip('EARLIER_VERSION')]
+                  : [
+                      _statusChip(primaryStatus),
+                      if (secondaryStatus != null) _statusChip(secondaryStatus),
+                    ],
             );
             if (constraints.maxWidth < 560) {
               return Column(
@@ -711,7 +777,9 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _AgendaFactsTable(facts: facts),
+              // De tabel hoort bij het laatste advies (AI-titel, korte conclusie, laatste
+              // AI-analyse) en zou bij een eerdere versie misleidend zijn.
+              if (!_viewingEarlierVersion) _AgendaFactsTable(facts: facts),
               if (item.canRetryAnalysis && !widget.readOnly) ...[
                 const SizedBox(height: 12),
                 Align(
@@ -759,7 +827,11 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
   }
 
   Widget _detailView(BuildContext context, AgendaItemDetail detail) {
-    final advice = detail.advice;
+    final versions = _versions ?? const <AdviceVersion>[];
+    final earlier = _selectedEarlierVersion;
+    // Bij een eerdere versie komt de adviesinhoud uit die versie; het laatste advies blijft
+    // ongewijzigd uit het itemdetail komen.
+    final advice = earlier?.advice ?? detail.advice;
     final unreadableSources = detail.sources
         .where((source) => source.status != 'EXTRACTED')
         .toList(growable: false);
@@ -768,6 +840,8 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          ..._versionChoice(context, versions),
+          if (earlier != null) _earlierVersionNotice(context, versions, earlier),
           if (detail.explanation != null) Text(detail.explanation!),
           if (detail.adviceActuality == 'STALE')
             _actualityWarning(
@@ -846,7 +920,18 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
               fontWeight: FontWeight.w700,
             ),
           ),
-          if (detail.sources.isNotEmpty) ...[
+          // Bij een eerdere versie is niet bewaard welke stukken toen zijn gebruikt, dus daar hoort
+          // geen bronnenlijst maar de expliciete melding daarover.
+          if (earlier != null) ...[
+            const SizedBox(height: 12),
+            _outlinedNotice(
+              context,
+              const Text(
+                'Bij deze eerdere versie is niet apart bewaard welke stukken toen zijn gebruikt. '
+                'De bronnenlijst hoort daarom alleen bij het laatste advies.',
+              ),
+            ),
+          ] else if (detail.sources.isNotEmpty) ...[
             const SizedBox(height: 12),
             const Text(
               'Bronnen',
@@ -871,6 +956,188 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
       ),
     );
   }
+
+  /// De versiekeuze boven de analyse.
+  ///
+  /// Bij meer dan één bewaarde versie één optie per versie, nieuwste eerst, met daaronder de regel
+  /// die zegt welke versie het laatste advies verving. Bij precies één bewaarde versie staat op
+  /// dezelfde plek de expliciete melding dat er geen eerdere versie is bewaard. Bij nul bewaarde
+  /// versies verandert er niets aan de weergave; de bestaande toestand blijft leidend.
+  List<Widget> _versionChoice(BuildContext context, List<AdviceVersion> versions) {
+    if (_versionsFailed) return [_versionsErrorNotice(context)];
+    if (versions.length == 1) {
+      return [
+        Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: _outlinedNotice(
+            context,
+            Text(
+              'Van dit agendapunt is geen eerdere versie bewaard. '
+              'Je ziet het enige advies, gemaakt op '
+              '${adviceVersionDate(versions.single.createdAt)}.',
+            ),
+          ),
+        ),
+      ];
+    }
+    if (versions.length < 2) return const [];
+    // De regel hoort bij het laatste advies: die versie verving de eerstvolgende oudere.
+    final replacement = _selectedVersion == 0 ? _replacementLine(versions) : null;
+    return [
+      Padding(
+        padding: const EdgeInsets.only(top: 16),
+        // Een Wrap in plaats van één rij: op mobiel stapelen de opties en loopt niets over, ook
+        // niet bij drie of meer bewaarde versies.
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (var index = 0; index < versions.length; index++)
+              ChoiceChip(
+                label: Text(adviceVersionLabel(versions[index], index)),
+                selected: _selectedVersion == index,
+                // Wisselen leest uit de al opgehaalde lijst; geen enkele nieuwe aanroep.
+                onSelected: (_) => setState(() => _selectedVersion = index),
+              ),
+          ],
+        ),
+      ),
+      if (replacement != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(replacement),
+        ),
+    ];
+  }
+
+  /// `Dit advies verving de versie van <datum>. Reden: <reden>.`
+  ///
+  /// De reden hoort bij de vervangende (nieuwste) versie. Levert die afleiding geen zinnige reden —
+  /// een eerste analyse kan niets vervangen — dan blijft de redenzin weg in plaats van een
+  /// placeholder.
+  String _replacementLine(List<AdviceVersion> versions) {
+    final previous = adviceVersionDate(versions[1].createdAt);
+    final reason = adviceRefreshReasonSentence(versions.first.refreshReason);
+    return reason == null
+        ? 'Dit advies verving de versie van $previous.'
+        : 'Dit advies verving de versie van $previous. Reden: $reason.';
+  }
+
+  /// De melding bij een eerdere versie: wanneer die is gemaakt, wanneer en waarom zij is vervangen,
+  /// en welke aanvullende analyse-instructie er toen gold.
+  ///
+  /// 'Vervangen op' en de reden komen van de eerstvolgende nieuwere versie: het item direct boven
+  /// de getoonde versie in de serverordening is de versie die haar verving. De huidige instelling
+  /// wordt hier nooit getoond; is er niets bewaard, dan staat er `niet vastgelegd`.
+  Widget _earlierVersionNotice(
+    BuildContext context,
+    List<AdviceVersion> versions,
+    AdviceVersion earlier,
+  ) {
+    final newer = versions[_selectedVersion - 1];
+    final reason = adviceRefreshReasonSentence(newer.refreshReason);
+    final replaced = adviceVersionDate(newer.createdAt);
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: _filledNotice(
+        context,
+        Icons.lock_outline,
+        [
+          Text(
+            'Je bekijkt een eerdere versie van '
+            '${adviceVersionDate(earlier.createdAt)}',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            reason == null
+                ? 'Vervangen op $replaced.'
+                : 'Vervangen op $replaced. Reden: $reason.',
+          ),
+          Text(
+            'Aanvullende analyse-instructie van toen: '
+            '${earlier.analysisGuidance ?? 'niet vastgelegd'}.',
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Het ophalen van de versies is mislukt. Het al getoonde laatste advies blijft volledig staan;
+  /// er verdwijnt geen advies. De actie herhaalt exact dezelfde leesaanvraag.
+  Widget _versionsErrorNotice(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Semantics(
+        liveRegion: true,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colors.errorContainer,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'De adviesversies konden niet worden geladen. Het advies hieronder blijft staan.',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _loadingVersions
+                    ? null
+                    : () => unawaited(_loadVersions()),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Versies opnieuw laden'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Een rustige, omlijnde melding rond de versiekeuze: dezelfde vorm op desktop en mobiel.
+  Widget _outlinedNotice(BuildContext context, Widget child) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: child,
+  );
+
+  /// Een opvallende melding met pictogram, in dezelfde vorm als de markering boven een voorbije
+  /// vergadering, zodat de meldingen ook op een smal scherm even prominent blijven.
+  Widget _filledNotice(
+    BuildContext context,
+    IconData icon,
+    List<Widget> lines,
+  ) => Semantics(
+    liveRegion: true,
+    child: Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: PvddColors.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: lines,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 
   Widget _actualityWarning(BuildContext context, String text) => Semantics(
     liveRegion: true,
@@ -1074,6 +1341,7 @@ String _statusLabel(String status) => switch (status) {
   'DOCUMENTS_UNREADABLE' => 'Stukken niet leesbaar',
   'DOCUMENTS_PARTIALLY_READABLE' => 'Een of meer stukken niet leesbaar',
   'DOCUMENTS_READY' => 'Stukken leesbaar',
+  'EARLIER_VERSION' => 'EERDERE VERSIE',
   _ => status.toLowerCase().replaceAll('_', ' '),
 };
 
@@ -1123,6 +1391,36 @@ String _checkOutcomeLabel(
   _ => 'De broncontrole is afgerond.',
 };
 
+const _dutchMonths = [
+  'januari',
+  'februari',
+  'maart',
+  'april',
+  'mei',
+  'juni',
+  'juli',
+  'augustus',
+  'september',
+  'oktober',
+  'november',
+  'december',
+];
+
+const _dutchShortMonths = [
+  'jan',
+  'feb',
+  'mrt',
+  'apr',
+  'mei',
+  'jun',
+  'jul',
+  'aug',
+  'sep',
+  'okt',
+  'nov',
+  'dec',
+];
+
 // Lange Nederlandse datum voor de markering 'al geweest', bijvoorbeeld 'maandag 7 september 2026'.
 String _longDate(DateTime value) {
   const days = [
@@ -1134,23 +1432,41 @@ String _longDate(DateTime value) {
     'zaterdag',
     'zondag',
   ];
-  const months = [
-    'januari',
-    'februari',
-    'maart',
-    'april',
-    'mei',
-    'juni',
-    'juli',
-    'augustus',
-    'september',
-    'oktober',
-    'november',
-    'december',
-  ];
   final local = value.toLocal();
-  return '${days[local.weekday - 1]} ${local.day} ${months[local.month - 1]} ${local.year}';
+  return '${days[local.weekday - 1]} ${local.day} ${_dutchMonths[local.month - 1]} ${local.year}';
 }
+
+/// De datum van een adviesversie in de meldingen, bijvoorbeeld '3 september 2026'.
+///
+/// Publiek zodat tests de datums via dezelfde helper asserteren als de weergave gebruikt; een
+/// latere opmaakwijziging levert dan geen valse rode test op. De weergave is lokaal
+/// (Europe/Amsterdam in de app), consistent met de rest van het scherm.
+String adviceVersionDate(DateTime value) {
+  final local = value.toLocal();
+  return '${local.day} ${_dutchMonths[local.month - 1]} ${local.year}';
+}
+
+/// De compacte datum in de versiekeuze, bijvoorbeeld '7 sep 2026'.
+String adviceVersionShortDate(DateTime value) {
+  final local = value.toLocal();
+  return '${local.day} ${_dutchShortMonths[local.month - 1]} ${local.year}';
+}
+
+/// Het label van één optie in de versiekeuze; de eerste optie is altijd het laatste advies.
+String adviceVersionLabel(AdviceVersion version, int index) => index == 0
+    ? 'Laatste advies · ${adviceVersionShortDate(version.createdAt)}'
+    : 'Eerdere versie · ${adviceVersionShortDate(version.createdAt)}';
+
+/// De redenzin bij een vernieuwd advies, of `null` wanneer er geen vervangreden te geven is.
+///
+/// `FIRST_ANALYSIS` kan per definitie niets vervangen; in dat geval blijft de redenzin weg in plaats
+/// van dat er een placeholder wordt getoond.
+String? adviceRefreshReasonSentence(String refreshReason) =>
+    switch (refreshReason) {
+      'MANUAL_RETRY' => 'handmatig opnieuw gestart',
+      'CONTEXT_CHANGED' => 'de bron- of beleidscontext veranderde',
+      _ => null,
+    };
 
 String _dateTime(DateTime value) {
   final local = value.toLocal();

@@ -4,6 +4,7 @@ import java.util.UUID
 import nl.vdzon.pvdd.analysis.AnalysisCommandStatus
 import nl.vdzon.pvdd.analysis.AnalysisFacade
 import nl.vdzon.pvdd.auth.ApiAuthenticationFilter
+import nl.vdzon.pvdd.dashboard.AdviceVersionsDto
 import nl.vdzon.pvdd.dashboard.AgendaItemDetailDto
 import nl.vdzon.pvdd.dashboard.AgendaItemSummaryDto
 import nl.vdzon.pvdd.dashboard.AnalysisRunDto
@@ -70,6 +71,18 @@ class DashboardController(
 
     @GetMapping("/agenda-items/{id}")
     fun item(@PathVariable id: UUID): AgendaItemDetailDto = dashboard.item(id) ?: notFound()
+
+    /**
+     * De bewaarde adviesversies van één agendapunt, nieuwste eerst, zodat de detailweergave naast
+     * het laatste advies ook een eerdere versie kan tonen.
+     *
+     * Een onbekend agendapunt levert 404; een bestaand agendapunt zonder geslaagde adviesrun levert
+     * 200 met een lege lijst. Het antwoord bevat bewust geen citaten en geen bronlijst: bij een
+     * eerdere versie is niet apart bewaard welke stukken toen zijn gebruikt. De route valt
+     * automatisch onder `ApiAuthenticationFilter`, dus er is geen filterwijziging nodig.
+     */
+    @GetMapping("/agenda-items/{id}/advice-versions")
+    fun adviceVersions(@PathVariable id: UUID): AdviceVersionsDto = dashboard.adviceVersions(id) ?: notFound()
 
     @GetMapping("/analysis-runs/{id}")
     fun run(@PathVariable id: UUID): AnalysisRunDto = dashboard.run(id) ?: notFound()

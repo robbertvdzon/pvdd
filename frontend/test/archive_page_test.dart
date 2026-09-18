@@ -109,10 +109,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(gateway.startingCalls, isEmpty);
+    // Uitklappen leest naast het itemdetail ook de bewaarde adviesversies; beide zijn leesroutes.
     expect(gateway.calls, [
       'meeting:$archivedMeetingId',
       'agendaItems:$archivedMeetingId',
       'agendaItem:item-a',
+      'adviceVersions:item-a',
     ]);
   });
 
