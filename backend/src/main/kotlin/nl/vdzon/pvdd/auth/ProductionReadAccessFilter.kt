@@ -49,6 +49,9 @@ class ProductionReadAccessFilter(
             Regex("/api/meetings/$UUID/agenda-items"),
             Regex("/api/(agenda-items|analysis-runs|ai-runs)/$UUID"),
             Regex("/api/policy/positions/$UUID"),
+            Regex("/api/meetings"),
+            Regex("/api/meetings/$UUID"),
+            Regex("/api/agenda-items/$UUID/advice-versions"),
         )
         fun allowedPath(path: String) = paths.any { it.matches(path) }
     }

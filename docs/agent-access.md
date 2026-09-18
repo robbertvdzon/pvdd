@@ -36,11 +36,29 @@ Robbert heeft op 16 september 2026 een beperkte uitzondering toegestaan voor de 
 beoordeelde GET/HEAD-routes in `ProductionReadAccessFilter`. `AI_READ_ACCESS_EMAIL` moet een bestaande
 toegestane identiteit zijn. Deze token werkt niet op de loginroutes, maakt geen sessie en kan geen
 analyse starten, instellingen wijzigen of andere mutaties uitvoeren. Nieuwe routes zijn standaard
-ontoegankelijk; zo staan de leesroutes `GET /api/meetings/{id}`, `GET /api/meetings?state=past` en
-`GET /api/agenda-items/{id}/advice-versions` er bewust nog niet in en geven zij met deze token
-`403`. Gebruik voor productieonderzoek
-`GET /api/meetings/next` en `GET /api/meetings/{id}/agenda-items`. De gewone `AI_ACCESS_TOKEN`
-blijft buiten Agent Runtime.
+ontoegankelijk: een route doet pas mee nadat zij expliciet is beoordeeld en aan de padlijst van de
+filter is toegevoegd.
+
+Sinds 18 september 2026 horen ook de drie beoordeelde archief-leesroutes bij die lijst:
+`GET /api/meetings` (de vergaderinglijst), `GET /api/meetings/{id}` (de vergaderkop) en
+`GET /api/agenda-items/{id}/advice-versions` (de bewaarde adviesversies). Samen met de al langer
+toegestane `GET /api/meetings/next` en `GET /api/meetings/{id}/agenda-items` is dat het complete
+archiefbeeld voor productieonderzoek. Het mechanisme zelf is daarbij niet veranderd.
+
+Wat daarbij hoort te weten:
+
+- De filter matcht exact op het pad zonder querystring, dus
+  `GET /api/meetings?state=past&limit=20&cursor=…` is toegestaan, maar `/api/meetings/`,
+  `/api/meetings;a=b`, `/api/meetings/not-a-uuid`, `/api/meetings/{id}/extra` en
+  `…/advice-versions/` leveren `403`.
+- Alleen `GET` en `HEAD` komen erdoor; elke andere methode op dezelfde paden levert `403`.
+- Een leeg, te lang of onjuist token, een uitgeschakelde capability of een niet-toegestaan
+  e-mailadres levert `401`. Ontbreekt de header `X-AI-Read-Token`, dan slaat deze filter zichzelf
+  over en blijft de gewone sessiecontrole gelden; ongeauthenticeerd verkeer krijgt dan `401` en
+  geen archiefgegevens.
+- Elk antwoord van deze capability krijgt `Cache-Control: no-store` en zet nooit een `Set-Cookie`.
+
+De gewone `AI_ACCESS_TOKEN` blijft buiten Agent Runtime.
 
 Alleen de Product Factory-productadviseur krijgt `PVDD__PRODUCTION_READ_ONLY_TOKEN`; testers en
 Software Factory krijgen hem niet. Lees eerst gericht de API; gebruik voor daadwerkelijke visuele
