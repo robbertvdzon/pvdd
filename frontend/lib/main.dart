@@ -6,6 +6,7 @@ import 'authentication.dart';
 import 'ai_runs_api.dart';
 import 'ai_runs_page.dart';
 import 'app_path.dart';
+import 'archive_route.dart';
 import 'build_identity.dart';
 import 'configuration.dart';
 import 'dashboard_api.dart';
@@ -304,6 +305,8 @@ class TechnicalApplicationShell extends StatefulWidget {
     required this.aiRunsGateway,
     required this.settingsGateway,
     required this.acceptanceBypass,
+    this.appPath = currentAppPath,
+    this.navigate = navigateToAppPath,
     super.key,
   });
   final String email;
@@ -314,6 +317,11 @@ class TechnicalApplicationShell extends StatefulWidget {
   final AiRunsGateway aiRunsGateway;
   final SettingsGateway settingsGateway;
   final bool acceptanceBypass;
+
+  /// Het huidige pad en de navigatie. Standaard de browserimplementatie; een test kan ze vervangen
+  /// zonder de app in een browser te draaien.
+  final String Function() appPath;
+  final void Function(String) navigate;
   @override
   State<TechnicalApplicationShell> createState() =>
       _TechnicalApplicationShellState();
@@ -321,6 +329,9 @@ class TechnicalApplicationShell extends StatefulWidget {
 
 class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
   late int _selected;
+  // Gezet zolang /archief/<vergadering-id> open staat. De zijbalk krijgt er geen item bij: Agenda
+  // blijft het geselecteerde menu-item.
+  String? _archivedMeetingId;
   bool _updateAvailable = false;
   Timer? _timer;
   final _current = BuildIdentity.frontend();
@@ -329,13 +340,17 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
   @override
   void initState() {
     super.initState();
-    _selected = switch (currentAppPath()) {
-      '/standpunten' => 1,
-      '/ai-runs' => 2,
-      '/instellingen' => 3,
-      '/versie' => 4,
-      _ => 0,
-    };
+    final path = widget.appPath();
+    _archivedMeetingId = archivedMeetingIdFromPath(path);
+    _selected = _archivedMeetingId != null
+        ? 0
+        : switch (path) {
+            '/standpunten' => 1,
+            '/ai-runs' => 2,
+            '/instellingen' => 3,
+            '/versie' => 4,
+            _ => 0,
+          };
     unawaited(_checkUpdate());
     _timer = Timer.periodic(
       const Duration(minutes: 5),
@@ -365,7 +380,13 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
     builder: (context, constraints) {
       final desktop = constraints.maxWidth >= 800;
       final content = switch (_selected) {
-        0 => MeetingOverviewPage(gateway: widget.dashboardGateway),
+        0 => MeetingOverviewPage(
+          key: ValueKey(_archivedMeetingId),
+          gateway: widget.dashboardGateway,
+          archivedMeetingId: _archivedMeetingId,
+          readOnly: _archivedMeetingId != null,
+          onBack: _archivedMeetingId == null ? null : _leaveArchive,
+        ),
         1 => PolicyPage(gateway: HttpPolicyGateway()),
         2 => AiRunsPage(gateway: widget.aiRunsGateway),
         3 => SettingsPage(gateway: widget.settingsGateway),
@@ -454,6 +475,16 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
     },
   );
 
+  // De terugactie van het archiefscherm: terug naar de agendaweergave. Het archiefoverzicht
+  // /archief bestaat nog niet; die story past bestemming en label later aan.
+  void _leaveArchive() {
+    setState(() {
+      _archivedMeetingId = null;
+      _selected = 0;
+    });
+    widget.navigate('/agenda');
+  }
+
   Widget _navigation({bool close = false}) => Material(
     color: PvddColors.sidebar,
     child: Padding(
@@ -481,29 +512,37 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
     ),
   );
 
-  Widget _destination(int index, IconData icon, String label, bool close) =>
-      Semantics(
-        selected: _selected == index,
-        child: ListTile(
-          selected: _selected == index,
-          selectedTileColor: PvddColors.sidebarSelected,
-          textColor: Colors.white,
-          iconColor: Colors.white,
-          leading: Icon(icon),
-          title: Text(label),
-          onTap: () {
-            setState(() => _selected = index);
-            navigateToAppPath(switch (index) {
-              1 => '/standpunten',
-              2 => '/ai-runs',
-              3 => '/instellingen',
-              4 => '/versie',
-              _ => '/agenda',
-            });
-            if (close) Navigator.of(context).pop();
-          },
-        ),
-      );
+  Widget _destination(
+    int index,
+    IconData icon,
+    String label,
+    bool close,
+  ) => Semantics(
+    selected: _selected == index,
+    child: ListTile(
+      selected: _selected == index,
+      selectedTileColor: PvddColors.sidebarSelected,
+      textColor: Colors.white,
+      iconColor: Colors.white,
+      leading: Icon(icon),
+      title: Text(label),
+      onTap: () {
+        setState(() {
+          _selected = index;
+          // Elke menukeuze verlaat het archiefscherm; het archief heeft geen eigen menu-item.
+          _archivedMeetingId = null;
+        });
+        widget.navigate(switch (index) {
+          1 => '/standpunten',
+          2 => '/ai-runs',
+          3 => '/instellingen',
+          4 => '/versie',
+          _ => '/agenda',
+        });
+        if (close) Navigator.of(context).pop();
+      },
+    ),
+  );
 }
 
 class _VersionPage extends StatelessWidget {
