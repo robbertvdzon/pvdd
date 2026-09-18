@@ -98,3 +98,74 @@ bevat deze wijziging pas ná merge. Al het bewijs vóór merge komt daarom uit d
 storybranch plus de branchdiff. De rookcontrole met het echte leestoken (`GET` op de drie paden →
 200 met `no-store` en zonder `Set-Cookie`, `POST` → 403) kan pas na deployment en is nooit een
 merge-poort; de tokenwaarde wordt daarbij niet gedeeld, gelogd of in een verslag opgenomen.
+
+## hkh-295 — documentation (2026-09-18)
+
+### Doel
+De documentatie laten kloppen met de storywijziging: de drie archief-leesroutes
+(`GET /api/meetings`, `GET /api/meetings/{id}` en `GET /api/agenda-items/{id}/advice-versions`)
+horen sinds deze story bij de expliciet beoordeelde paden van `ProductionReadAccessFilter`. De
+bestaande tekst beschreef nog de situatie van vóór deze story en was daarmee feitelijk onjuist
+geworden.
+
+### Bijgewerkt
+- `docs/agent-access.md`, sectie **Productadviseur: expliciet geautoriseerde leestoegang voor
+  PvdD**
+  - De passage die stelde dat `GET /api/meetings/{id}`, `GET /api/meetings?state=past` en
+    `GET /api/agenda-items/{id}/advice-versions` "er bewust nog niet in" staan en met het leestoken
+    `403` geven, is vervangen: die drie routes zijn nu juist toegestaan. De regel dat een route pas
+    meedoet ná expliciete beoordeling en opname in de padlijst blijft staan, nu als losse zin in
+    plaats van als voorbeeld met verouderde routes.
+  - Nieuwe alinea met de drie toegevoegde routes en hun betekenis (vergaderinglijst, vergaderkop,
+    bewaarde adviesversies), samen met de al langer toegestane `GET /api/meetings/next` en
+    `GET /api/meetings/{id}/agenda-items` als het complete archiefbeeld voor productieonderzoek,
+    plus de vaststelling dat het mechanisme zelf niet is veranderd.
+  - Nieuwe opsomming met het waarneembare gedrag dat een onderzoeker nodig heeft: exacte
+    padmatching zonder querystring (dus `?state=past&limit=20&cursor=…` toegestaan, maar
+    afsluitende slash, `;`-parameter, niet-UUID en een extra segment `403`), alleen `GET` en `HEAD`
+    (andere methoden `403`), `401` bij een leeg/te lang/onjuist token, uitgeschakelde capability of
+    niet-toegestaan e-mailadres, het overslaan van de filter zonder header met de gewone
+    sessiecontrole (`401` voor ongeauthenticeerd verkeer) en `Cache-Control: no-store` zonder
+    `Set-Cookie`.
+  - De slotzin over de gewone `AI_ACCESS_TOKEN` die buiten Agent Runtime blijft, is inhoudelijk
+    ongewijzigd overgenomen.
+- `docs/stories/hkh-291-worklog.md`: deze sectie.
+
+### Bewust niet gewijzigd
+- `docs/microservice-specificatie.md` — §3, §6.3, §10 en §11 beschrijven de sessie- en
+  tokenafspraken van de applicatie zelf; de aparte leescapability staat daar niet in en is altijd
+  uitsluitend in `docs/agent-access.md` beschreven. De zinnen in §6.3 dat de drie leesroutes "niet
+  in de uitzonderingenlijst van de sessiecontrole" staan, gaan over
+  `ApiAuthenticationFilter.shouldNotFilter` — die lijst is in deze story letterlijk ongewijzigd,
+  dus die tekst klopt nog. Het routecontract, de queryparameters, de statuscodes en de
+  antwoordmodellen zijn niet geraakt. §13.1 is niet uitgebreid: de filtertests horen bij de
+  capability die buiten de normatieve spec valt.
+- `docs/functionele-werking-commissie-assistent.md` — beschrijft wat de ingelogde gebruiker in de
+  webapp ziet; er verandert niets aan scherm, flow of zichtbaar gedrag.
+- `docs/factory/functional-spec.md` en `docs/factory/technical-spec.md` — geen nieuwe route, geen
+  nieuw scherm, geen wijziging in stack, authenticatiemodel of gegevensmodel.
+- `docs/factory/development.md`, `docs/factory/deployment.md`, `docs/factory/secrets-local.md`,
+  `docs/factory/agent-runtime.md`, `docs/factory/README.md` — de testopzet en de uitrolketen zijn
+  niet geraakt; er komt geen omgevingsvariabele, geheim of configuratiesleutel bij
+  (`AI_READ_ACCESS_TOKEN` en `AI_READ_ACCESS_EMAIL` blijven ongewijzigd).
+- `README.md` — beschrijft de repo-indeling en het lokaal starten; niets daarvan is geraakt.
+- `docs/stappenplannen/*` — uitvoeringsplannen per fase; die beschrijven geen huidig gedrag.
+- `docs/operations.md`, `docs/technical-integrations.md`, `docs/adr/*`, `deploy/README.md` — geen
+  migratie, geen index, geen beheer-, integratie- of uitrolwijziging.
+- `docs/functional-acceptance-verification.md`, `docs/source-revision-verification.md`,
+  `docs/technical-baseline-verification.md`, `docs/production-source-spike.md` — vastgelegde
+  verificatierapporten van een eerder moment; die worden niet met terugwerkende kracht herschreven.
+- `docs/uitbreidingsspecificatie-standpunten-en-ai-inzicht.md` — gaat over standpunten en
+  AI-inzicht; niet geraakt.
+- Oudere worklogs (`docs/stories/hkh-263-worklog.md`, `-270-`, `-277-`, `-284-`) — die leggen vast
+  wat er tóén is besloten, inclusief de destijds juiste vaststelling dat de routes nog niet in de
+  filter stonden; historische verslagen worden niet herschreven.
+- De datumregels bovenaan bestaande documenten ('Laatste actualisatie', 'Datum'/'Status') zijn
+  conform de bestaande conventie niet bijgewerkt.
+
+### Verificatie
+- `bash tools/verify-documentation.sh` → `Documentatie en repositoryhygiëne zijn in orde.`
+  (exitcode 0)
+- `git status --short` toont uitsluitend wijzigingen onder `docs/`; geen productiecode, tests of
+  infrastructuur geraakt.
+- Geen tokenwaarde, geheim of `PVDD__`-secretwaarde in de toegevoegde tekst.
