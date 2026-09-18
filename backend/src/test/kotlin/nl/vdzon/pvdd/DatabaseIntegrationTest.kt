@@ -804,6 +804,161 @@ class DatabaseIntegrationTest(
     }
 
     @Test
+    fun `an archive without past meetings stays empty instead of showing a blank list`() {
+        val hidden = hideExistingPastMeetings()
+        try {
+            val page = dashboardController.meetings("past", null, null)
+
+            assertEquals(emptyList(), page.items)
+            assertEquals(0, page.total)
+            assertNull(page.nextCursor)
+        } finally {
+            restoreStartTimes(hidden)
+        }
+    }
+
+    @Test
+    fun `the archive lists only past meetings with the newest first`() {
+        val now = Instant.now()
+        val hidden = hideExistingPastMeetings()
+        val seeded = mutableListOf<SeededArchiveMeeting>()
+        try {
+            val recent = seedArchiveMeeting(now.minusSeconds(3600), title = "Meest recente").also(seeded::add)
+            val older = seedArchiveMeeting(now.minusSeconds(7200), title = "Ouder").also(seeded::add)
+            // Gelijk begintijdstip: de id beslist, aflopend.
+            val tieA = seedArchiveMeeting(now.minusSeconds(10800), title = "Gelijk tijdstip A").also(seeded::add)
+            val tieB = seedArchiveMeeting(now.minusSeconds(10800), title = "Gelijk tijdstip B").also(seeded::add)
+            val future = seedArchiveMeeting(now.plusSeconds(86400), title = "Toekomst").also(seeded::add)
+
+            // Grensgeval: een vergadering die precies nu begint telt niet als voorbij. De update en
+            // de vergelijking staan in één statement, zodat CURRENT_TIMESTAMP daarbinnen vaststaat.
+            val boundary = seedArchiveMeeting(now.minusSeconds(60), title = "Grensgeval").also(seeded::add)
+            val boundaryCountsAsPast = jdbc.queryForObject(
+                """
+                WITH moved AS (
+                    UPDATE meeting SET starts_at = CURRENT_TIMESTAMP WHERE id = ? RETURNING starts_at
+                )
+                SELECT moved.starts_at < CURRENT_TIMESTAMP FROM moved
+                """.trimIndent(),
+                Boolean::class.java,
+                boundary.meetingId,
+            )
+            assertEquals(false, boundaryCountsAsPast)
+            // Daarna vooruit gezet, zodat hij net als elke toekomstige vergadering buiten de lijst valt.
+            jdbc.update(
+                "UPDATE meeting SET starts_at = ? WHERE id = ?",
+                java.sql.Timestamp.from(now.plusSeconds(86400)),
+                boundary.meetingId,
+            )
+
+            val page = dashboardController.meetings("past", null, null)
+
+            assertEquals(4, page.total)
+            assertNull(page.nextCursor)
+            // Bij gelijk begintijdstip beslist de id aflopend; PostgreSQL vergelijkt uuid op bytes,
+            // wat overeenkomt met de hexadecimale tekstvolgorde.
+            val ties = listOf(tieA, tieB).sortedByDescending { it.meetingId.toString() }
+            assertEquals(
+                listOf(recent.meetingId, older.meetingId, ties[0].meetingId, ties[1].meetingId),
+                page.items.map { it.id },
+            )
+            assertFalse(page.items.any { it.id == future.meetingId || it.id == boundary.meetingId })
+            assertEquals(listOf("Meest recente", "Ouder"), page.items.take(2).map { it.title })
+            assertEquals(recent.startsAt.toEpochMilli(), page.items.first().startsAt.toEpochMilli())
+            assertEquals("Statenzaal", page.items.first().location)
+        } finally {
+            seeded.forEach { removeSyntheticMeeting(it.meetingId) }
+            restoreStartTimes(hidden)
+        }
+    }
+
+    @Test
+    fun `archive counts use exactly the same filter as the progress count`() {
+        val startsAt = Instant.now().minusSeconds(7200)
+        val seeded = seedArchiveMeeting(
+            startsAt,
+            title = "Vergadering met randgevallen",
+            location = "Provinciehuis, Haarlem",
+            succeeded = 2,
+            failed = 1,
+            withoutAdvice = 1,
+            withNoise = true,
+        )
+        try {
+            val item = dashboardController.meetings("past", null, null).items.single { it.id == seeded.meetingId }
+            val progress = dashboardController.meeting(seeded.meetingId).progress
+
+            assertEquals(4, seeded.substantiveItems)
+            assertEquals(seeded.substantiveItems, item.substantiveItemCount)
+            assertEquals(seeded.completedAdvice, item.completedAdviceCount)
+            // Exact hetzelfde filter: de telling per vergadering en de voortgangstelling van het
+            // agendascherm leveren voor dezelfde vergadering dezelfde aantallen.
+            assertEquals(progress.total, item.substantiveItemCount)
+            assertEquals(progress.complete, item.completedAdviceCount)
+            assertEquals(ProgressDto(4, 2, 1), progress)
+
+            assertEquals("Vergadering met randgevallen", item.title)
+            assertEquals("Provinciehuis, Haarlem", item.location)
+            assertEquals(startsAt.toEpochMilli(), item.startsAt.toEpochMilli())
+        } finally {
+            removeSyntheticMeeting(seeded.meetingId)
+        }
+    }
+
+    @Test
+    fun `paging through the archive returns every meeting exactly once`() {
+        val now = Instant.now()
+        val hidden = hideExistingPastMeetings()
+        // Vijfentwintig vergaderingen: bij een limiet van vijf bevat de laatste pagina precies de
+        // limiet en mag er tóch geen cursor meer volgen.
+        val seeded = (1..25).map { index ->
+            seedArchiveMeeting(now.minusSeconds(3600L * index), title = "Archiefvergadering $index")
+        }
+        try {
+            val expected = seeded.map { it.meetingId }
+
+            // Zonder limiet: twintig items en een cursor.
+            val first = dashboardController.meetings("past", null, null)
+            assertEquals(20, first.items.size)
+            assertEquals(25, first.total)
+            assertNotNull(first.nextCursor)
+            assertEquals(expected.take(20), first.items.map { it.id })
+
+            val seen = mutableListOf<UUID>()
+            var cursor: String? = null
+            var pages = 0
+            do {
+                val page = dashboardController.meetings("past", "5", cursor)
+                pages += 1
+                assertEquals(25, page.total)
+                assertEquals(5, page.items.size)
+                seen += page.items.map { it.id }
+                cursor = page.nextCursor
+            } while (cursor != null && pages < 10)
+
+            assertEquals(5, pages)
+            assertEquals(expected, seen)
+            assertEquals(seen.size, seen.toSet().size)
+
+            // Een ongeldige aanvraag levert ook tegen de echte database HTTP 400 met de foutcode.
+            for (query in listOf(null to null, "future" to null, "past" to "0", "past" to "51", "past" to "abc")) {
+                val refusal = assertFailsWith<ResponseStatusException>("$query") {
+                    dashboardController.meetings(query.first, query.second, null)
+                }
+                assertEquals(HttpStatus.BAD_REQUEST, refusal.statusCode, "$query")
+                assertEquals("invalid_meeting_query", refusal.reason, "$query")
+            }
+            assertEquals(
+                "invalid_meeting_query",
+                assertFailsWith<ResponseStatusException> { dashboardController.meetings("past", null, "!!!") }.reason,
+            )
+        } finally {
+            seeded.forEach { removeSyntheticMeeting(it.meetingId) }
+            restoreStartTimes(hidden)
+        }
+    }
+
+    @Test
     fun `workflow lock permits at most one owner and is recoverable`() {
         val first = UUID.randomUUID()
         val second = UUID.randomUUID()
@@ -863,29 +1018,130 @@ class DatabaseIntegrationTest(
         return SeededMeeting(meetingId, itemId, succeededAdvice(meetingId, itemId, startsAt))
     }
 
-    private fun succeededAdvice(meetingId: UUID, itemId: UUID, completedAt: Instant): UUID {
-        val prepared = PreparedAnalysisRun(
-            run = AnalysisRun(
-                id = UUID.randomUUID(),
-                agendaItemId = itemId,
-                sourceFingerprint = "c".repeat(64),
-                promptVersion = "advice-v1",
-                selectionVersion = "policy-v1",
-                idempotencyKey = "pvdd-past-${UUID.randomUUID()}",
-                runtimeJobId = null,
-                status = AnalysisStatus.PENDING,
-                errorCode = null,
-                createdAt = completedAt,
-                updatedAt = completedAt,
-                completedAt = null,
-            ),
-            meetingId = meetingId,
-            category = "A",
-            agendaItemSourceId = "item-past",
-            prompt = "synthetisch advies over een voorbije vergadering",
-            responseSchema = jacksonObjectMapper().readTree("""{"type":"object"}"""),
-            allowedSources = emptyList(),
+    private fun preparedAdviceRun(meetingId: UUID, itemId: UUID, createdAt: Instant) = PreparedAnalysisRun(
+        run = AnalysisRun(
+            id = UUID.randomUUID(),
+            agendaItemId = itemId,
+            sourceFingerprint = "c".repeat(64),
+            promptVersion = "advice-v1",
+            selectionVersion = "policy-v1",
+            idempotencyKey = "pvdd-past-${UUID.randomUUID()}",
+            runtimeJobId = null,
+            status = AnalysisStatus.PENDING,
+            errorCode = null,
+            createdAt = createdAt,
+            updatedAt = createdAt,
+            completedAt = null,
+        ),
+        meetingId = meetingId,
+        category = "A",
+        agendaItemSourceId = "item-past",
+        prompt = "synthetisch advies over een voorbije vergadering",
+        responseSchema = jacksonObjectMapper().readTree("""{"type":"object"}"""),
+        allowedSources = emptyList(),
+    )
+
+    // Een mislukte FINAL_ADVICE-run: het agendapunt telt wel mee als inhoudelijk punt, maar niet
+    // als punt met afgerond advies.
+    private fun failedAdvice(meetingId: UUID, itemId: UUID, createdAt: Instant): UUID {
+        val runId = analysisRepository.createPreparedRun(preparedAdviceRun(meetingId, itemId, createdAt))
+        analysisRepository.updateRuntimeStatus(runId, AnalysisStatus.FAILED, "synthetic_failure")
+        return runId
+    }
+
+    /**
+     * Schuift de vergaderingen die andere tests hebben achtergelaten tijdelijk naar de toekomst, zodat
+     * de archieflijst deterministisch te toetsen is zonder gegevens te verwijderen. De teruggegeven
+     * lijst zet `restoreStartTimes` in het `finally` exact terug.
+     */
+    private fun hideExistingPastMeetings(): List<Pair<UUID, java.sql.Timestamp>> {
+        val existing = jdbc.query(
+            "SELECT id, starts_at FROM meeting WHERE starts_at < CURRENT_TIMESTAMP",
+            { rs, _ -> rs.getObject("id", UUID::class.java) to rs.getTimestamp("starts_at") },
         )
+        val future = java.sql.Timestamp.from(Instant.now().plusSeconds(864000))
+        existing.forEach { jdbc.update("UPDATE meeting SET starts_at = ? WHERE id = ?", future, it.first) }
+        return existing
+    }
+
+    private fun restoreStartTimes(rows: List<Pair<UUID, java.sql.Timestamp>>) {
+        rows.forEach { jdbc.update("UPDATE meeting SET starts_at = ? WHERE id = ?", it.second, it.first) }
+    }
+
+    private data class SeededArchiveMeeting(
+        val meetingId: UUID,
+        val startsAt: Instant,
+        val substantiveItems: Int,
+        val completedAdvice: Int,
+    )
+
+    /**
+     * Zaaihelper voor het archiefoverzicht: één bewaarde vergadering met [succeeded] afgeronde,
+     * [failed] mislukte en [withoutAdvice] nog niet geanalyseerde inhoudelijke agendapunten, elk met
+     * een leesbaar document.
+     *
+     * Met [withNoise] komen daar de randgevallen bij die in geen enkele telling mogen meedoen: een
+     * ingetrokken punt, een niet-inhoudelijk punt, een punt buiten de categorieën A/B/C en een punt
+     * zonder leesbaar document. Opruimen doet `removeSyntheticMeeting(meetingId)`.
+     */
+    private fun seedArchiveMeeting(
+        startsAt: Instant,
+        title: String = "Synthetische vergadering",
+        location: String? = "Statenzaal",
+        succeeded: Int = 1,
+        failed: Int = 0,
+        withoutAdvice: Int = 0,
+        withNoise: Boolean = false,
+    ): SeededArchiveMeeting {
+        val unique = UUID.randomUUID()
+        val meetingId = meetingRepository.upsert(
+            pastMeeting(startsAt).copy(sourceId = "meeting-archive-$unique", title = title, location = location),
+        )
+        var sequence = 0
+        fun agendaItem(
+            category: AgendaCategory = AgendaCategory.A,
+            substantive: Boolean = true,
+            sourceState: SourceState = SourceState.CURRENT,
+            readableDocument: Boolean = true,
+        ): UUID {
+            sequence += 1
+            val itemId = meetingRepository.upsert(
+                pastAgendaItem(meetingId).copy(
+                    id = UUID.randomUUID(),
+                    sourceId = "item-archive-$unique-$sequence",
+                    sequence = sequence,
+                    category = category,
+                    substantive = substantive,
+                    sourceState = sourceState,
+                ),
+            )
+            if (readableDocument) {
+                assertTrue(
+                    documentRepository.insertVersion(
+                        document(itemId, UUID.randomUUID().toString().replace("-", "").repeat(2), startsAt),
+                    ),
+                )
+            }
+            return itemId
+        }
+
+        repeat(succeeded) { succeededAdvice(meetingId, agendaItem(), startsAt) }
+        repeat(failed) { failedAdvice(meetingId, agendaItem(), startsAt) }
+        repeat(withoutAdvice) { agendaItem() }
+        if (withNoise) {
+            // Deze vier tellen nergens mee: ze vallen op precies dezelfde voorwaarden af als in de
+            // bestaande voortgangstelling. Ze krijgen wel een afgerond advies, zodat een te ruime
+            // telling meteen zichtbaar zou worden.
+            succeededAdvice(meetingId, agendaItem(sourceState = SourceState.WITHDRAWN), startsAt)
+            succeededAdvice(meetingId, agendaItem(substantive = false), startsAt)
+            succeededAdvice(meetingId, agendaItem(category = AgendaCategory.OTHER), startsAt)
+            succeededAdvice(meetingId, agendaItem(readableDocument = false), startsAt)
+        }
+        return SeededArchiveMeeting(meetingId, startsAt, succeeded + failed + withoutAdvice, succeeded)
+    }
+
+    private fun succeededAdvice(meetingId: UUID, itemId: UUID, completedAt: Instant): UUID {
+        val prepared = preparedAdviceRun(meetingId, itemId, completedAt)
         val runId = analysisRepository.createPreparedRun(prepared)
         analysisRepository.completeWithAdvice(
             prepared,

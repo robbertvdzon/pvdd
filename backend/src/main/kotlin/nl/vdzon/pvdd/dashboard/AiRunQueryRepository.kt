@@ -1,8 +1,6 @@
 package nl.vdzon.pvdd.dashboard
 
-import java.nio.charset.StandardCharsets
 import java.time.Instant
-import java.util.Base64
 import java.util.UUID
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
@@ -135,16 +133,12 @@ class AiRunQueryRepository(private val jdbc: JdbcTemplate) {
         }, *args.toTypedArray())
     }
 
-    private fun encodeCursor(run: LogicalAiRunDto): String = Base64.getUrlEncoder().withoutPadding().encodeToString(
-        "${run.completedAt ?: run.createdAt}|${run.id}".toByteArray(StandardCharsets.UTF_8),
-    )
+    // Hetzelfde ondoorzichtige cursorformaat als de lijst met voorbije vergaderingen; de codering
+    // zelf staat in `KeysetCursor` zodat beide lijsten niet uit elkaar kunnen lopen.
+    private fun encodeCursor(run: LogicalAiRunDto): String =
+        KeysetCursor.encode(run.completedAt ?: run.createdAt, run.id)
 
-    private fun decodeCursor(cursor: String): Pair<Instant, UUID> = try {
-        val value = String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8).split('|')
-        Instant.parse(value[0]) to UUID.fromString(value[1])
-    } catch (_: Exception) {
-        throw IllegalArgumentException("Invalid cursor")
-    }
+    private fun decodeCursor(cursor: String): Pair<Instant, UUID> = KeysetCursor.decode(cursor)
 
     companion object {
         private val ACTIVE = setOf("PENDING", "QUEUED", "WAITING_FOR_WORKER", "RUNNING")

@@ -1,9 +1,11 @@
 // Gedeelde testvoorzieningen voor widgettests. Deze fakes bevatten uitsluitend synthetische
 // gegevens en doen geen enkel netwerkverkeer.
+import 'package:pvdd_frontend/ai_runs_api.dart';
 import 'package:pvdd_frontend/authentication.dart';
 import 'package:pvdd_frontend/build_identity.dart';
 import 'package:pvdd_frontend/dashboard_api.dart';
 import 'package:pvdd_frontend/frontend_version_monitor.dart';
+import 'package:pvdd_frontend/settings_api.dart';
 
 class FakeAuthenticationGateway implements AuthenticationGateway {
   FakeAuthenticationGateway({this.authenticated = true});
@@ -123,6 +125,27 @@ class FakeDashboardGateway implements DashboardGateway {
       lastCheckedAt: DateTime.utc(2026, 8, 31, 5),
       progress: const Progress(3, 1, 0),
     );
+  }
+
+  /// De pagina's voorbije vergaderingen die deze fake achtereenvolgens teruggeeft, met als sleutel
+  /// de cursor waarmee ze wordt opgevraagd (`null` voor de eerste pagina). Standaard leeg, zodat
+  /// bestaande tests een leeg archief zien.
+  Map<String?, PastMeetingPage> pastMeetingPages = {
+    null: const PastMeetingPage(items: [], nextCursor: null, total: 0),
+  };
+
+  /// De cursors waarvoor `pastMeetings` faalt. Verwijder een cursor uit deze verzameling om
+  /// dezelfde aanvraag daarna te laten slagen.
+  Set<String?> failingPastMeetingCursors = <String?>{};
+
+  @override
+  Future<PastMeetingPage> pastMeetings({String? cursor}) async {
+    calls.add('pastMeetings:${cursor ?? 'first'}');
+    if (failingPastMeetingCursors.contains(cursor)) {
+      throw const DashboardUnavailable();
+    }
+    return pastMeetingPages[cursor] ??
+        const PastMeetingPage(items: [], nextCursor: null, total: 0);
   }
 
   @override
@@ -390,4 +413,52 @@ class DocumentStatusDashboardGateway extends FakeDashboardGateway {
       warning: 'AI-concept — controleer bronnen en formulering vóór gebruik',
     );
   }
+}
+
+/// Een voorspelbare synthetische vergadering-id; index 0 is de meest recente.
+String syntheticMeetingId(int index) =>
+    '00000000-0000-4000-8000-${index.toString().padLeft(12, '0')}';
+
+/// Eén synthetische voorbije vergadering; oplopende index betekent verder terug in de tijd, zoals
+/// de server ze sorteert (meest recente bovenaan).
+PastMeeting syntheticPastMeeting(int index) => PastMeeting(
+  id: syntheticMeetingId(index),
+  title: 'Commissie Ruimte vergadering $index',
+  startsAt: DateTime(2026, 9, 7, 19, 30).subtract(Duration(days: 7 * index)),
+  location: index.isEven ? 'Dreef 3, Haarlem' : 'Provinciehuis, Haarlem',
+  substantiveItemCount: 6,
+  completedAdviceCount: 5,
+);
+
+/// Een pagina met [count] opeenvolgende synthetische vergaderingen vanaf [first].
+PastMeetingPage syntheticPastMeetingPage({
+  required int first,
+  required int count,
+  required int total,
+  String? nextCursor,
+}) => PastMeetingPage(
+  items: [
+    for (var index = first; index < first + count; index++)
+      syntheticPastMeeting(index),
+  ],
+  nextCursor: nextCursor,
+  total: total,
+);
+
+/// Gateways die een test bewust niet gebruikt: elke aanroep is een fout in de test zelf.
+class UnusedAiRunsGateway implements AiRunsGateway {
+  @override
+  Future<AiRunPage> active() => throw UnimplementedError();
+  @override
+  Future<AiRunPage> finished({String? cursor}) => throw UnimplementedError();
+}
+
+class UnusedSettingsGateway implements SettingsGateway {
+  @override
+  Future<ApplicationSettings> load() => throw UnimplementedError();
+  @override
+  Future<ApplicationSettings> updateAnalysisInstructions(String value) =>
+      throw UnimplementedError();
+  @override
+  Future<int> retryAllFailedAnalyses() => throw UnimplementedError();
 }

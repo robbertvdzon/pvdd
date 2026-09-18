@@ -17,6 +17,20 @@ void main() {
     );
   });
 
+  test('the overview path is recognised on its own', () {
+    expect(isArchiveOverviewPath('/archief'), isTrue);
+    expect(isArchiveOverviewPath('/archief/'), isTrue);
+    for (final path in [
+      '/agenda',
+      '/archief/6c9ad377-5837-41b7-9f68-573ccf58c859',
+      '/archief/niet-een-uuid',
+      '/standpunten',
+      'archief',
+    ]) {
+      expect(isArchiveOverviewPath(path), isFalse, reason: path);
+    }
+  });
+
   test('every other path falls back to the agenda view', () {
     for (final path in [
       '/agenda',

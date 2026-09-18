@@ -14,6 +14,8 @@ class MeetingOverviewPage extends StatefulWidget {
     this.archivedMeetingId,
     this.readOnly = false,
     this.onBack,
+    this.backLabel = 'Terug naar agenda',
+    this.onOpenArchive,
     super.key,
   });
   final DashboardGateway gateway;
@@ -28,6 +30,14 @@ class MeetingOverviewPage extends StatefulWidget {
 
   /// Terugactie boven aan het scherm; alleen zichtbaar wanneer die is meegegeven.
   final VoidCallback? onBack;
+
+  /// Het label van de terugactie. Standaard de agendaweergave; kwam de gebruiker van het
+  /// archiefoverzicht, dan geeft de shell hier het bijbehorende label mee.
+  final String backLabel;
+
+  /// Opent het overzicht van eerdere vergaderingen. Is die meegegeven, dan verschijnt naast
+  /// 'Nu controleren' de knop 'Eerdere vergaderingen'.
+  final VoidCallback? onOpenArchive;
 
   @override
   State<MeetingOverviewPage> createState() => _MeetingOverviewPageState();
@@ -229,7 +239,7 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
             child: TextButton.icon(
               onPressed: widget.onBack,
               icon: const Icon(Icons.chevron_left),
-              label: const Text('Terug naar agenda'),
+              label: Text(widget.backLabel),
             ),
           ),
         if (meeting != null && meeting.past) ...[
@@ -334,13 +344,9 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
     );
   }
 
-  Widget _header(BuildContext context) => Wrap(
-    alignment: WrapAlignment.spaceBetween,
-    crossAxisAlignment: WrapCrossAlignment.center,
-    spacing: 16,
-    runSpacing: 12,
-    children: [
-      Column(
+  Widget _header(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final title = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
@@ -353,8 +359,13 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
                 : 'Laatst gecontroleerd: ${_dateTime(_overview!.lastCheckedAt!)}',
           ),
         ],
-      ),
-      FilledButton.icon(
+      );
+      final archive = OutlinedButton.icon(
+        onPressed: widget.onOpenArchive,
+        icon: const Icon(Icons.history),
+        label: const Text('Eerdere vergaderingen'),
+      );
+      final checkNow = FilledButton.icon(
         onPressed: _checking ? null : _checkNow,
         icon: _checking
             ? const SizedBox.square(
@@ -363,8 +374,48 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
               )
             : const Icon(Icons.refresh),
         label: Text(_checking ? 'Controleren…' : 'Nu controleren'),
-      ),
-    ],
+      );
+      // De uitleg onder de knoppen: waar de bewaarde adviezen staan en dat terugkijken alleen
+      // lezen is. Zonder archieftoegang blijft de regel weg.
+      const explanation = Text(
+        'Onder Eerdere vergaderingen lees je de bewaarde adviezen terug van vergaderingen die '
+        'al zijn geweest. Terugkijken is alleen lezen.',
+      );
+      // Op mobiel staan de knoppen onder elkaar over de volle breedte, op desktop naast de titel.
+      final narrow = constraints.maxWidth < 720;
+      final actions = <Widget>[
+        if (widget.onOpenArchive != null) archive,
+        checkNow,
+      ];
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (narrow) ...[
+            title,
+            const SizedBox(height: 12),
+            for (final action in actions) ...[
+              SizedBox(width: double.infinity, child: action),
+              const SizedBox(height: 8),
+            ],
+          ] else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(child: title),
+                const SizedBox(width: 16),
+                for (final action in actions) ...[
+                  action,
+                  const SizedBox(width: 12),
+                ],
+              ],
+            ),
+          if (widget.onOpenArchive != null) ...[
+            const SizedBox(height: 8),
+            explanation,
+          ],
+        ],
+      );
+    },
   );
 
   Widget _meetingCard(BuildContext context, MeetingInfo meeting) => Card(

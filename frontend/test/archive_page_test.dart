@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pvdd_frontend/ai_runs_api.dart';
 import 'package:pvdd_frontend/main.dart';
 import 'package:pvdd_frontend/meeting_overview.dart';
 import 'package:pvdd_frontend/pvdd_theme.dart';
-import 'package:pvdd_frontend/settings_api.dart';
 
 import 'support/fakes.dart';
 
@@ -341,21 +339,4 @@ Future<void> pumpArchive(
     ),
   );
   await tester.pumpAndSettle();
-}
-
-class UnusedAiRunsGateway implements AiRunsGateway {
-  @override
-  Future<AiRunPage> active() => throw UnimplementedError();
-  @override
-  Future<AiRunPage> finished({String? cursor}) => throw UnimplementedError();
-}
-
-class UnusedSettingsGateway implements SettingsGateway {
-  @override
-  Future<ApplicationSettings> load() => throw UnimplementedError();
-  @override
-  Future<ApplicationSettings> updateAnalysisInstructions(String value) =>
-      throw UnimplementedError();
-  @override
-  Future<int> retryAllFailedAnalyses() => throw UnimplementedError();
 }
