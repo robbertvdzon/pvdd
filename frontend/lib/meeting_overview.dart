@@ -183,6 +183,14 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
                         PvddColors.primary,
                       ),
                   ] else ...[
+                    // De startweergave valt terug op de meest recente voorbije vergadering zodra er
+                    // geen toekomstige is. Dat mag de gebruiker niet voor een nieuwe agenda aanzien,
+                    // dus staat de melding boven de vergaderkaart. Het archiefscherm heeft in
+                    // `_archiveHeader` al zijn eigen markering en krijgt deze melding niet.
+                    if (!widget.readOnly && _overview!.meeting!.past) ...[
+                      _noNewAgendaNotice(context, _overview!.meeting!),
+                      const SizedBox(height: 16),
+                    ],
                     _meetingCard(context, _overview!.meeting!),
                     // Bij een mislukt agendapunt-laden heeft filteren geen betekenis; de
                     // huidige agendaweergave houdt haar filters onveranderd.
@@ -196,7 +204,10 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
                         key: ValueKey(item.id),
                         item: item,
                         gateway: widget.gateway,
-                        readOnly: widget.readOnly,
+                        // Voor een vergadering die al is geweest heeft nieuw werk starten geen
+                        // betekenis meer; dezelfde alleen-lezen vlag als het archiefscherm laat de
+                        // herstartactie weg zonder het scherm te kopiëren.
+                        readOnly: widget.readOnly || _overview!.meeting!.past,
                         onChanged: () => _load(silent: true),
                       ),
                     ),
@@ -250,6 +261,76 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
     );
   }
 
+  /// De melding boven de vergaderkaart wanneer de startweergave terugvalt op de meest recente
+  /// vergadering die al is geweest: kop, uitleg met de vergaderdatum, de mededeling dat een nieuwe
+  /// agenda hier verschijnt, en de doorstap naar het overzicht van eerdere vergaderingen.
+  ///
+  /// De melding hangt aan `meeting.past` uit het serverantwoord, nooit aan de browserklok.
+  Widget _noNewAgendaNotice(BuildContext context, MeetingInfo meeting) =>
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final colors = Theme.of(context).colorScheme;
+          // Op mobiel loopt de doorstap over de volle breedte mee met de knoppen in de kop; het
+          // label wordt daarbij afgebroken in plaats van afgekort.
+          final narrow = constraints.maxWidth < 600;
+          final archive = OutlinedButton.icon(
+            onPressed: widget.onOpenArchive,
+            icon: const Icon(Icons.history),
+            label: const Text('Alle eerdere vergaderingen'),
+          );
+          return Semantics(
+            liveRegion: true,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: colors.surfaceContainerLow,
+                border: Border(
+                  left: BorderSide(color: PvddColors.primary, width: 6),
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.event_busy_outlined,
+                    color: PvddColors.primary,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Er is nog geen nieuwe agenda',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Je ziet de meest recente vergadering, en die is al geweest: '
+                          '${meetingLongDate(meeting.startsAt)}. Zodra de provincie een nieuwe '
+                          'agenda publiceert, staat die hier.',
+                        ),
+                        if (widget.onOpenArchive != null) ...[
+                          const SizedBox(height: 12),
+                          if (narrow)
+                            SizedBox(width: double.infinity, child: archive)
+                          else
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: archive,
+                            ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+
   Widget _pastMeetingNotice(BuildContext context, MeetingInfo meeting) {
     final colors = Theme.of(context).colorScheme;
     return Semantics(
@@ -274,7 +355,7 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Deze vergadering is al geweest — ${_longDate(meeting.startsAt)}',
+                    'Deze vergadering is al geweest — ${meetingLongDate(meeting.startsAt)}',
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 4),
@@ -434,6 +515,8 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
                     ? 'PREVIEW'
                     : (meeting.revisionStatus ?? 'CURRENT'),
               ),
+              // Markering naast de bestaande statusbadges; komt uit `past` van de server.
+              if (meeting.past) _statusChip('MEETING_PAST'),
               Text(
                 '${_overview!.progress.complete}/${_overview!.progress.total} analyses gereed',
               ),
@@ -1342,6 +1425,7 @@ String _statusLabel(String status) => switch (status) {
   'DOCUMENTS_PARTIALLY_READABLE' => 'Een of meer stukken niet leesbaar',
   'DOCUMENTS_READY' => 'Stukken leesbaar',
   'EARLIER_VERSION' => 'EERDERE VERSIE',
+  'MEETING_PAST' => 'AL GEWEEST',
   _ => status.toLowerCase().replaceAll('_', ' '),
 };
 
@@ -1421,8 +1505,12 @@ const _dutchShortMonths = [
   'dec',
 ];
 
-// Lange Nederlandse datum voor de markering 'al geweest', bijvoorbeeld 'maandag 7 september 2026'.
-String _longDate(DateTime value) {
+/// Lange Nederlandse datum voor de meldingen over een voorbije vergadering, bijvoorbeeld
+/// 'maandag 7 september 2026'.
+///
+/// Publiek zodat widgettests de datum via dezelfde helper asserteren als de weergave gebruikt; een
+/// latere opmaakwijziging levert dan geen valse rode test op.
+String meetingLongDate(DateTime value) {
   const days = [
     'maandag',
     'dinsdag',

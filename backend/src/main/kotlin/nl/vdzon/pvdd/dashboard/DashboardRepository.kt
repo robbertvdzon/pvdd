@@ -139,11 +139,22 @@ data class AnalysisRunDto(
 
 @Repository
 class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: ObjectMapper) {
+    /**
+     * De vergadering die de startweergave toont: het dichtstbijzijnde toekomstige begintijdstip, en
+     * bestaat dat niet, dan het meest recente begintijdstip uit het verleden.
+     *
+     * De eerste sorteersleutel scheidt toekomst van verleden, de tweede kiest binnen de toekomst de
+     * vroegste (voor voorbije rijen is zij NULL en dus zonder betekenis), en de derde kiest binnen
+     * het verleden de laatste. `starts_at == CURRENT_TIMESTAMP` valt in de toekomsttak, gelijk aan
+     * de `past`-berekening in [MEETING_SELECT].
+     */
     fun overview(): MeetingOverviewDto {
         val meeting = jdbc.query(
             """
             $MEETING_SELECT
-            ORDER BY CASE WHEN starts_at >= CURRENT_TIMESTAMP THEN 0 ELSE 1 END, starts_at ASC
+            ORDER BY CASE WHEN m.starts_at >= CURRENT_TIMESTAMP THEN 0 ELSE 1 END,
+                     CASE WHEN m.starts_at >= CURRENT_TIMESTAMP THEN m.starts_at END ASC,
+                     m.starts_at DESC
             LIMIT 1
             """.trimIndent(),
             { rs, _ -> meetingRow(rs) },
