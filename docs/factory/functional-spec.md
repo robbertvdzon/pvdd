@@ -105,6 +105,16 @@ AI-titel, korte conclusie en het vrije Markdownadvies. Aparte secties tonen de a
 PvdD-standpunten met herleidbare officiële bronnen en lopende plus afgeronde AI-runs. Het label
 **AI-concept — controleer bronnen en formulering vóór gebruik** blijft altijd zichtbaar.
 
+`GET /api/meetings/{id}` leest één bekende vergadering met hetzelfde antwoordmodel als
+`/api/meetings/next`: een geldige maar onbekende ID geeft `404`, een niet-UUID `400`. Beide routes
+leveren `past`, server-side berekend als `starts_at < CURRENT_TIMESTAMP` op databasetijd; bij
+gelijkheid is `past` nog `false`. Op `/archief/<vergadering-id>` hergebruikt de webapp
+`MeetingOverviewPage` met een alleen-lezen vlag: dezelfde filters, agendapuntkaarten en
+detailweergave, bovenaan de markering “Deze vergadering is al geweest — <vergaderdatum>”, geen
+“Nu controleren”, geen herstartactie per agendapunt en geen 15-secondenverversing. Agenda blijft
+het geselecteerde menu-item, de terugactie gaat naar `/agenda` en de bestaande SPA-fallback vangt
+het pad al af. De huidige agendaweergave blijft ongewijzigd werken.
+
 Google wordt alleen voor de eerste identificatie gebruikt. De backend geeft daarna een veilige,
 180 dagen geldige sessiecookie uit, zodat sluiten van een tab of verlopen van het korte Google
 ID-token niet opnieuw inloggen vereist. Uitloggen trekt de sessie direct in.

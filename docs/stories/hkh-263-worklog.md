@@ -169,3 +169,55 @@ Zelf gedraaid in deze ronde (alle vier de geraakte verificatiecommando's):
 - `bash tools/verify-documentation.sh`: in orde.
 
 Aan de storyfunctionaliteit is in deze ronde niets gewijzigd.
+
+## hkh-267 — documentation (2026-09-18)
+
+### Doel
+De projectdocumentatie laten kloppen met het opgeleverde gedrag van `hkh-263`, op basis van de
+volledige storydiff ten opzichte van de base branch.
+
+### Bijgewerkt
+- `docs/microservice-specificatie.md` (normatief):
+  - §5.2 — nieuw scherm 8 **Voorbije vergadering (alleen-lezen)** op `/archief/<vergadering-id>`,
+    met daaronder een alinea over de markering ‘al geweest’ met vergaderdatum, het ontbreken van
+    iedere startactie, het uitblijven van de 15-secondenverversing, Agenda dat het geselecteerde
+    menu-item blijft, de terugactie naar de agendaweergave, de fouttoestand met behoud van de
+    vergaderkop en de bestaande SPA-fallback. De zin over ontbrekende schermen benoemt nu
+    nauwkeurig wat er wél is: geen editor, geen goedkeuringsworkflow, geen scherm met eerdere
+    adviesversies en geen overzicht van voorbije vergaderingen.
+  - §6.3 — tabelregel `GET /api/meetings/{id}`, plus alinea's over de vergaderkop en
+    voortgangstelling in het antwoord, `404` bij een geldige maar onbekende UUID en `400` bij een
+    niet-UUID, bestaan-vóór-elke-andere-controle, de sessiecontrole die op deze route geldt, en het
+    veld `past` dat server-side op databasetijd wordt bepaald (`starts_at < CURRENT_TIMESTAMP`,
+    gelijkheid telt als toekomst) en ook op `/api/meetings/next` staat. De opsomming van leesroutes
+    die nooit werk starten is uitgebreid met de nieuwe route.
+  - §13.1 en §13.2 — testdekking van de leesroute (404, `past`, ongewijzigd `analysis_run`) en van
+    het alleen-lezen scherm (markering, geen startacties, alleen leesaanroepen, fouttoestand met
+    behoud van de vergaderkop, padherkenning en SPA-fallback).
+- `docs/functionele-werking-commissie-assistent.md` — §8 vermeldt nu ook dat het terugkijkscherm
+  zelf alleen leest; §11 beschrijft `/archief/<vergadering-id>` functioneel: dezelfde agendaweergave
+  en dezelfde informatie per agendapunt, de markering ‘al geweest’ met datum, het onveranderde
+  AI-voorbehoud, het ontbreken van startacties en menu-item, de terugactie, de fouttoestand en het
+  feit dat een overzicht van voorbije vergaderingen nog niet bestaat.
+- `docs/factory/functional-spec.md` (Frontend en API) — compacte ontwikkelvertaling van de nieuwe
+  leesroute, het `past`-veld en het hergebruik van `MeetingOverviewPage` met een alleen-lezen vlag.
+- `docs/agent-access.md` — de leesroute `GET /api/meetings/{id}` staat bewust niet in
+  `ProductionReadAccessFilter` en geeft met `X-AI-Read-Token` dus `403`; voor productieonderzoek
+  blijven `/api/meetings/next` en `/api/meetings/{id}/agenda-items` beschikbaar.
+
+### Bewust niet gewijzigd
+- `docs/factory/development.md` is in deze story al door de developer bijgewerkt met de sectie
+  **Cachecontract van de frontend** (statische variant zonder Docker); die tekst klopt met
+  `tools/test-frontend-cache.sh` en is hier niet aangepast.
+- `docs/stappenplannen/*` beschrijven de uitvoeringsvolgorde per fase en zijn geen beschrijving van
+  huidig gedrag; de bestaande tekst is niet onjuist geworden.
+- `docs/functional-acceptance-verification.md`, `docs/technical-baseline-verification.md` en
+  `docs/source-revision-verification.md` zijn vastgelegde bewijsrondes met een eigen datum en
+  release; die worden niet met terugwerkende kracht herschreven.
+- `README.md`, `docs/operations.md`, `deploy/README.md` en de ADR's zijn niet geraakt: geen
+  Flyway-migratie, geen schemawijziging, geen schrijfroute, geen nieuwe configuratiesleutel en geen
+  wijziging aan nginx, deployment of herstelprocedures.
+
+### Verificatie
+- `bash tools/verify-documentation.sh` → `Documentatie en repositoryhygiëne zijn in orde.`
+- Alleen bestanden onder `docs/` gewijzigd; geen productiecode, tests of infrastructuur geraakt.

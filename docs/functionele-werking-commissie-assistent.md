@@ -316,7 +316,10 @@ iedere nieuwe analyseaanvraag voor die vergadering, ook wanneer die aanvraag rec
 wordt gedaan in plaats van via de webapp. Een vergadering waarvan het begintijdstip exact het
 huidige tijdstip is, telt daarbij al als voorbij. Zo'n geweigerde aanvraag zet niets in de wachtrij
 en verandert niets aan bestaande adviezen of runs. Het openen van de agenda of van een agendapunt
-van een voorbije vergadering start eveneens geen enkel nieuw AI-werk.
+van een voorbije vergadering start eveneens geen enkel nieuw AI-werk. Ook het alleen-lezen scherm
+waarop een voorbije vergadering wordt teruggekeken leest alleen: openen en uitklappen veroorzaken
+uitsluitend leesverkeer, er ontstaat geen nieuwe AI-run en er verandert niets aan een bestaand
+advies.
 
 Bij het betreffende punt op de pagina **Agenda** kan een gebruiker de nieuwste toepasselijke
 mislukte analyse met **Opnieuw proberen** opnieuw starten. Op **Instellingen** kan een gebruiker na
@@ -371,6 +374,22 @@ De webapp heeft vier hoofdonderdelen:
 
 De planning, bronadressen en vaste systeemprompt zijn zichtbaar maar niet via de webpagina
 bewerkbaar. Alleen de aanvullende analyse-instructie is daar functioneel aanpasbaar.
+
+Daarnaast is een voorbije vergadering terug te kijken via het adres `/archief/<vergadering-id>`.
+Dat scherm toont dezelfde vertrouwde agendaweergave als **Agenda** — dezelfde A/B/C-indeling,
+dezelfde filters en per agendapunt dezelfde informatie, inclusief de bewaarde analyse, de
+bronverwijzingen en de melding over ontbrekende of onleesbare stukken. Bovenaan staat duidelijk
+“Deze vergadering is al geweest”, met de vergaderdatum en de mededeling dat bekijken geen analyse
+start en niets verandert. Het voorbehoud dat een analyse een AI-concept is dat vóór gebruik
+gecontroleerd moet worden, blijft daar even prominent staan, ook op een smal scherm.
+
+Het terugkijkscherm is strikt alleen lezen: **Nu controleren**, het aanvragen van een analyse en
+**Opnieuw proberen** per agendapunt ontbreken er, en het scherm ververst zichzelf niet. Het heeft
+geen eigen menu-item — **Agenda** blijft in de zijbalk geselecteerd — en de terugactie brengt de
+gebruiker terug naar de agendaweergave. Lukt het laden van de agendapunten niet, dan blijft de
+vergaderkop gewoon staan en verschijnt een begrijpelijke melding met **Opnieuw proberen**, zonder
+dat eerder getoonde informatie verdwijnt. Een overzicht van alle voorbije vergaderingen bestaat nog
+niet; het scherm is alleen met een bekende vergadering-ID te openen.
 
 ## 12. Samenvatting voor de Commissie-assistent
 
