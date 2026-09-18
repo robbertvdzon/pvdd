@@ -187,3 +187,71 @@ wat het agendascherm voor diezelfde vergadering laat zien.
 ### Afwijkingen
 Geen. De route `/archief/<id>` uit de afhankelijke story bestond al, dus 'Openen' navigeert daarheen;
 de afwijkingsregel was niet nodig.
+
+## hkh-274 — documentation (2026-09-18)
+
+### Doel
+De documentatie laten kloppen met wat in deze story werkelijk is gebouwd: de lijstroute
+`GET /api/meetings?state=past` en het alleen-lezen overzicht `/archief`, inclusief de ingang vanaf
+de agendaweergave, bijladen, lege toestand, fouttoestand en de gewijzigde terugactie van het
+archiefdetailscherm. Basis is de volledige storydiff ten opzichte van de base branch.
+
+### Bijgewerkt
+- `docs/microservice-specificatie.md` (normatief)
+  - §5.2 Schermen: nieuw scherm 9 **Eerdere vergaderingen** op `/archief`; een nieuwe alinea over
+    ingang, rijinhoud, bijladen met de stand, lege toestand, fouttoestand, het ontbreken van elke
+    startactie en ververstimer, en het gedrag op een smal scherm. De alinea over het alleen-lezen
+    detailscherm meldt nu dat de terugactie naar het overzicht keert wanneer de gebruiker
+    daarvandaan kwam en bij een rechtstreekse aanroep onveranderd naar de agendaweergave gaat
+    (expliciete navigatievlag). De zin dat er “geen overzicht van voorbije vergaderingen” is, is
+    achterhaald en vervangen; de beperking rond eerdere adviesversies blijft staan.
+  - §6.3 API: tabelregel voor `GET /api/meetings?state=past&limit=20&cursor=...` plus twee alinea's
+    met het contract: verplichte `state`, `limit` 1..50 met standaard 20, ondoorzichtige cursor in
+    hetzelfde formaat als `/api/ai-runs`, `400` met `invalid_meeting_query` vóór elke
+    databasetoegang, sortering en het grensgeval `starts_at == nu`, `items`/`nextCursor`/`total`,
+    de tellingen met exact het filter van de voortgangstelling alleen over de opgehaalde pagina,
+    `nextCursor` via `limit + 1`, geen migratie of index, en dezelfde sessieregels.
+  - §13.1 en §13.2 Teststrategie: bullets voor de backendlijstroute (volgorde, grensgeval,
+    paginering, lege lijst, tellingen, ongeldige parameters) en voor het webappoverzicht (ingang,
+    bijladen zonder duplicaten, verdwijnende bijlaadknop, lege en fouttoestand, alleen leesverkeer,
+    terugactie); de bullet over padherkenning noemt nu ook `/archief`.
+- `docs/functionele-werking-commissie-assistent.md`
+  - §9: de belofte dat terugkijken geen AI-werk start geldt expliciet ook voor het overzicht en het
+    bijladen daarvan.
+  - §11: nieuwe beschrijving in gebruikerstaal van **Eerdere vergaderingen** (ingang naast **Nu
+    controleren**, volgorde, rijinhoud, twintig per keer met **Meer vergaderingen laden** en de
+    stand, geen duplicaten, lege toestand, fouttoestand met behoud van geladen rijen, geen eigen
+    menu-item, terugactie, smal scherm). De passage over het detailscherm zegt nu dat de terugactie
+    naar het overzicht keert wanneer de gebruiker daarvandaan kwam; de zin dat een overzicht van
+    voorbije vergaderingen nog niet bestaat, is vervangen.
+- `docs/factory/functional-spec.md`: twee alinea's met de compacte ontwikkelvertaling van de
+  lijstroute en van het `/archief`-scherm; de bestaande zin over de terugactie van
+  `/archief/<vergadering-id>` is aangepast omdat die nu van de herkomst afhangt.
+- `docs/agent-access.md`: de opsomming van nog niet beoordeelde leesroutes noemt naast
+  `GET /api/meetings/{id}` ook `GET /api/meetings?state=past`. `ProductionReadAccessFilter` is in
+  deze story bewust ongewijzigd, dus die route geeft met `X-AI-Read-Token` `403`
+  (`allowedPath` matcht `/api/meetings` niet); de aanbevolen routes voor productieonderzoek
+  blijven ongewijzigd.
+- `docs/stories/hkh-270-worklog.md`: deze sectie.
+
+### Bewust niet gewijzigd
+- `README.md` — beschrijft stack, documentatie-index en lokaal starten; geen schermen of routes.
+- `docs/factory/technical-spec.md` — alleen de stack; deze story voegt geen technologie toe.
+- `docs/factory/development.md`, `docs/factory/deployment.md`, `docs/factory/secrets-local.md`,
+  `docs/factory/agent-runtime.md`, `docs/operations.md` — geen nieuwe commando's,
+  omgevingsvariabelen, migraties, infrastructuur of runbookstappen; de bestaande test- en
+  cachecontractbeschrijvingen blijven kloppen.
+- `docs/stappenplannen/*` — uitvoeringsplannen per fase, geen beschrijving van huidig gedrag.
+- `docs/uitbreidingsspecificatie-standpunten-en-ai-inzicht.md` — beschrijft de AI-runslijst; het
+  cursorformaat daarvan is functioneel ongewijzigd (alleen intern gedeeld via `KeysetCursor`).
+- `docs/functional-acceptance-verification.md`, `docs/technical-baseline-verification.md`,
+  `docs/source-revision-verification.md`, `docs/production-source-spike.md` — gedateerde
+  bewijsrondes; die worden niet met terugwerkende kracht herschreven.
+- `docs/adr/*` — geen nieuw architectuurbesluit.
+- Datumregels boven bestaande documenten (‘Laatste actualisatie’, ‘Datum’/‘Status’) — conform de
+  bestaande conventie bij storydocumentatie niet bijgewerkt.
+
+### Verificatie
+- `bash tools/verify-documentation.sh` — geslaagd.
+- `git status --short` toont uitsluitend bestanden onder `docs/`; geen productiecode, tests of
+  infrastructuur geraakt.

@@ -319,7 +319,8 @@ en verandert niets aan bestaande adviezen of runs. Het openen van de agenda of v
 van een voorbije vergadering start eveneens geen enkel nieuw AI-werk. Ook het alleen-lezen scherm
 waarop een voorbije vergadering wordt teruggekeken leest alleen: openen en uitklappen veroorzaken
 uitsluitend leesverkeer, er ontstaat geen nieuwe AI-run en er verandert niets aan een bestaand
-advies.
+advies. Hetzelfde geldt voor het overzicht van eerdere vergaderingen: ook het openen en bijladen
+daarvan leest uitsluitend.
 
 Bij het betreffende punt op de pagina **Agenda** kan een gebruiker de nieuwste toepasselijke
 mislukte analyse met **Opnieuw proberen** opnieuw starten. Op **Instellingen** kan een gebruiker na
@@ -375,21 +376,43 @@ De webapp heeft vier hoofdonderdelen:
 De planning, bronadressen en vaste systeemprompt zijn zichtbaar maar niet via de webpagina
 bewerkbaar. Alleen de aanvullende analyse-instructie is daar functioneel aanpasbaar.
 
-Daarnaast is een voorbije vergadering terug te kijken via het adres `/archief/<vergadering-id>`.
-Dat scherm toont dezelfde vertrouwde agendaweergave als **Agenda** — dezelfde A/B/C-indeling,
-dezelfde filters en per agendapunt dezelfde informatie, inclusief de bewaarde analyse, de
-bronverwijzingen en de melding over ontbrekende of onleesbare stukken. Bovenaan staat duidelijk
-“Deze vergadering is al geweest”, met de vergaderdatum en de mededeling dat bekijken geen analyse
-start en niets verandert. Het voorbehoud dat een analyse een AI-concept is dat vóór gebruik
-gecontroleerd moet worden, blijft daar even prominent staan, ook op een smal scherm.
+Daarnaast is er het overzicht **Eerdere vergaderingen** op het adres `/archief`. Vanaf **Agenda**
+is dat met één handeling te openen: naast **Nu controleren** staat de knop **Eerdere
+vergaderingen**, met een korte regel die uitlegt dat je daar de bewaarde adviezen terugleest en dat
+terugkijken alleen lezen is. Het overzicht toont alle bewaarde vergaderingen die al zijn geweest,
+de meest recente bovenaan, en meldt bovenaan dat terugkijken alleen lezen is. Per vergadering staan
+de datum, de titel, de locatie en de telling “x inhoudelijke agendapunten · y met afgerond advies”,
+met de knop **Openen** naar die vergadering.
+
+Het overzicht laat eerst twintig vergaderingen zien. Zijn er meer, dan haalt **Meer vergaderingen
+laden** de volgende twintig erbij; daarbij staat de stand “x van y vergaderingen getoond”. Zodra
+alles is geladen, verdwijnt die knop. Een vergadering verschijnt daarbij nooit dubbel en wordt
+nooit overgeslagen. Is er nog geen enkele vergadering voorbij, dan verschijnt geen lege lijst maar
+de uitleg dat de assistent elke vergadering met haar agendapunten en adviezen bewaart en dat je die
+hier terugvindt zodra de eerstvolgende vergadering is geweest, met een knop naar de huidige
+vergadering. Lukt het laden of bijladen niet, dan verschijnt bovenaan de melding dat niet alle
+eerdere vergaderingen konden worden geladen en dat er geen advies is verdwenen, met **Opnieuw
+proberen**; de al getoonde vergaderingen blijven gewoon staan. Het overzicht zelf kent geen enkele
+actie die nieuw werk start en ververst zichzelf niet, heeft geen eigen menu-item — **Agenda** blijft
+geselecteerd — en de terugactie brengt de gebruiker terug naar de agendaweergave. Op een smal
+scherm staan de gegevens per vergadering onder elkaar en lopen de knoppen over de volle breedte.
+
+Eén voorbije vergadering is terug te kijken via het adres `/archief/<vergadering-id>`, dat ook
+achter **Openen** in het overzicht zit. Dat scherm toont dezelfde vertrouwde agendaweergave als
+**Agenda** — dezelfde A/B/C-indeling, dezelfde filters en per agendapunt dezelfde informatie,
+inclusief de bewaarde analyse, de bronverwijzingen en de melding over ontbrekende of onleesbare
+stukken. Bovenaan staat duidelijk “Deze vergadering is al geweest”, met de vergaderdatum en de
+mededeling dat bekijken geen analyse start en niets verandert. Het voorbehoud dat een analyse een
+AI-concept is dat vóór gebruik gecontroleerd moet worden, blijft daar even prominent staan, ook op
+een smal scherm.
 
 Het terugkijkscherm is strikt alleen lezen: **Nu controleren**, het aanvragen van een analyse en
 **Opnieuw proberen** per agendapunt ontbreken er, en het scherm ververst zichzelf niet. Het heeft
-geen eigen menu-item — **Agenda** blijft in de zijbalk geselecteerd — en de terugactie brengt de
-gebruiker terug naar de agendaweergave. Lukt het laden van de agendapunten niet, dan blijft de
-vergaderkop gewoon staan en verschijnt een begrijpelijke melding met **Opnieuw proberen**, zonder
-dat eerder getoonde informatie verdwijnt. Een overzicht van alle voorbije vergaderingen bestaat nog
-niet; het scherm is alleen met een bekende vergadering-ID te openen.
+geen eigen menu-item — **Agenda** blijft in de zijbalk geselecteerd. Lukt het laden van de
+agendapunten niet, dan blijft de vergaderkop gewoon staan en verschijnt een begrijpelijke melding
+met **Opnieuw proberen**, zonder dat eerder getoonde informatie verdwijnt. Kwam de gebruiker via
+het overzicht **Eerdere vergaderingen**, dan keert de terugactie daarheen terug; bij een
+rechtstreekse aanroep van het adres blijft die onveranderd naar de agendaweergave gaan.
 
 ## 12. Samenvatting voor de Commissie-assistent
 

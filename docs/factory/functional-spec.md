@@ -112,8 +112,29 @@ gelijkheid is `past` nog `false`. Op `/archief/<vergadering-id>` hergebruikt de 
 `MeetingOverviewPage` met een alleen-lezen vlag: dezelfde filters, agendapuntkaarten en
 detailweergave, bovenaan de markering “Deze vergadering is al geweest — <vergaderdatum>”, geen
 “Nu controleren”, geen herstartactie per agendapunt en geen 15-secondenverversing. Agenda blijft
-het geselecteerde menu-item, de terugactie gaat naar `/agenda` en de bestaande SPA-fallback vangt
-het pad al af. De huidige agendaweergave blijft ongewijzigd werken.
+het geselecteerde menu-item en de bestaande SPA-fallback vangt het pad al af. De huidige
+agendaweergave blijft ongewijzigd werken.
+
+`GET /api/meetings?state=past` levert het gepagineerde overzicht van bewaarde vergaderingen die al
+zijn geweest: `state` is verplicht en alleen `past` is geldig, `limit` staat standaard op 20 binnen
+1..50 en de cursor is ondoorzichtig, in hetzelfde formaat als die van `/api/ai-runs`. Elke
+ongeldige parameter geeft `400` met `invalid_meeting_query`, gevalideerd vóór elke databasetoegang.
+De lijst sorteert `starts_at DESC, id DESC` op `starts_at < CURRENT_TIMESTAMP` en levert `items`,
+`nextCursor` en `total`; `nextCursor` is alleen gevuld wanneer er bewijsbaar nog een rij volgt
+(`limit + 1` ophalen). Per item horen bij de vergaderkop het aantal inhoudelijke agendapunten en
+het aantal punten met afgerond advies, met exact het filter van de bestaande voortgangstelling en
+alleen berekend voor de vergaderingen op de opgehaalde pagina. Geen migratie, geen nieuwe index.
+
+Op `/archief` toont de webapp dat overzicht, te openen vanaf de agendaweergave met de knop
+**Eerdere vergaderingen** naast “Nu controleren”. Per rij: datumblok, titel, locatie, de telling en
+**Openen** naar `/archief/<vergadering-id>`. **Meer vergaderingen laden** voegt pagina's samen met
+ontdubbeling op vergadering-ID en verdwijnt zodra `nextCursor` null is; de stand toont getoonde
+tegenover `total`. Zonder voorbije vergaderingen verschijnt een uitleg in plaats van een lege
+lijst; bij een mislukte eerste of volgende pagina een melding met **Opnieuw proberen** die dezelfde
+aanvraag herhaalt terwijl de geladen rijen blijven staan. Het scherm doet uitsluitend GET-verkeer,
+kent geen ververstimer en geen eigen menu-item; de terugactie gaat naar `/agenda`. Vanaf een
+voorbije vergadering keert de terugactie naar `/archief` wanneer de gebruiker daarvandaan kwam
+(expliciete navigatievlag), en bij een deeplink onveranderd naar `/agenda`.
 
 Google wordt alleen voor de eerste identificatie gebruikt. De backend geeft daarna een veilige,
 180 dagen geldige sessiecookie uit, zodat sluiten van een tab of verlopen van het korte Google
