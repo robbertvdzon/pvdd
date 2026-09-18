@@ -95,6 +95,38 @@ data class AgendaItemDetailDto(
     val warning: String = "AI-concept — controleer bronnen en formulering vóór gebruik",
 )
 
+/**
+ * Eén bewaarde adviesversie van een agendapunt, met de adviesinhoud in dezelfde vorm en met dezelfde
+ * veldnamen als [DashboardRepository.item] die voor het laatste advies teruggeeft.
+ *
+ * Bewust géén citaten en géén bronlijst: bij een eerdere versie is niet bewaard welke stukken toen
+ * zijn gebruikt, dus `agenda_item_advice.citations` wordt niet gelezen en er wordt niets uit de
+ * revisiehistorie afgeleid.
+ *
+ * [latest] is uitsluitend `true` voor de eerste rij in de ordening van [DashboardRepository.item]
+ * (CURRENT vóór STALE vóór overig, daarna `created_at DESC, id DESC`). Dat is dus de versie die de
+ * detailweergave als 'laatste advies' toont, ook wanneer een WITHDRAWN-rij chronologisch nieuwer is.
+ * [analysisGuidance] is `null` wanneer er niets of alleen witruimte is bewaard.
+ */
+data class AdviceVersionDto(
+    val adviceId: UUID,
+    val analysisRunId: UUID,
+    val createdAt: Instant,
+    val actuality: String,
+    val latest: Boolean,
+    val advice: JsonNode,
+    val displayTitle: String?,
+    val shortConclusion: String?,
+    val provider: String,
+    val model: String,
+    val promptVersion: String,
+    val analysisGuidance: String?,
+    val refreshReason: String,
+)
+
+/** Alle bewaarde adviesversies van één agendapunt, nieuwste eerst. Geen paginering, geen limiet. */
+data class AdviceVersionsDto(val versions: List<AdviceVersionDto>)
+
 data class AnalysisRunDto(
     val id: UUID,
     val agendaItemId: UUID,
@@ -316,6 +348,63 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             itemId,
         )
         return row.singleOrNull()
+    }
+
+    /**
+     * Alle bewaarde adviesversies van één agendapunt, in exact de ordening die [item] gebruikt om
+     * het laatste advies te kiezen: `actuality` CURRENT vóór STALE vóór overig, daarna
+     * `ar.created_at DESC, ar.id DESC`. Geen paginering en geen limiet — de lijst is per agendapunt
+     * en groeit alleen met het aantal geslaagde analyses.
+     *
+     * Een onbekend agendapunt levert `null`, zodat de route er 404 van maakt. Een bestaand
+     * agendapunt zonder geslaagde adviesrun levert een lege lijst, geen 404.
+     *
+     * Uitsluitend leesverkeer: alleen `agenda_item_advice` en `analysis_run` worden gelezen,
+     * `citations` blijft buiten de SELECT en de revisietabellen worden niet geraakt.
+     */
+    fun adviceVersions(itemId: UUID): AdviceVersionsDto? {
+        if (!exists("agenda_item", itemId)) return null
+        val rows = jdbc.query(
+            """
+            SELECT aia.id advice_id, ar.id analysis_run_id, ar.created_at, aia.actuality,
+                   aia.advice::text advice_json,
+                   aia.advice->>'displayTitle' display_title,
+                   aia.advice->>'shortConclusion' short_conclusion,
+                   aia.provider, aia.model, aia.prompt_version, ar.analysis_guidance,
+                   ar.retry_of_run_id,
+                   ${AdviceRefreshReason.reanalysisPredicate("ar")} ${AdviceRefreshReason.REANALYSIS_COLUMN}
+            FROM agenda_item_advice aia
+            JOIN analysis_run ar ON ar.id = aia.analysis_run_id
+            WHERE aia.agenda_item_id = ? AND ar.status = 'SUCCEEDED'
+            ORDER BY CASE aia.actuality
+                WHEN 'CURRENT' THEN 0
+                WHEN 'STALE' THEN 1
+                ELSE 2
+            END, ar.created_at DESC, ar.id DESC
+            """.trimIndent(),
+            { rs, rowNumber ->
+                AdviceVersionDto(
+                    adviceId = rs.getObject("advice_id", UUID::class.java),
+                    analysisRunId = rs.getObject("analysis_run_id", UUID::class.java),
+                    createdAt = rs.getTimestamp("created_at").toInstant(),
+                    actuality = rs.getString("actuality"),
+                    // Alleen de eerste rij in bovenstaande ordening is het 'laatste advies'.
+                    latest = rowNumber == 0,
+                    advice = mapper.readTree(rs.getString("advice_json")),
+                    displayTitle = rs.getString("display_title"),
+                    shortConclusion = rs.getString("short_conclusion"),
+                    provider = rs.getString("provider"),
+                    model = rs.getString("model"),
+                    promptVersion = rs.getString("prompt_version"),
+                    // `analysis_guidance` is NOT NULL met standaard ''; niets of alleen witruimte
+                    // betekent dat er geen aanvullende instructie is bewaard.
+                    analysisGuidance = rs.getString("analysis_guidance")?.takeIf { it.isNotBlank() },
+                    refreshReason = AdviceRefreshReason.of(rs).name,
+                )
+            },
+            itemId,
+        )
+        return AdviceVersionsDto(rows)
     }
 
     fun run(runId: UUID): AnalysisRunDto? = jdbc.query(

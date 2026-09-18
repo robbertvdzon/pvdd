@@ -77,8 +77,7 @@ class AiRunQueryRepository(private val jdbc: JdbcTemplate) {
             SELECT run.id, run.agenda_item_id, run.status, run.created_at, run.submitted_at,
                    run.updated_at, run.completed_at, run.error_code, run.prompt_version,
                    item.title item_title, item.category,
-                   EXISTS (SELECT 1 FROM analysis_run older WHERE older.agenda_item_id = run.agenda_item_id
-                       AND older.run_type = 'FINAL_ADVICE' AND older.created_at < run.created_at) reanalysis,
+                   ${AdviceRefreshReason.reanalysisPredicate("run")} ${AdviceRefreshReason.REANALYSIS_COLUMN},
                    run.retry_of_run_id,
                    advice.provider, advice.model,
                    (SELECT COUNT(*) FROM analysis_run phase WHERE phase.parent_run_id = run.id) + 1 phase_count,
@@ -93,14 +92,27 @@ class AiRunQueryRepository(private val jdbc: JdbcTemplate) {
         """.trimIndent()
         val args = mutableListOf<Any>(*statuses.toTypedArray()).apply { id?.let(::add) }
         return jdbc.query(sql, { rs, _ ->
-            val reanalysis = rs.getBoolean("reanalysis")
-            val manualRetry = rs.getObject("retry_of_run_id") != null
+            // Dezelfde afleiding als de adviesversies gebruiken; de soortcode, titel en uitleg
+            // hieronder zijn ongewijzigd, maar hangen nu aan één gedeelde beslissing.
+            val reason = AdviceRefreshReason.of(rs)
             val itemTitle = rs.getString("item_title")
             LogicalAiRunDto(
                 rs.getObject("id", UUID::class.java),
-                if (manualRetry) "AGENDA_RETRY" else if (reanalysis) "AGENDA_REANALYSIS" else "AGENDA_ADVICE",
-                if (manualRetry) "$itemTitle opnieuw proberen" else if (reanalysis) "$itemTitle opnieuw analyseren" else itemTitle,
-                if (manualRetry) "Handmatig opnieuw gestart na een technische fout" else if (reanalysis) "Opnieuw gestart omdat de bron- of beleidscontext veranderde" else "Eerste analyse van een ${rs.getString("category")}-agendapunt",
+                when (reason) {
+                    AdviceRefreshReason.MANUAL_RETRY -> "AGENDA_RETRY"
+                    AdviceRefreshReason.CONTEXT_CHANGED -> "AGENDA_REANALYSIS"
+                    AdviceRefreshReason.FIRST_ANALYSIS -> "AGENDA_ADVICE"
+                },
+                when (reason) {
+                    AdviceRefreshReason.MANUAL_RETRY -> "$itemTitle opnieuw proberen"
+                    AdviceRefreshReason.CONTEXT_CHANGED -> "$itemTitle opnieuw analyseren"
+                    AdviceRefreshReason.FIRST_ANALYSIS -> itemTitle
+                },
+                when (reason) {
+                    AdviceRefreshReason.MANUAL_RETRY -> "Handmatig opnieuw gestart na een technische fout"
+                    AdviceRefreshReason.CONTEXT_CHANGED -> "Opnieuw gestart omdat de bron- of beleidscontext veranderde"
+                    AdviceRefreshReason.FIRST_ANALYSIS -> "Eerste analyse van een ${rs.getString("category")}-agendapunt"
+                },
                 rs.getObject("agenda_item_id", UUID::class.java), rs.getString("status"),
                 rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("submitted_at")?.toInstant(),
                 rs.getTimestamp("updated_at").toInstant(), rs.getTimestamp("completed_at")?.toInstant(),

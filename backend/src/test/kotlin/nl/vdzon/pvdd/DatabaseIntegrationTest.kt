@@ -25,6 +25,8 @@ import nl.vdzon.pvdd.documents.DocumentRepository
 import nl.vdzon.pvdd.documents.ExtractedSection
 import nl.vdzon.pvdd.documents.ExtractionStatus
 import nl.vdzon.pvdd.documents.SourceDocument
+import nl.vdzon.pvdd.dashboard.AdviceVersionDto
+import nl.vdzon.pvdd.dashboard.AdviceVersionsDto
 import nl.vdzon.pvdd.dashboard.DashboardRepository
 import nl.vdzon.pvdd.dashboard.ProgressDto
 import nl.vdzon.pvdd.dashboard.api.DashboardController
@@ -959,6 +961,164 @@ class DatabaseIntegrationTest(
     }
 
     @Test
+    fun `advice versions list the saved versions newest first and reject an unknown agenda item`() {
+        val older = Instant.parse("2026-09-03T09:12:00Z")
+        val newer = Instant.parse("2026-09-07T05:41:00Z")
+        val seeded = seedMeetingWithAgendaItem(Instant.now().minusSeconds(7200))
+        val withoutAdvice = seedMeetingWithAgendaItem(Instant.now().minusSeconds(7200))
+        try {
+            val first = seedAdviceVersion(
+                seeded.meetingId, seeded.agendaItemId, older,
+                guidance = "Weeg de natuurnormen zwaarder",
+            )
+            // Een lege guidance is bewust anders dan geen kolomwaarde: de kolom is NOT NULL met ''.
+            val second = seedAdviceVersion(seeded.meetingId, seeded.agendaItemId, newer, guidance = "   ")
+
+            val versions = dashboardController.adviceVersions(seeded.agendaItemId).versions
+            assertEquals(listOf(second.adviceId, first.adviceId), versions.map { it.adviceId })
+            assertEquals(listOf(second.runId, first.runId), versions.map { it.analysisRunId })
+            assertEquals(listOf(newer, older), versions.map { it.createdAt })
+            assertEquals(listOf("CURRENT", "STALE"), versions.map { it.actuality })
+            // Alleen de eerste rij in de ordening is het laatste advies.
+            assertEquals(listOf(true, false), versions.map { it.latest })
+
+            val latest = versions.first()
+            assertEquals("Advies", latest.displayTitle)
+            assertEquals("Steunen", latest.shortConclusion)
+            assertEquals("# Advies", latest.advice.path("content").asText())
+            assertEquals("Advies", latest.advice.path("displayTitle").asText())
+            assertEquals("MOCKED", latest.provider)
+            assertEquals("mock-model", latest.model)
+            assertEquals("advice-v1", latest.promptVersion)
+            // Leeg of alleen witruimte wordt null; de bewaarde tekst gaat ongewijzigd mee.
+            assertNull(latest.analysisGuidance)
+            assertEquals("Weeg de natuurnormen zwaarder", versions[1].analysisGuidance)
+
+            // Een bestaand agendapunt zonder geslaagde adviesrun levert een lege lijst, geen 404.
+            assertEquals(emptyList(), dashboardController.adviceVersions(withoutAdvice.agendaItemId).versions)
+
+            assertEquals(
+                HttpStatus.NOT_FOUND,
+                assertFailsWith<ResponseStatusException> {
+                    dashboardController.adviceVersions(UUID.randomUUID())
+                }.statusCode,
+            )
+        } finally {
+            removeSyntheticMeeting(withoutAdvice.meetingId)
+            removeSyntheticMeeting(seeded.meetingId)
+        }
+    }
+
+    @Test
+    fun `advice versions leave out runs that did not succeed`() {
+        val seeded = seedMeetingWithAgendaItem(Instant.now().minusSeconds(7200))
+        try {
+            val succeeded = seedAdviceVersion(
+                seeded.meetingId, seeded.agendaItemId, Instant.parse("2026-09-01T09:00:00Z"),
+            )
+            // Beide houden hun adviesrij, maar de run is niet geslaagd: ze horen niet in de lijst.
+            seedAdviceVersion(
+                seeded.meetingId, seeded.agendaItemId, Instant.parse("2026-09-04T09:00:00Z"),
+                status = AnalysisStatus.FAILED,
+            )
+            seedAdviceVersion(
+                seeded.meetingId, seeded.agendaItemId, Instant.parse("2026-09-05T09:00:00Z"),
+                status = AnalysisStatus.CANCELLED,
+            )
+
+            val versions = dashboardController.adviceVersions(seeded.agendaItemId).versions
+            assertEquals(listOf(succeeded.adviceId), versions.map { it.adviceId })
+            assertTrue(versions.single().latest)
+        } finally {
+            removeSyntheticMeeting(seeded.meetingId)
+        }
+    }
+
+    @Test
+    fun `advice versions derive the refresh reason exactly like the ai runs view`() {
+        val seeded = seedMeetingWithAgendaItem(Instant.now().minusSeconds(7200))
+        try {
+            // Eerste analyse, daarna een heranalyse zonder retry, daarna een handmatige herstart.
+            val first = seedAdviceVersion(seeded.meetingId, seeded.agendaItemId, Instant.parse("2026-09-01T09:00:00Z"))
+            val reanalysis = seedAdviceVersion(seeded.meetingId, seeded.agendaItemId, Instant.parse("2026-09-03T09:00:00Z"))
+            val retry = seedAdviceVersion(
+                seeded.meetingId, seeded.agendaItemId, Instant.parse("2026-09-07T09:00:00Z"),
+                retryOfRunId = reanalysis.runId,
+            )
+
+            val reasons = dashboardController.adviceVersions(seeded.agendaItemId)
+                .versions.associate { it.analysisRunId to it.refreshReason }
+            assertEquals("MANUAL_RETRY", reasons[retry.runId])
+            assertEquals("CONTEXT_CHANGED", reasons[reanalysis.runId])
+            assertEquals("FIRST_ANALYSIS", reasons[first.runId])
+
+            // Dezelfde afleiding als de AI-runsweergave: elke soortcode daar hoort bij dezelfde run.
+            assertEquals("AGENDA_RETRY", dashboardController.aiRun(retry.runId).run.type)
+            assertEquals("AGENDA_REANALYSIS", dashboardController.aiRun(reanalysis.runId).run.type)
+            assertEquals("AGENDA_ADVICE", dashboardController.aiRun(first.runId).run.type)
+        } finally {
+            removeSyntheticMeeting(seeded.meetingId)
+        }
+    }
+
+    @Test
+    fun `reading advice versions carries no source list and changes nothing`() {
+        val seeded = seedMeetingWithAgendaItem(Instant.now().minusSeconds(7200))
+        try {
+            seedAdviceVersion(seeded.meetingId, seeded.agendaItemId, Instant.parse("2026-09-01T09:00:00Z"))
+            seedAdviceVersion(seeded.meetingId, seeded.agendaItemId, Instant.parse("2026-09-07T09:00:00Z"))
+
+            val runsBefore = countAllRuns()
+            val adviceBefore = countAllAdvice()
+            val snapshotBefore = adviceSnapshot(seeded.agendaItemId)
+
+            val response = dashboardController.adviceVersions(seeded.agendaItemId)
+
+            // Geen bron-, citatie- of revisieveld, op geen enkel niveau van het antwoord.
+            val forbidden = listOf("citation", "citatie", "source", "bron", "revision")
+            val fieldNames = AdviceVersionDto::class.java.declaredFields.map { it.name } +
+                AdviceVersionsDto::class.java.declaredFields.map { it.name }
+            fieldNames.forEach { field ->
+                assertTrue(
+                    forbidden.none { field.lowercase().contains(it) },
+                    "Veld $field verwijst naar bronnen of citaten",
+                )
+            }
+            val serialized = jacksonObjectMapper().writeValueAsString(response).lowercase()
+            forbidden.forEach { assertFalse(serialized.contains(it), "Het antwoord bevat '$it'") }
+
+            assertEquals(runsBefore, countAllRuns())
+            assertEquals(adviceBefore, countAllAdvice())
+            assertEquals(snapshotBefore, adviceSnapshot(seeded.agendaItemId))
+        } finally {
+            removeSyntheticMeeting(seeded.meetingId)
+        }
+    }
+
+    @Test
+    fun `a withdrawn advice sorts after current and stale even when it is the newest`() {
+        val seeded = seedMeetingWithAgendaItem(Instant.now().minusSeconds(7200))
+        try {
+            val oldest = seedAdviceVersion(seeded.meetingId, seeded.agendaItemId, Instant.parse("2026-09-01T09:00:00Z"))
+            val middle = seedAdviceVersion(seeded.meetingId, seeded.agendaItemId, Instant.parse("2026-09-03T09:00:00Z"))
+            val newest = seedAdviceVersion(seeded.meetingId, seeded.agendaItemId, Instant.parse("2026-09-07T09:00:00Z"))
+            // De chronologisch nieuwste versie is ingetrokken; de ordening van `item()` zet haar
+            // daarmee achteraan, dus zij is niet het 'laatste advies'. De middelste rij neemt de
+            // markering CURRENT over, precies zoals de detailweergave haar dan zou tonen.
+            jdbc.update("UPDATE agenda_item_advice SET actuality = 'WITHDRAWN' WHERE id = ?", newest.adviceId)
+            jdbc.update("UPDATE agenda_item_advice SET actuality = 'CURRENT' WHERE id = ?", middle.adviceId)
+
+            val versions = dashboardController.adviceVersions(seeded.agendaItemId).versions
+            assertEquals(listOf(middle.adviceId, oldest.adviceId, newest.adviceId), versions.map { it.adviceId })
+            assertEquals(listOf("CURRENT", "STALE", "WITHDRAWN"), versions.map { it.actuality })
+            assertEquals(listOf(true, false, false), versions.map { it.latest })
+            assertEquals(middle.adviceId, versions.single { it.latest }.adviceId)
+        } finally {
+            removeSyntheticMeeting(seeded.meetingId)
+        }
+    }
+
+    @Test
     fun `workflow lock permits at most one owner and is recoverable`() {
         val first = UUID.randomUUID()
         val second = UUID.randomUUID()
@@ -1010,15 +1170,37 @@ class DatabaseIntegrationTest(
     // dit de twee situaties die de `past`-markering moet onderscheiden. Opruimen doet
     // `removeSyntheticMeeting(meetingId)`.
     private fun seedMeetingWithAdvice(startsAt: Instant): SeededMeeting {
+        val seeded = seedMeetingWithAgendaItem(startsAt)
+        return SeededMeeting(
+            seeded.meetingId,
+            seeded.agendaItemId,
+            succeededAdvice(seeded.meetingId, seeded.agendaItemId, startsAt),
+        )
+    }
+
+    private data class SeededAgendaItem(val meetingId: UUID, val agendaItemId: UUID)
+
+    /**
+     * Eén vergadering met één inhoudelijk agendapunt en een leesbaar document, nog zónder advies.
+     * Zo kan een test zelf bepalen welke runs en adviesrijen er komen; opruimen doet
+     * `removeSyntheticMeeting(meetingId)`.
+     */
+    private fun seedMeetingWithAgendaItem(startsAt: Instant): SeededAgendaItem {
         val unique = UUID.randomUUID()
         val meetingId = meetingRepository.upsert(pastMeeting(startsAt).copy(sourceId = "meeting-seed-$unique"))
         val itemId = meetingRepository.upsert(pastAgendaItem(meetingId))
         // Zonder leesbaar document telt het agendapunt niet mee in de voortgangstelling.
         assertTrue(documentRepository.insertVersion(document(itemId, unique.toString().replace("-", "").repeat(2), startsAt)))
-        return SeededMeeting(meetingId, itemId, succeededAdvice(meetingId, itemId, startsAt))
+        return SeededAgendaItem(meetingId, itemId)
     }
 
-    private fun preparedAdviceRun(meetingId: UUID, itemId: UUID, createdAt: Instant) = PreparedAnalysisRun(
+    private fun preparedAdviceRun(
+        meetingId: UUID,
+        itemId: UUID,
+        createdAt: Instant,
+        guidance: String = "",
+        retryOfRunId: UUID? = null,
+    ) = PreparedAnalysisRun(
         run = AnalysisRun(
             id = UUID.randomUUID(),
             agendaItemId = itemId,
@@ -1032,6 +1214,7 @@ class DatabaseIntegrationTest(
             createdAt = createdAt,
             updatedAt = createdAt,
             completedAt = null,
+            retryOfRunId = retryOfRunId,
         ),
         meetingId = meetingId,
         category = "A",
@@ -1039,7 +1222,45 @@ class DatabaseIntegrationTest(
         prompt = "synthetisch advies over een voorbije vergadering",
         responseSchema = jacksonObjectMapper().readTree("""{"type":"object"}"""),
         allowedSources = emptyList(),
+        analysisGuidance = guidance,
     )
+
+    private data class SeededAdviceVersion(val runId: UUID, val adviceId: UUID)
+
+    /**
+     * Zaaihelper voor adviesversies: één `FINAL_ADVICE`-run met bijbehorende adviesrij.
+     *
+     * Met [status] anders dan `SUCCEEDED` blijft de adviesrij staan terwijl de run mislukt of
+     * geannuleerd is — precies het geval dat de versielijst moet uitsluiten. [guidance] vult
+     * `analysis_run.analysis_guidance` (leeg betekent: niets bewaard) en [retryOfRunId] maakt er een
+     * handmatig herstarte run van. De `actuality` van alle adviesrijen van dit agendapunt wordt door
+     * de productiecode zelf herberekend, dus zaai in chronologische volgorde.
+     */
+    private fun seedAdviceVersion(
+        meetingId: UUID,
+        itemId: UUID,
+        createdAt: Instant,
+        status: AnalysisStatus = AnalysisStatus.SUCCEEDED,
+        guidance: String = "",
+        retryOfRunId: UUID? = null,
+        advice: String = """{"displayTitle":"Advies","shortConclusion":"Steunen","content":"# Advies"}""",
+    ): SeededAdviceVersion {
+        val prepared = preparedAdviceRun(meetingId, itemId, createdAt, guidance, retryOfRunId)
+        val runId = analysisRepository.createPreparedRun(prepared)
+        analysisRepository.completeWithAdvice(
+            prepared,
+            jacksonObjectMapper().readTree(advice),
+            jacksonObjectMapper().createArrayNode(),
+            "MOCKED",
+            "mock-model",
+            createdAt,
+        )
+        if (status != AnalysisStatus.SUCCEEDED) analysisRepository.updateRuntimeStatus(runId, status, "synthetic_$status")
+        val adviceId = requireNotNull(
+            jdbc.queryForObject("SELECT id FROM agenda_item_advice WHERE analysis_run_id = ?", UUID::class.java, runId),
+        )
+        return SeededAdviceVersion(runId, adviceId)
+    }
 
     // Een mislukte FINAL_ADVICE-run: het agendapunt telt wel mee als inhoudelijk punt, maar niet
     // als punt met afgerond advies.
@@ -1140,19 +1361,8 @@ class DatabaseIntegrationTest(
         return SeededArchiveMeeting(meetingId, startsAt, succeeded + failed + withoutAdvice, succeeded)
     }
 
-    private fun succeededAdvice(meetingId: UUID, itemId: UUID, completedAt: Instant): UUID {
-        val prepared = preparedAdviceRun(meetingId, itemId, completedAt)
-        val runId = analysisRepository.createPreparedRun(prepared)
-        analysisRepository.completeWithAdvice(
-            prepared,
-            jacksonObjectMapper().readTree("""{"displayTitle":"Advies","shortConclusion":"Steunen","content":"# Advies"}"""),
-            jacksonObjectMapper().createArrayNode(),
-            "MOCKED",
-            "mock-model",
-            completedAt,
-        )
-        return runId
-    }
+    private fun succeededAdvice(meetingId: UUID, itemId: UUID, completedAt: Instant): UUID =
+        seedAdviceVersion(meetingId, itemId, completedAt).runId
 
     // Een check-now met een synthetische bron: de discovery zelf blijft ongemoeid, alleen de gateway
     // is vervangen zodat de controleroute zonder externe bron tegen de echte database kan draaien.
@@ -1226,6 +1436,9 @@ class DatabaseIntegrationTest(
 
     // Telt de hele tabel, zodat een leesaanroep ook geen rij kan toevoegen voor een andere vergadering.
     private fun countAllRuns(): Int = jdbc.queryForObject("SELECT COUNT(*) FROM analysis_run", Int::class.java) ?: 0
+
+    private fun countAllAdvice(): Int =
+        jdbc.queryForObject("SELECT COUNT(*) FROM agenda_item_advice", Int::class.java) ?: 0
 
     private fun countQueued(meetingId: UUID): Int = jdbc.queryForObject(
         "SELECT COUNT(*) FROM analysis_meeting_queue WHERE meeting_id = ?",

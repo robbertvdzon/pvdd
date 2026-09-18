@@ -21,6 +21,13 @@ abstract interface class DashboardGateway {
 
   Future<List<AgendaItemSummary>> agendaItems(String meetingId);
   Future<AgendaItemDetail> agendaItem(String itemId);
+
+  /// De bewaarde adviesversies van één agendapunt, nieuwste eerst zoals de server ze ordent.
+  ///
+  /// Leest alleen; een agendapunt zonder geslaagde adviesrun levert een lege lijst. Bij een eerdere
+  /// versie hoort bewust geen bronnenlijst, dus het antwoord bevat die ook niet.
+  Future<List<AdviceVersion>> adviceVersions(String itemId);
+
   Future<MeetingCheckOutcome> checkNow();
   Future<void> retryAnalysis(String itemId);
 }
@@ -62,6 +69,16 @@ class HttpDashboardGateway implements DashboardGateway {
   @override
   Future<AgendaItemDetail> agendaItem(String itemId) async =>
       AgendaItemDetail.fromJson(await _get('/api/agenda-items/$itemId'));
+
+  @override
+  Future<List<AdviceVersion>> adviceVersions(String itemId) async {
+    final value =
+        await _get('/api/agenda-items/$itemId/advice-versions')
+            as Map<String, dynamic>;
+    return (value['versions'] as List<dynamic>)
+        .map((version) => AdviceVersion.fromJson(version as Map<String, dynamic>))
+        .toList(growable: false);
+  }
 
   @override
   Future<MeetingCheckOutcome> checkNow() async {
@@ -374,6 +391,59 @@ class AgendaItemDetail {
   final String? adviceActuality;
   final List<SourceLink> sources;
   final String warning;
+}
+
+/// Eén bewaarde adviesversie van een agendapunt.
+///
+/// [latest] is uitsluitend `true` voor de eerste versie in de serverordening: dat is het advies dat
+/// de detailweergave als 'laatste advies' toont. [analysisGuidance] is `null` wanneer er bij die run
+/// geen aanvullende analyse-instructie is bewaard; de huidige instructie hoort daar niet te komen.
+/// [refreshReason] is de code waarom díe run is gedaan (`MANUAL_RETRY`, `CONTEXT_CHANGED` of
+/// `FIRST_ANALYSIS`). Bewust geen bronnenlijst: die hoort alleen bij het laatste advies.
+class AdviceVersion {
+  const AdviceVersion({
+    required this.adviceId,
+    required this.analysisRunId,
+    required this.createdAt,
+    required this.actuality,
+    required this.latest,
+    required this.advice,
+    this.displayTitle,
+    this.shortConclusion,
+    this.provider = '',
+    this.model = '',
+    this.promptVersion = '',
+    this.analysisGuidance,
+    required this.refreshReason,
+  });
+  factory AdviceVersion.fromJson(Map<String, dynamic> json) => AdviceVersion(
+    adviceId: json['adviceId'] as String,
+    analysisRunId: json['analysisRunId'] as String,
+    createdAt: DateTime.parse(json['createdAt'] as String),
+    actuality: json['actuality'] as String,
+    latest: json['latest'] as bool,
+    advice: json['advice'] as Map<String, dynamic>,
+    displayTitle: json['displayTitle'] as String?,
+    shortConclusion: json['shortConclusion'] as String?,
+    provider: json['provider'] as String? ?? '',
+    model: json['model'] as String? ?? '',
+    promptVersion: json['promptVersion'] as String? ?? '',
+    analysisGuidance: json['analysisGuidance'] as String?,
+    refreshReason: json['refreshReason'] as String,
+  );
+  final String adviceId;
+  final String analysisRunId;
+  final DateTime createdAt;
+  final String actuality;
+  final bool latest;
+  final Map<String, dynamic> advice;
+  final String? displayTitle;
+  final String? shortConclusion;
+  final String provider;
+  final String model;
+  final String promptVersion;
+  final String? analysisGuidance;
+  final String refreshReason;
 }
 
 class SourceLink {

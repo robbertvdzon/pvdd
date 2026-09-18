@@ -274,6 +274,25 @@ class FakeDashboardGateway implements DashboardGateway {
     );
   }
 
+  /// De adviesversies die deze fake per agendapunt-id teruggeeft. Standaard leeg, zodat bestaande
+  /// tests geen versiekeuze en geen melding in beeld krijgen; een test die de keuze wil toetsen zet
+  /// hier zelf versies neer, bijvoorbeeld met [syntheticAdviceVersions].
+  Map<String, List<AdviceVersion>> adviceVersionsByItem =
+      <String, List<AdviceVersion>>{};
+
+  /// De agendapunt-id's waarvoor `adviceVersions` faalt. Haal een id eruit om dezelfde aanvraag
+  /// daarna te laten slagen, precies zoals de knop 'Versies opnieuw laden' die herhaalt.
+  Set<String> failingAdviceVersionItems = <String>{};
+
+  @override
+  Future<List<AdviceVersion>> adviceVersions(String itemId) async {
+    calls.add('adviceVersions:$itemId');
+    if (failingAdviceVersionItems.contains(itemId)) {
+      throw const DashboardUnavailable();
+    }
+    return adviceVersionsByItem[itemId] ?? const <AdviceVersion>[];
+  }
+
   @override
   Future<MeetingCheckOutcome> checkNow() async {
     calls.add('checkNow');
@@ -414,6 +433,75 @@ class DocumentStatusDashboardGateway extends FakeDashboardGateway {
     );
   }
 }
+
+/// De twee tijdstippen uit de UX-mockups: een laatste advies van 7 september 2026 dat de versie van
+/// 3 september 2026 verving. Lokale tijden, zodat de datumweergave niet van de tijdzone van de
+/// testomgeving afhangt.
+final DateTime latestAdviceAt = DateTime(2026, 9, 7, 5, 41);
+final DateTime earlierAdviceAt = DateTime(2026, 9, 3, 9, 12);
+
+/// Eén synthetische adviesversie.
+///
+/// De adviesinhoud gebruikt de gestructureerde A/B-secties (en niet vrije Markdown), zodat de tekst
+/// van díe versie met `find.text` te vinden is.
+AdviceVersion syntheticAdviceVersion({
+  required DateTime createdAt,
+  required bool latest,
+  String refreshReason = 'CONTEXT_CHANGED',
+  String actuality = 'CURRENT',
+  String? analysisGuidance,
+  String summary = 'De afweging van toen.',
+  String displayTitle = 'Natuur en wonen combineren',
+  String shortConclusion = 'Kansrijk met harde natuurnormen.',
+}) {
+  final stamp = createdAt.toIso8601String();
+  return AdviceVersion(
+    adviceId: 'advice-$stamp',
+    analysisRunId: 'run-$stamp',
+    createdAt: createdAt,
+    actuality: actuality,
+    latest: latest,
+    advice: {
+      'displayTitle': displayTitle,
+      'shortConclusion': shortConclusion,
+      'waarGaatHetOver': summary,
+    },
+    displayTitle: displayTitle,
+    shortConclusion: shortConclusion,
+    provider: 'MOCKED',
+    model: 'mock-model',
+    promptVersion: 'advice-v1',
+    analysisGuidance: analysisGuidance,
+    refreshReason: refreshReason,
+  );
+}
+
+/// De twee bewaarde versies uit de UX-mockups, in de ordening van de server (nieuwste eerst).
+///
+/// [refreshReason] is de reden van de vervangende (nieuwste) versie; die reden hoort in de melding
+/// bij de eerdere versie. De eerdere versie houdt haar eigen reden `FIRST_ANALYSIS`, zodat een test
+/// die de verkeerde versie uitleest meteen opvalt.
+List<AdviceVersion> syntheticAdviceVersions({
+  String refreshReason = 'CONTEXT_CHANGED',
+  String? latestGuidance,
+  String? earlierGuidance,
+}) => [
+  syntheticAdviceVersion(
+    createdAt: latestAdviceAt,
+    latest: true,
+    refreshReason: refreshReason,
+    analysisGuidance: latestGuidance,
+    summary: 'De nieuwste afweging.',
+  ),
+  syntheticAdviceVersion(
+    createdAt: earlierAdviceAt,
+    latest: false,
+    actuality: 'STALE',
+    refreshReason: 'FIRST_ANALYSIS',
+    analysisGuidance: earlierGuidance,
+    summary: 'De afweging van toen.',
+  ),
+];
 
 /// Een voorspelbare synthetische vergadering-id; index 0 is de meest recente.
 String syntheticMeetingId(int index) =>
