@@ -485,6 +485,16 @@ class AnalysisRepository(
         return cloneFailedLogicalRun(original, now)
     }
 
+    /** Lets runs that wait for an automatic retry backoff be submitted right away. */
+    fun releaseWaitingRuntimeRetries(): Int = jdbc.update(
+        """
+        UPDATE analysis_run run SET next_runtime_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE run.status = 'PENDING' AND run.next_runtime_attempt_at > CURRENT_TIMESTAMP
+          AND EXISTS (SELECT 1 FROM meeting JOIN agenda_item item ON item.meeting_id = meeting.id
+                      WHERE item.id = run.agenda_item_id AND meeting.starts_at > CURRENT_TIMESTAMP)
+        """.trimIndent(),
+    )
+
     @org.springframework.transaction.annotation.Transactional
     fun retryAllLatestFailedAnalyses(now: Instant): List<AgendaAnalysisRetry> {
         val itemIds = jdbc.query(

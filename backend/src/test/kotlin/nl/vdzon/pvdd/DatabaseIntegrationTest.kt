@@ -295,10 +295,12 @@ class DatabaseIntegrationTest(
             analysisRepository.scheduleRuntimeRetry(
                 preparedId,
                 "ENGINE_FAILED",
-                Instant.EPOCH,
+                Instant.now().plusSeconds(3600),
                 3,
             ),
         )
+        assertNull(analysisRepository.claimPendingRun())
+        assertEquals(1, analysisRepository.releaseWaitingRuntimeRetries())
         val automaticRetry = requireNotNull(analysisRepository.claimPendingRun())
         assertEquals(preparedId, automaticRetry.run.id)
         assertEquals(1, automaticRetry.run.runtimeAttemptCount)

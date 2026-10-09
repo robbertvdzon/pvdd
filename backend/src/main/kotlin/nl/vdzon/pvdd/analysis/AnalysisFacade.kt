@@ -45,6 +45,8 @@ class AnalysisFacade(
     fun retryAllFailedAgendaItems(): Int {
         val retries = repository.retryAllLatestFailedAnalyses(clock.instant())
         retries.map(AgendaAnalysisRetry::meetingId).distinct().forEach(meetings::markAnalysing)
-        return retries.size
+        // Runs in an automatic retry backoff (up to two hours) are restarted as well.
+        val released = repository.releaseWaitingRuntimeRetries()
+        return retries.size + released
     }
 }
