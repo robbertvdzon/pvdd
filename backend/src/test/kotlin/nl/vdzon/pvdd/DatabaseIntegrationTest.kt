@@ -284,7 +284,7 @@ class DatabaseIntegrationTest(
         val preparedId = analysisRepository.createPreparedRun(prepared)
         val firstClaim = requireNotNull(analysisRepository.claimPendingRun())
         assertEquals(preparedId, firstClaim.run.id)
-        analysisRepository.retrySubmit(preparedId, "LOST_RESPONSE")
+        assertFalse(analysisRepository.retrySubmit(preparedId, "LOST_RESPONSE"))
         val recoveredClaim = requireNotNull(analysisRepository.claimPendingRun())
         assertEquals(prepared.run.idempotencyKey, recoveredClaim.run.idempotencyKey)
         assertEquals(prepared.allowedSources, recoveredClaim.allowedSources)

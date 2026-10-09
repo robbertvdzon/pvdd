@@ -282,19 +282,20 @@ class AnalysisRepository(
         """.trimIndent(),
     )
 
-    fun retrySubmit(runId: UUID, errorCode: String) {
-        jdbc.update(
-            """
-            UPDATE analysis_run SET
-                outbox_status = CASE WHEN submit_attempts >= 8 THEN 'FAILED' ELSE 'PENDING' END,
-                status = CASE WHEN submit_attempts >= 8 THEN 'FAILED' ELSE 'PENDING' END,
-                error_code = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """.trimIndent(),
-            errorCode,
-            runId,
-        )
-    }
+    /** Returns true when the submit attempts are exhausted and the run is now FAILED. */
+    fun retrySubmit(runId: UUID, errorCode: String): Boolean = jdbc.queryForObject(
+        """
+        UPDATE analysis_run SET
+            outbox_status = CASE WHEN submit_attempts >= 8 THEN 'FAILED' ELSE 'PENDING' END,
+            status = CASE WHEN submit_attempts >= 8 THEN 'FAILED' ELSE 'PENDING' END,
+            error_code = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        RETURNING status = 'FAILED'
+        """.trimIndent(),
+        Boolean::class.java,
+        errorCode,
+        runId,
+    ) ?: false
 
     fun activeRuns(limit: Int = 20): List<PreparedAnalysisRun> = jdbc.query(
         """

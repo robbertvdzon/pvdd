@@ -162,7 +162,12 @@ class AnalysisOrchestrator(
             repository.markSubmitted(prepared.run.id, job.id, job.status.toActiveStatus())
         } catch (failure: Exception) {
             log.warn("Runtime submit failed for analysis {} with {}", prepared.run.id, safeCode(failure))
-            repository.retrySubmit(prepared.run.id, "RUNTIME_UNAVAILABLE")
+            if (repository.retrySubmit(prepared.run.id, "RUNTIME_UNAVAILABLE")) {
+                // A source-notes phase that can no longer be submitted would otherwise leave
+                // its final advice PENDING forever, and the retry action only handles FAILED runs.
+                prepared.parentRunId?.let { repository.failParentFinal(it, "RUNTIME_UNAVAILABLE") }
+                meetings.markPartial(prepared.meetingId, "RUNTIME_UNAVAILABLE")
+            }
         }
     }
 
