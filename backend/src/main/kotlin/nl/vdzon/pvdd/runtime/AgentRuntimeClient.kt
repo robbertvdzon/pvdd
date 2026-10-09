@@ -40,7 +40,7 @@ data class RuntimeCreateRequest(
     val prompt: String,
     val responseSchema: JsonNode,
     val environmentKeys: List<String> = emptyList(),
-    val executionTimeoutSeconds: Int = 300,
+    val executionTimeoutSeconds: Int = 900,
 )
 
 interface AgentRuntimeGateway {
