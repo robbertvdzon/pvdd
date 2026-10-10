@@ -7,6 +7,11 @@ import 'csrf_token.dart';
 abstract interface class SettingsGateway {
   Future<ApplicationSettings> load();
   Future<ApplicationSettings> updateAnalysisInstructions(String value);
+  Future<ApplicationSettings> selectAnalysisModel(
+    String task,
+    ModelExecution execution,
+  );
+  Future<ApplicationSettings> resetAnalysisModel(String task);
   Future<int> retryAllFailedAnalyses();
 }
 
@@ -35,6 +40,44 @@ class HttpSettingsGateway implements SettingsGateway {
             body: jsonEncode({'additionalInstructions': value}),
           )
           .timeout(const Duration(seconds: 10)),
+    );
+  }
+
+  @override
+  Future<ApplicationSettings> selectAnalysisModel(
+    String task,
+    ModelExecution execution,
+  ) async {
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    final csrf = readCsrfToken();
+    if (csrf != null) headers['X-CSRF-Token'] = csrf;
+    return _decode(
+      await _client
+          .put(
+            Uri.parse('/api/settings/analysis-models/$task'),
+            headers: headers,
+            body: jsonEncode({
+              'vendorId': execution.vendorId,
+              'model': execution.model,
+              'mode': execution.mode,
+            }),
+          )
+          .timeout(const Duration(seconds: 15)),
+    );
+  }
+
+  @override
+  Future<ApplicationSettings> resetAnalysisModel(String task) async {
+    final headers = <String, String>{};
+    final csrf = readCsrfToken();
+    if (csrf != null) headers['X-CSRF-Token'] = csrf;
+    return _decode(
+      await _client
+          .delete(
+            Uri.parse('/api/settings/analysis-models/$task'),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 15)),
     );
   }
 
@@ -71,6 +114,7 @@ class ApplicationSettings {
     required this.scheduledJobs,
     required this.policySources,
     required this.analysisPrompt,
+    required this.analysisModels,
   });
 
   factory ApplicationSettings.fromJson(Map<String, dynamic> json) =>
@@ -87,11 +131,136 @@ class ApplicationSettings {
         analysisPrompt: AnalysisPromptSettings.fromJson(
           json['analysisPrompt'] as Map<String, dynamic>,
         ),
+        analysisModels: AnalysisModelSettings.fromJson(
+          json['analysisModels'] as Map<String, dynamic>,
+        ),
       );
 
   final List<ScheduledJobSetting> scheduledJobs;
   final PolicySourceSettings policySources;
   final AnalysisPromptSettings analysisPrompt;
+  final AnalysisModelSettings analysisModels;
+}
+
+/// De twee AI-taken waarvoor een model te kiezen is.
+const analysisModelTasks = <String>['SOURCE_NOTES', 'FINAL_ADVICE'];
+
+class ModelExecution {
+  const ModelExecution({
+    required this.vendorId,
+    required this.model,
+    required this.mode,
+  });
+
+  factory ModelExecution.fromJson(Map<String, dynamic> json) => ModelExecution(
+    vendorId: json['vendorId'] as String,
+    model: json['model'] as String,
+    mode: json['mode'] as String,
+  );
+
+  final String vendorId;
+  final String model;
+  final String mode;
+
+  String get label => '$model · $vendorId';
+
+  @override
+  bool operator ==(Object other) =>
+      other is ModelExecution &&
+      other.vendorId == vendorId &&
+      other.model == model &&
+      other.mode == mode;
+
+  @override
+  int get hashCode => Object.hash(vendorId, model, mode);
+}
+
+class AnalysisModelChoice {
+  const AnalysisModelChoice({
+    required this.task,
+    required this.execution,
+    required this.fromSetting,
+    required this.updatedAt,
+    required this.updatedBy,
+  });
+
+  factory AnalysisModelChoice.fromJson(Map<String, dynamic> json) =>
+      AnalysisModelChoice(
+        task: json['task'] as String,
+        execution: ModelExecution.fromJson(
+          json['execution'] as Map<String, dynamic>,
+        ),
+        fromSetting: json['fromSetting'] as bool,
+        updatedAt: json['updatedAt'] == null
+            ? null
+            : DateTime.parse(json['updatedAt'] as String),
+        updatedBy: json['updatedBy'] as String?,
+      );
+
+  final String task;
+  final ModelExecution execution;
+
+  /// false: de geconfigureerde standaard geldt.
+  final bool fromSetting;
+  final DateTime? updatedAt;
+  final String? updatedBy;
+}
+
+class AnalysisModelOption {
+  const AnalysisModelOption({
+    required this.execution,
+    required this.available,
+    required this.onlineWorkers,
+  });
+
+  factory AnalysisModelOption.fromJson(Map<String, dynamic> json) =>
+      AnalysisModelOption(
+        execution: ModelExecution.fromJson(
+          json['execution'] as Map<String, dynamic>,
+        ),
+        available: json['available'] as bool,
+        onlineWorkers: json['onlineWorkers'] as int,
+      );
+
+  final ModelExecution execution;
+  final bool available;
+  final int onlineWorkers;
+}
+
+class AnalysisModelSettings {
+  const AnalysisModelSettings({
+    required this.choices,
+    required this.options,
+    required this.catalogUnavailable,
+  });
+
+  factory AnalysisModelSettings.fromJson(Map<String, dynamic> json) =>
+      AnalysisModelSettings(
+        choices: (json['choices'] as List<dynamic>)
+            .map(
+              (value) =>
+                  AnalysisModelChoice.fromJson(value as Map<String, dynamic>),
+            )
+            .toList(growable: false),
+        options: (json['options'] as List<dynamic>)
+            .map(
+              (value) =>
+                  AnalysisModelOption.fromJson(value as Map<String, dynamic>),
+            )
+            .toList(growable: false),
+        catalogUnavailable: json['catalogUnavailable'] as bool,
+      );
+
+  final List<AnalysisModelChoice> choices;
+  final List<AnalysisModelOption> options;
+  final bool catalogUnavailable;
+
+  AnalysisModelChoice? choiceFor(String task) {
+    for (final choice in choices) {
+      if (choice.task == task) return choice;
+    }
+    return null;
+  }
 }
 
 class ScheduledJobSetting {

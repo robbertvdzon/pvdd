@@ -40,6 +40,7 @@ class AnalysisOrchestrator(
     private val resultValidator: ContentResultValidator,
     private val runtime: AgentRuntimeGateway,
     private val runtimeProperties: AgentRuntimeProperties,
+    private val models: AnalysisModelSettings,
     private val mapper: ObjectMapper,
     private val clock: Clock,
 ) {
@@ -157,9 +158,13 @@ class AnalysisOrchestrator(
                     prompt = requireNotNull(prepared.prompt),
                     responseSchema = prepared.responseSchema,
                     environmentKeys = emptyList(),
+                    execution = models.execution(
+                        if (prepared.runType == AnalysisRunType.SOURCE_NOTES) AnalysisModelTask.SOURCE_NOTES
+                        else AnalysisModelTask.FINAL_ADVICE,
+                    ),
                 ),
             )
-            repository.markSubmitted(prepared.run.id, job.id, job.status.toActiveStatus())
+            repository.markSubmitted(prepared.run.id, job.id, job.status.toActiveStatus(), job.execution.vendorId, job.execution.model)
         } catch (failure: Exception) {
             log.warn("Runtime submit failed for analysis {} with {}", prepared.run.id, safeCode(failure))
             if (repository.retrySubmit(prepared.run.id, "RUNTIME_UNAVAILABLE")) {

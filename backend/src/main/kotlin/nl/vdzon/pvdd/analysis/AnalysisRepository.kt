@@ -221,16 +221,25 @@ class AnalysisRepository(
         preparedRowMapper,
     ).singleOrNull()
 
-    fun markSubmitted(runId: UUID, runtimeJobId: String, status: AnalysisStatus) {
+    fun markSubmitted(
+        runId: UUID,
+        runtimeJobId: String,
+        status: AnalysisStatus,
+        executionVendorId: String? = null,
+        executionModel: String? = null,
+    ) {
         jdbc.update(
             """
             UPDATE analysis_run SET runtime_job_id = ?, status = ?, outbox_status = 'SUBMITTED',
                 submitted_at = COALESCE(submitted_at, CURRENT_TIMESTAMP), error_code = NULL,
                 error_message = NULL, runtime_attempt_count = runtime_attempt_count + 1,
+                execution_vendor_id = ?, execution_model = ?,
                 next_runtime_attempt_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
             """.trimIndent(),
             runtimeJobId,
             status.name,
+            executionVendorId,
+            executionModel,
             runId,
         )
     }

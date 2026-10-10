@@ -35,12 +35,17 @@ data class RuntimeResult(
     val usageSummary: JsonNode? = null,
 )
 
+/** Een uitvoering uit de catalogus van de runtime, met of er nu een worker voor online is. */
+data class RuntimeExecutionOption(val execution: RuntimeExecution, val available: Boolean, val onlineWorkers: Int)
+
 data class RuntimeCreateRequest(
     val idempotencyKey: String,
     val prompt: String,
     val responseSchema: JsonNode,
     val environmentKeys: List<String> = emptyList(),
     val executionTimeoutSeconds: Int = 900,
+    /** Leeg: de geconfigureerde standaarduitvoering. */
+    val execution: RuntimeExecution? = null,
 )
 
 interface AgentRuntimeGateway {
@@ -48,6 +53,7 @@ interface AgentRuntimeGateway {
     fun status(jobId: String): RuntimeJob
     fun result(jobId: String): RuntimeResult
     fun cancel(jobId: String): RuntimeJob
+    fun executionOptions(): List<RuntimeExecutionOption>
 }
 
 open class AgentRuntimeException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
@@ -75,7 +81,8 @@ class AgentRuntimeClient(
                 "idempotencyKey" to request.idempotencyKey,
                 "jobKind" to "APPLICATION_WORK",
                 "taskType" to "STRUCTURED_GENERATION",
-                "execution" to mapOf("vendorId" to properties.vendorId, "model" to properties.model, "mode" to properties.mode),
+                "execution" to (request.execution ?: RuntimeExecution(properties.vendorId, properties.model, properties.mode))
+                    .let { mapOf("vendorId" to it.vendorId, "model" to it.model, "mode" to it.mode) },
                 "input" to mapOf(
                     "instruction" to PROMPT_INSTRUCTION,
                     "objects" to listOf(mapOf("objectId" to upload.objectId, "name" to "prompt", "role" to "PROMPT")),
@@ -99,6 +106,20 @@ class AgentRuntimeClient(
     override fun status(jobId: String): RuntimeJob = jsonExchange("GET", "/v2/jobs/${safeId(jobId)}", null, RuntimeJob::class.java)
     override fun result(jobId: String): RuntimeResult = jsonExchange("GET", "/v2/jobs/${safeId(jobId)}/result", null, RuntimeResult::class.java)
     override fun cancel(jobId: String): RuntimeJob = jsonExchange("POST", "/v2/jobs/${safeId(jobId)}/cancel", "{}", RuntimeJob::class.java)
+
+    override fun executionOptions(): List<RuntimeExecutionOption> {
+        val nodes = jsonExchange("GET", "/v2/execution-options?taskType=STRUCTURED_GENERATION", null, JsonNode::class.java)
+        val options = mutableListOf<RuntimeExecutionOption>()
+        for (node in nodes) {
+            val execution = node.path("execution")
+            options += RuntimeExecutionOption(
+                RuntimeExecution(execution.path("vendorId").asText(), execution.path("model").asText(), execution.path("mode").asText()),
+                available = node.path("available").asBoolean(false),
+                onlineWorkers = node.path("matchingOnlineWorkers").asInt(0),
+            )
+        }
+        return options.sortedWith(compareBy({ it.execution.vendorId }, { it.execution.model }))
+    }
 
     private fun reservePrompt(bytes: ByteArray): RuntimeUpload {
         val sha256 = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

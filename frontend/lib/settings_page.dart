@@ -16,6 +16,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _loading = true;
   bool _saving = false;
   bool _retryingFailed = false;
+  String? _savingModelTask;
   String? _error;
 
   @override
@@ -77,6 +78,33 @@ class _SettingsPageState extends State<SettingsPage> {
       }
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _changeModel(String task, ModelExecution? execution) async {
+    setState(() {
+      _savingModelTask = task;
+      _error = null;
+    });
+    try {
+      final settings = execution == null
+          ? await widget.gateway.resetAnalysisModel(task)
+          : await widget.gateway.selectAnalysisModel(task, execution);
+      if (!mounted) return;
+      setState(() => _settings = settings);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Model opgeslagen. Nieuwe AI-runs gebruiken dit model; lopende runs en bestaande adviezen blijven ongewijzigd.',
+          ),
+        ),
+      );
+    } on Object {
+      if (mounted) {
+        setState(() => _error = 'Het model wijzigen is niet gelukt.');
+      }
+    } finally {
+      if (mounted) setState(() => _savingModelTask = null);
     }
   }
 
@@ -208,7 +236,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ]),
                 ]),
-                _analysisSection(settings.analysisPrompt),
+                _analysisSection(
+                  settings.analysisPrompt,
+                  settings.analysisModels,
+                ),
               ],
             ),
           ),
@@ -227,7 +258,10 @@ class _SettingsPageState extends State<SettingsPage> {
     ],
   );
 
-  Widget _analysisSection(AnalysisPromptSettings prompt) => Column(
+  Widget _analysisSection(
+    AnalysisPromptSettings prompt,
+    AnalysisModelSettings models,
+  ) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       Text('AI-analyse', style: Theme.of(context).textTheme.titleLarge),
@@ -239,6 +273,7 @@ class _SettingsPageState extends State<SettingsPage> {
           '${_dateTime(prompt.additionalInstructionsUpdatedAt)} door ${prompt.additionalInstructionsUpdatedBy}',
         ),
       ]),
+      _modelsCard(models),
       Card(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -335,6 +370,126 @@ class _SettingsPageState extends State<SettingsPage> {
       const SizedBox(height: 20),
     ],
   );
+
+  static const _modelTaskTitles = <String, (String, String)>{
+    'SOURCE_NOTES': (
+      'Bronnotities',
+      'Leest de vergaderstukken en maakt feitelijke notities. Veel tekst, weinig oordeel.',
+    ),
+    'FINAL_ADVICE': (
+      'Eindadvies',
+      'Schrijft het uiteindelijke advies op basis van de notities en de standpunten.',
+    ),
+  };
+
+  Widget _modelsCard(AnalysisModelSettings models) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'AI-model per taak',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Een nieuwe keuze geldt voor nieuwe AI-runs. Lopende runs en bestaande adviezen veranderen niet; start mislukte analyses zo nodig opnieuw.',
+          ),
+          if (models.catalogUnavailable)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'De modellenlijst van de runtime kon niet worden opgehaald; wijzigen is nu niet mogelijk.',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          for (final task in analysisModelTasks)
+            if (models.choiceFor(task) case final choice?)
+              _modelRow(task, choice, models),
+        ],
+      ),
+    ),
+  );
+
+  Widget _modelRow(
+    String task,
+    AnalysisModelChoice choice,
+    AnalysisModelSettings models,
+  ) {
+    final titles = _modelTaskTitles[task]!;
+    final options = [...models.options];
+    if (!options.any((option) => option.execution == choice.execution)) {
+      options.add(
+        AnalysisModelOption(
+          execution: choice.execution,
+          available: false,
+          onlineWorkers: 0,
+        ),
+      );
+    }
+    final saving = _savingModelTask == task;
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(titles.$1, style: const TextStyle(fontWeight: FontWeight.w700)),
+          Text(titles.$2),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<ModelExecution>(
+            key: ValueKey('model-$task'),
+            initialValue: choice.execution,
+            isExpanded: true,
+            decoration: const InputDecoration(border: OutlineInputBorder()),
+            items: [
+              for (final option in options)
+                DropdownMenuItem(
+                  value: option.execution,
+                  child: Text(
+                    option.available
+                        ? option.execution.label
+                        : '${option.execution.label} — geen worker online',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: saving || models.catalogUnavailable
+                ? null
+                : (value) {
+                    if (value != null && value != choice.execution) {
+                      _changeModel(task, value);
+                    }
+                  },
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  choice.fromSetting
+                      ? 'Gekozen door ${choice.updatedBy ?? 'onbekend'}'
+                            '${choice.updatedAt == null ? '' : ' op ${_dateTime(choice.updatedAt!)}'}'
+                      : 'Standaard uit de configuratie',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              if (saving)
+                const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else if (choice.fromSetting)
+                TextButton(
+                  onPressed: () => _changeModel(task, null),
+                  child: const Text('Terug naar standaard'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _settingCard(List<(String, String)> rows) => Card(
     child: Padding(

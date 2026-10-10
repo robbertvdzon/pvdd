@@ -378,11 +378,19 @@ De webapp heeft vier hoofdonderdelen:
 - **Standpunten**: het actieve overzicht met thema, samenvatting, richting en verwijzingen naar
   programma of website;
 - **AI-runs**: lopende en afgeronde agenda- en standpuntenruns met tijdstippen en fasen;
-- **Instellingen**: planning, gebruikte bron-URL's, toegestane websitepaden, vaste systeemprompt en
-  de bewerkbare aanvullende analyse-instructie.
+- **Instellingen**: planning, gebruikte bron-URL's, toegestane websitepaden, vaste systeemprompt,
+  de bewerkbare aanvullende analyse-instructie en het AI-model per taak.
 
 De planning, bronadressen en vaste systeemprompt zijn zichtbaar maar niet via de webpagina
-bewerkbaar. Alleen de aanvullende analyse-instructie is daar functioneel aanpasbaar.
+bewerkbaar. Functioneel aanpasbaar zijn de aanvullende analyse-instructie en het AI-model.
+
+Het AI-model is afzonderlijk te kiezen voor **bronnotities** (feitelijke notities uit de
+vergaderstukken) en het **eindadvies**. De keuzelijst komt uit de catalogus van de Agent Runtime en
+toont of er een worker voor online is. Zonder keuze geldt de configuratie
+(`PVDD_AGENT_RUNTIME_*`); "Terug naar standaard" herstelt die. Een nieuwe keuze geldt voor nieuwe
+runs en start niets opnieuw; lopende runs en bestaande adviezen blijven ongewijzigd. Het model telt
+niet mee in de bronfingerprint. Per run wordt het gebruikte model vastgelegd
+(`analysis_run.execution_model`), zodat kwaliteit en kosten per model te vergelijken zijn.
 
 Zolang er een toekomstige vergadering bekend is, toont **Agenda** die en verandert er niets aan
 het scherm. Is er geen toekomstige vergadering meer, dan toont **Agenda** de meest recente

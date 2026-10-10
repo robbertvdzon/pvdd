@@ -548,5 +548,13 @@ class UnusedSettingsGateway implements SettingsGateway {
   Future<ApplicationSettings> updateAnalysisInstructions(String value) =>
       throw UnimplementedError();
   @override
+  Future<ApplicationSettings> selectAnalysisModel(
+    String task,
+    ModelExecution execution,
+  ) => throw UnimplementedError();
+  @override
+  Future<ApplicationSettings> resetAnalysisModel(String task) =>
+      throw UnimplementedError();
+  @override
   Future<int> retryAllFailedAnalyses() => throw UnimplementedError();
 }

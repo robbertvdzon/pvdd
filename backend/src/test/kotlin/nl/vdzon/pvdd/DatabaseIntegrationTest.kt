@@ -11,6 +11,18 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import nl.vdzon.pvdd.analysis.AnalysisCommandStatus
+import nl.vdzon.pvdd.analysis.AnalysisExecution
+import nl.vdzon.pvdd.analysis.AnalysisModelCatalogUnavailableException
+import nl.vdzon.pvdd.analysis.AnalysisModelSettings
+import nl.vdzon.pvdd.analysis.AnalysisModelTask
+import nl.vdzon.pvdd.analysis.UnknownAnalysisModelException
+import nl.vdzon.pvdd.runtime.AgentRuntimeGateway
+import nl.vdzon.pvdd.runtime.AgentRuntimeProperties
+import nl.vdzon.pvdd.runtime.AgentRuntimeUnavailableException
+import nl.vdzon.pvdd.runtime.RuntimeExecution
+import nl.vdzon.pvdd.runtime.RuntimeExecutionOption
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 import nl.vdzon.pvdd.analysis.AnalysisRepository
 import nl.vdzon.pvdd.analysis.AnalysisRun
 import nl.vdzon.pvdd.analysis.AnalysisRunType
@@ -105,6 +117,7 @@ class DatabaseIntegrationTest(
     @param:Autowired private val healthEndpoint: HealthEndpoint,
     @param:Autowired private val userSessionService: UserSessionService,
     @param:Autowired private val transactionManager: PlatformTransactionManager,
+    @param:Autowired private val runtimeProperties: AgentRuntimeProperties,
 ) {
     // Een container is altijd vers, maar een meegegeven database kan al gevuld zijn. Meerdere tests
     // gaan uit van een lege startsituatie; zonder deze controle falen ze met verwarrende fouten die
@@ -119,6 +132,46 @@ class DatabaseIntegrationTest(
                 "Gebruik een verse database (Docker, of een lege database via PVDD_TEST_DATABASE_URL)."
         }
         emptyDatabaseVerified = true
+    }
+
+    @Test
+    fun `analysis model is chosen per task and falls back to the configuration`() {
+        val haiku = RuntimeExecution("anthropic", "claude-haiku-4-5-20251001", "SUBSCRIPTION")
+        val opus = RuntimeExecution("anthropic", "claude-opus-5", "SUBSCRIPTION")
+        val gateway = mock(AgentRuntimeGateway::class.java)
+        `when`(gateway.executionOptions()).thenReturn(
+            listOf(RuntimeExecutionOption(haiku, true, 1), RuntimeExecutionOption(opus, true, 1)),
+        )
+        val settings = AnalysisModelSettings(jdbc, jacksonObjectMapper(), runtimeProperties, gateway)
+        val configured = AnalysisModelTask.entries.associateWith { settings.execution(it) }
+        try {
+            assertEquals(runtimeProperties.model, configured.getValue(AnalysisModelTask.SOURCE_NOTES).model)
+            assertFalse(settings.current(AnalysisModelTask.SOURCE_NOTES).fromSetting)
+
+            settings.select(AnalysisModelTask.SOURCE_NOTES, AnalysisExecution(haiku.vendorId, haiku.model, haiku.mode), "beheerder@example.test")
+
+            assertEquals(haiku, settings.execution(AnalysisModelTask.SOURCE_NOTES))
+            assertEquals(configured.getValue(AnalysisModelTask.FINAL_ADVICE), settings.execution(AnalysisModelTask.FINAL_ADVICE))
+            val choice = settings.current(AnalysisModelTask.SOURCE_NOTES)
+            assertTrue(choice.fromSetting)
+            assertEquals("beheerder@example.test", choice.updatedBy)
+            assertEquals(2, settings.overview().options.size)
+
+            assertFailsWith<UnknownAnalysisModelException> {
+                settings.select(AnalysisModelTask.FINAL_ADVICE, AnalysisExecution("anthropic", "bestaat-niet", "SUBSCRIPTION"), "beheerder@example.test")
+            }
+            assertEquals(configured.getValue(AnalysisModelTask.FINAL_ADVICE), settings.execution(AnalysisModelTask.FINAL_ADVICE))
+
+            `when`(gateway.executionOptions()).thenThrow(AgentRuntimeUnavailableException(RuntimeException("offline")))
+            assertFailsWith<AnalysisModelCatalogUnavailableException> {
+                settings.select(AnalysisModelTask.FINAL_ADVICE, AnalysisExecution(opus.vendorId, opus.model, opus.mode), "beheerder@example.test")
+            }
+            assertTrue(settings.overview().catalogUnavailable)
+        } finally {
+            AnalysisModelTask.entries.forEach(settings::reset)
+        }
+        assertEquals(configured, AnalysisModelTask.entries.associateWith { settings.execution(it) })
+        assertFalse(settings.current(AnalysisModelTask.SOURCE_NOTES).fromSetting)
     }
 
     @Test

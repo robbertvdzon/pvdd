@@ -2,7 +2,11 @@ package nl.vdzon.pvdd.settings
 
 import java.time.Instant
 import nl.vdzon.pvdd.analysis.AnalysisFacade
+import nl.vdzon.pvdd.analysis.AnalysisExecution
 import nl.vdzon.pvdd.analysis.AnalysisGuidanceService
+import nl.vdzon.pvdd.analysis.AnalysisModelOverview
+import nl.vdzon.pvdd.analysis.AnalysisModelSettings
+import nl.vdzon.pvdd.analysis.AnalysisModelTask
 import nl.vdzon.pvdd.analysis.PromptBuilder
 import nl.vdzon.pvdd.meetings.MeetingCheckScheduler
 import nl.vdzon.pvdd.policy.PolicySourceProperties
@@ -42,6 +46,7 @@ data class SettingsOverviewDto(
     val scheduledJobs: List<ScheduledJobSettingDto>,
     val policySources: PolicySourceSettingsDto,
     val analysisPrompt: AnalysisPromptSettingsDto,
+    val analysisModels: AnalysisModelOverview,
 )
 
 @Service
@@ -50,6 +55,7 @@ class SettingsService(
     private val policySync: PolicySyncProperties,
     private val prompts: PromptBuilder,
     private val guidance: AnalysisGuidanceService,
+    private val models: AnalysisModelSettings,
     private val analyses: AnalysisFacade,
     private val environment: Environment,
 ) {
@@ -73,11 +79,22 @@ class SettingsService(
                 additionalInstructionsUpdatedBy = currentGuidance.updatedBy,
                 maximumAdditionalInstructionCharacters = AnalysisGuidanceService.MAX_CHARACTERS,
             ),
+            analysisModels = models.overview(),
         )
     }
 
     fun updateAnalysisInstructions(text: String, email: String): SettingsOverviewDto {
         guidance.update(text, email)
+        return overview()
+    }
+
+    fun selectAnalysisModel(task: AnalysisModelTask, execution: AnalysisExecution, email: String): SettingsOverviewDto {
+        models.select(task, execution, email)
+        return overview()
+    }
+
+    fun resetAnalysisModel(task: AnalysisModelTask): SettingsOverviewDto {
+        models.reset(task)
         return overview()
     }
 
