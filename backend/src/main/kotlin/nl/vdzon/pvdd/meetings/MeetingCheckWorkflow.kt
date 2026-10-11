@@ -140,7 +140,7 @@ class MeetingCheckWorkflow(
         publicationStatus: PublicationStatus = PublicationStatus.CURRENT,
         sourceState: SourceState = SourceState.CURRENT,
     ): MeetingCheckResult {
-        var retryableFailure = false
+        val unreadable = mutableListOf<String>()
         val revisionItems = mutableListOf<RevisionItem>()
         val meetingDocuments = mutableListOf<nl.vdzon.pvdd.documents.SourceDocument>()
         if (agenda.agendaDocuments.isNotEmpty()) {
@@ -164,7 +164,7 @@ class MeetingCheckWorkflow(
                 ),
             )
             val summary = documents.ingest(itemId, agenda.agendaDocuments.map { it.toReference() })
-            retryableFailure = retryableFailure || summary.retryable
+            unreadable += summary.unreadableCodes()
             meetingDocuments += summary.documents
         }
 
@@ -177,7 +177,7 @@ class MeetingCheckWorkflow(
                 null
             }
             val itemComplete = summary?.fullyRead ?: true
-            retryableFailure = retryableFailure || (summary?.retryable ?: false)
+            summary?.let { unreadable += it.unreadableCodes() }
             val revisionItem = comparator.currentItem(
                 parsed,
                 itemId,
@@ -197,10 +197,18 @@ class MeetingCheckWorkflow(
         if (agenda.agendaDocuments.isNotEmpty()) currentSourceIds += "${agenda.sourceId}:meeting-documents"
         meetings.markMissingItemsWithdrawn(meetingId, currentSourceIds)
 
-        // Only a document that may still become readable (a failed download) holds the import back so
-        // the next check retries it. Files that are permanently unreadable, such as the 50 MB agenda
-        // bundle, are stored with their status and shown as a warning; the other documents are analysed.
-        return if (!retryableFailure || publicationStatus == PublicationStatus.PREVIEW) {
+        // A document that cannot be read never holds the import back: it keeps its status and is shown as
+        // a warning, and the other documents are analysed. Every check downloads all documents again, so
+        // a document that becomes readable later changes the revision and triggers a new analysis.
+        if (unreadable.isNotEmpty()) {
+            log.warn(
+                "{} document(s) of meeting {} could not be read: {}",
+                unreadable.size,
+                agenda.sourceId,
+                unreadable.groupingBy { it }.eachCount(),
+            )
+        }
+        return run {
             val comparison = comparator.compare(agenda, publicationStatus, revisionItems, baseline)
             val stored = revisions.record(
                 meetingId,
@@ -240,12 +248,12 @@ class MeetingCheckWorkflow(
                     differences = comparison.differences,
                 )
             }
-        } else {
-            meetings.markPartial(meetingId, "DOCUMENTS_INCOMPLETE")
-            markTransactionForRollback()
-            MeetingCheckResult(MeetingCheckStatus.PARTIAL, agenda.sourceId, "DOCUMENTS_INCOMPLETE")
         }
     }
+
+    private fun nl.vdzon.pvdd.documents.DocumentIngestionSummary.unreadableCodes(): List<String> =
+        documents.filter { it.extractionStatus != nl.vdzon.pvdd.documents.ExtractionStatus.EXTRACTED }
+            .map { "${it.extractionStatus}${it.errorCode?.let { code -> "/$code" } ?: ""}" }
 
     private fun saveMeeting(
         agenda: ParsedMeetingAgenda,

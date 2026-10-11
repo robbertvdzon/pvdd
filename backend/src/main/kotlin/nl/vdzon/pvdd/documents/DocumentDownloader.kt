@@ -62,6 +62,8 @@ class DocumentDownloader(
         var lastError = DocumentDownloadError.HTTP_ERROR
         repeat(MAX_ATTEMPTS) { attempt ->
             try {
+                // The source throttles bursts of requests; a short pause makes the second attempt useful.
+                if (attempt > 0) Thread.sleep(RETRY_DELAY_MILLIS)
                 val request = HttpRequest.newBuilder(uri)
                     .GET()
                     .timeout(sourceProperties.requestTimeout)
@@ -126,6 +128,7 @@ class DocumentDownloader(
 
     companion object {
         private const val MAX_ATTEMPTS = 2
+        private const val RETRY_DELAY_MILLIS = 1_000L
         private const val USER_AGENT = "PvdD-Commissie-Assistent/0.1 (+https://pvdd.vdzonsoftware.nl)"
         private const val ACCEPT = "application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/html"
         private val RETRYABLE = setOf(DocumentDownloadError.TIMEOUT, DocumentDownloadError.HTTP_ERROR)
