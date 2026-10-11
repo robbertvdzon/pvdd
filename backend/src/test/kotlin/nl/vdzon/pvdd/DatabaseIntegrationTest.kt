@@ -118,7 +118,14 @@ class DatabaseIntegrationTest(
     @param:Autowired private val userSessionService: UserSessionService,
     @param:Autowired private val transactionManager: PlatformTransactionManager,
     @param:Autowired private val runtimeProperties: AgentRuntimeProperties,
+    @param:Autowired private val taskScheduler: org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler,
 ) {
+    @Test
+    fun `scheduled tasks run on a pool so the 05 clock check cannot be blocked by the analysis queue`() {
+        assertEquals(4, taskScheduler.poolSize)
+        assertTrue(taskScheduler.threadNamePrefix.startsWith("pvdd-scheduler-"))
+    }
+
     // Een container is altijd vers, maar een meegegeven database kan al gevuld zijn. Meerdere tests
     // gaan uit van een lege startsituatie; zonder deze controle falen ze met verwarrende fouten die
     // niets met de wijziging te maken hebben. Eenmaal per run is genoeg.

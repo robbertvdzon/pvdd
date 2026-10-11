@@ -151,6 +151,43 @@ class MeetingCheckWorkflowTest {
     }
 
     @Test
+    fun `published agenda is imported when a document is permanently unreadable`() {
+        val parsed = AgendaParser().parse(resource("agenda-full.html"), meetingUrl)
+        val fixture = fixture(
+            discovery = StubDiscovery(
+                DiscoveryOutcome.Found(DiscoveredMeeting("meeting-future", now.plusSeconds(3600), meetingUrl)),
+                parsed,
+            ),
+            documentsFullyRead = false,
+            documentsRetryable = false,
+        )
+
+        val result = fixture.workflow.check()
+
+        assertEquals(MeetingCheckStatus.IMPORTED, result.status)
+        assertEquals(1, fixture.events.size)
+    }
+
+    @Test
+    fun `published agenda waits for the next check when a document download failed`() {
+        val parsed = AgendaParser().parse(resource("agenda-full.html"), meetingUrl)
+        val fixture = fixture(
+            discovery = StubDiscovery(
+                DiscoveryOutcome.Found(DiscoveredMeeting("meeting-future", now.plusSeconds(3600), meetingUrl)),
+                parsed,
+            ),
+            documentsFullyRead = false,
+            documentsRetryable = true,
+        )
+
+        val result = fixture.workflow.check()
+
+        assertEquals(MeetingCheckStatus.PARTIAL, result.status)
+        assertEquals("DOCUMENTS_INCOMPLETE", result.errorCode)
+        assertEquals(0, fixture.events.size)
+    }
+
+    @Test
     fun `published source change creates a new revision and starts reanalysis`() {
         val parsed = AgendaParser().parse(resource("agenda-full.html"), meetingUrl)
         val discovery = StubDiscovery(
@@ -191,9 +228,10 @@ class MeetingCheckWorkflowTest {
         lastSuccessful: String? = null,
         lockAvailable: Boolean = true,
         documentsFullyRead: Boolean = true,
+        documentsRetryable: Boolean = !documentsFullyRead,
     ): WorkflowFixture {
         val store = StubStore(lastSuccessful)
-        val documents = CountingDocuments(documentsFullyRead)
+        val documents = CountingDocuments(documentsFullyRead, documentsRetryable)
         val events = mutableListOf<MeetingImportedEvent>()
         val revisions = InMemoryRevisionStore()
         val workflow = MeetingCheckWorkflow(
@@ -256,11 +294,11 @@ class MeetingCheckWorkflowTest {
         override fun markPartial(meetingId: UUID, errorCode: String) = Unit
     }
 
-    private class CountingDocuments(private val fullyRead: Boolean) : DocumentIngestor {
+    private class CountingDocuments(private val fullyRead: Boolean, private val retryable: Boolean) : DocumentIngestor {
         var calls = 0
         override fun ingest(agendaItemId: UUID, references: List<DocumentReference>): DocumentIngestionSummary {
             calls++
-            return DocumentIngestionSummary(emptyList(), fullyRead)
+            return DocumentIngestionSummary(emptyList(), fullyRead, retryable)
         }
     }
 

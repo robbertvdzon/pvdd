@@ -7,6 +7,12 @@ import org.springframework.stereotype.Service
 data class DocumentIngestionSummary(
     val documents: List<SourceDocument>,
     val fullyRead: Boolean,
+    /**
+     * True when a missing document may become readable on a later check (a failed download).
+     * Documents that are permanently unreadable, such as files over the size limit, do not
+     * qualify: the item is imported and the warning stays visible.
+     */
+    val retryable: Boolean = !fullyRead,
 )
 
 fun interface DocumentIngestor {
@@ -53,6 +59,7 @@ class DocumentIngestionService(
         return DocumentIngestionSummary(
             documents = documents,
             fullyRead = documents.all { it.extractionStatus == ExtractionStatus.EXTRACTED },
+            retryable = documents.any { it.extractionStatus == ExtractionStatus.DOWNLOAD_FAILED },
         )
     }
 }

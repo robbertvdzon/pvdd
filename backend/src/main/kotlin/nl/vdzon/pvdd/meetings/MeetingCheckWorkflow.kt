@@ -52,7 +52,7 @@ class MeetingCheckWorkflow(
         val owner = UUID.randomUUID()
         if (!locks.tryAcquire(WORKFLOW_LOCK, owner)) return MeetingCheckResult(MeetingCheckStatus.ALREADY_RUNNING)
         var meetingId: UUID? = null
-        return try {
+        return (try {
             when (val outcome = discovery.discover(clock.instant())) {
                 DiscoveryOutcome.NoFutureMeeting -> MeetingCheckResult(MeetingCheckStatus.NO_FUTURE_MEETING)
                 is DiscoveryOutcome.SourceFailure -> MeetingCheckResult(
@@ -119,6 +119,17 @@ class MeetingCheckWorkflow(
             MeetingCheckResult(MeetingCheckStatus.FAILED, errorCode = "IMPORT_FAILED")
         } finally {
             locks.release(WORKFLOW_LOCK, owner)
+        }).also(::logResult)
+    }
+
+    private fun logResult(result: MeetingCheckResult) {
+        val message = "Meeting check finished with {} (source {}, revision {}, error {})"
+        if (result.status == MeetingCheckStatus.PARTIAL || result.status == MeetingCheckStatus.FAILED ||
+            result.status == MeetingCheckStatus.SOURCE_FAILURE
+        ) {
+            log.warn(message, result.status, result.meetingSourceId, result.revisionNumber, result.errorCode)
+        } else {
+            log.info(message, result.status, result.meetingSourceId, result.revisionNumber, result.errorCode)
         }
     }
 
@@ -129,7 +140,7 @@ class MeetingCheckWorkflow(
         publicationStatus: PublicationStatus = PublicationStatus.CURRENT,
         sourceState: SourceState = SourceState.CURRENT,
     ): MeetingCheckResult {
-        var fullyRead = true
+        var retryableFailure = false
         val revisionItems = mutableListOf<RevisionItem>()
         val meetingDocuments = mutableListOf<nl.vdzon.pvdd.documents.SourceDocument>()
         if (agenda.agendaDocuments.isNotEmpty()) {
@@ -153,7 +164,7 @@ class MeetingCheckWorkflow(
                 ),
             )
             val summary = documents.ingest(itemId, agenda.agendaDocuments.map { it.toReference() })
-            fullyRead = fullyRead && summary.fullyRead
+            retryableFailure = retryableFailure || summary.retryable
             meetingDocuments += summary.documents
         }
 
@@ -166,7 +177,7 @@ class MeetingCheckWorkflow(
                 null
             }
             val itemComplete = summary?.fullyRead ?: true
-            fullyRead = fullyRead && itemComplete
+            retryableFailure = retryableFailure || (summary?.retryable ?: false)
             val revisionItem = comparator.currentItem(
                 parsed,
                 itemId,
@@ -186,7 +197,10 @@ class MeetingCheckWorkflow(
         if (agenda.agendaDocuments.isNotEmpty()) currentSourceIds += "${agenda.sourceId}:meeting-documents"
         meetings.markMissingItemsWithdrawn(meetingId, currentSourceIds)
 
-        return if (fullyRead || publicationStatus == PublicationStatus.PREVIEW) {
+        // Only a document that may still become readable (a failed download) holds the import back so
+        // the next check retries it. Files that are permanently unreadable, such as the 50 MB agenda
+        // bundle, are stored with their status and shown as a warning; the other documents are analysed.
+        return if (!retryableFailure || publicationStatus == PublicationStatus.PREVIEW) {
             val comparison = comparator.compare(agenda, publicationStatus, revisionItems, baseline)
             val stored = revisions.record(
                 meetingId,
