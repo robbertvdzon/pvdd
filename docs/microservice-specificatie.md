@@ -133,6 +133,17 @@ commissiepagina en/of het door iBabs aangeboden jaarendpoint voor agendatype `11
 de vergaderdatums en kiest de vroegste vergadering waarvan het begintijdstip in de toekomst ligt.
 De klok en tijdzone zijn injecteerbaar voor tests.
 
+De zoeklaag geeft sinds story hkh-306 een geordende, nooit lege lijst van uitkomsten terug: de
+eerstvolgende vergadering (`startsAt` strikt na het controlemoment) plus de vergaderingen waarvan de
+Amsterdamse kalenderdatum uiterlijk tien kalenderdagen na die van de eerstvolgende ligt, in totaal
+maximaal drie. Het afkappen op drie gebeurt vóór het ophalen van agenda's, zodat per controle
+nooit meer dan drie agenda's worden opgehaald. De grenzen zijn vaste constanten, geen configuratie.
+Een extra vergadering met een niet-gepubliceerde agenda levert `AgendaUnpublished` en er wordt niets
+opgeslagen; een fout bij de agenda van één extra vergadering is een `SourceFailure` voor alleen die
+vergadering, een fout op de jaarpagina's een enkele `SourceFailure` voor de hele controle. Zonder
+toekomstige vergadering bevat de lijst één `NoFutureMeeting`. De workflow gebruikt voorlopig alleen
+het eerste element, dus het gedrag van de dagelijkse controle en van `check-now` is ongewijzigd.
+
 Wanneer er geen toekomstige vergadering is, toont de app dat expliciet. Wanneer iBabs tijdelijk
 niet beschikbaar is, blijft de laatst succesvol geïmporteerde analyse zichtbaar met een duidelijke
 waarschuwing dat actualiteit niet kon worden gecontroleerd.
