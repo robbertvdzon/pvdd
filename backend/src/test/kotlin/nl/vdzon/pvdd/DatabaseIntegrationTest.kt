@@ -3,6 +3,7 @@ package nl.vdzon.pvdd
 import java.net.URI
 import java.time.Clock
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -51,7 +52,13 @@ import nl.vdzon.pvdd.meetings.Meeting
 import nl.vdzon.pvdd.meetings.MeetingCheckOutcome
 import nl.vdzon.pvdd.meetings.MeetingCheckStatus
 import nl.vdzon.pvdd.meetings.MeetingCheckWorkflow
+import nl.vdzon.pvdd.meetings.MeetingCheckResult
 import nl.vdzon.pvdd.meetings.MeetingDiscoveryGateway
+import nl.vdzon.pvdd.meetings.MeetingDiscoveryService
+import nl.vdzon.pvdd.meetings.MeetingImportedEvent
+import nl.vdzon.pvdd.meetings.MeetingScenarioIngestor
+import nl.vdzon.pvdd.meetings.MeetingScenarioSource
+import nl.vdzon.pvdd.source.MeetingSourceProperties
 import nl.vdzon.pvdd.meetings.MeetingRepository
 import nl.vdzon.pvdd.meetings.MeetingStatus
 import nl.vdzon.pvdd.meetings.MutationGuard
@@ -1697,6 +1704,223 @@ class DatabaseIntegrationTest(
 
     private fun succeededAdvice(meetingId: UUID, itemId: UUID, completedAt: Instant): UUID =
         seedAdviceVersion(meetingId, itemId, completedAt).runId
+
+    // Scenario's van de acceptatiemock (zie MeetingScenarioSource): echte discovery, workflow en
+    // database; alleen de bron en de documentlezer zijn vervangen. De klok staat op 20 oktober 2026,
+    // vlak voor het einde van de zomertijd (25 oktober), zodat D = 21 oktober, D+10 = 31 oktober en
+    // D+11 = 1 november over de tijdwisseling heen lopen.
+    @Test
+    fun `scenario two meetings processes both and shows both in the series`() = scenarioTest("twee-vergaderingen") { h ->
+        val result = h.checkNow()
+
+        assertEquals(listOf(MeetingCheckOutcome.NEW_DOCUMENTS, MeetingCheckOutcome.NEW_DOCUMENTS), result.meetings.map { it.outcome })
+        assertEquals(h.source.sourceIds(), result.meetings.map { it.meetingSourceId })
+        assertEquals(h.source.sourceIds().sorted(), h.storedSourceIds().sorted())
+        assertTrue(result.meetings.all { it.newAnalyses > 0 && it.errorDescription == null })
+        assertEquals(result.meetings.map { it.meetingId }, dashboardRepository.series(h.clock.instant()).map { it.id })
+        assertEquals(2, h.events.size)
+    }
+
+    @Test
+    fun `scenario more than three processes exactly three and never touches the fourth`() = scenarioTest("meer-dan-drie") { h ->
+        val result = h.checkNow()
+        val ids = h.source.sourceIds()
+
+        assertEquals(ids.take(3), result.meetings.map { it.meetingSourceId })
+        assertEquals(ids.take(3).sorted(), h.storedSourceIds().sorted())
+        assertEquals(3, dashboardRepository.series(h.clock.instant()).size)
+        assertFalse(h.source.agendaFetches.containsKey(ids[3]))
+        assertTrue(ids.take(3).all { (h.source.agendaFetches[it] ?: 0) >= 1 })
+    }
+
+    @Test
+    fun `scenario day ten and eleven includes day ten and excludes day eleven across the end of summer time`() =
+        scenarioTest("grens-dag-10-en-11") { h ->
+            val result = h.checkNow()
+            val ids = h.source.sourceIds()
+
+            assertEquals(
+                listOf(LocalDate.of(2026, 10, 21), LocalDate.of(2026, 10, 31), LocalDate.of(2026, 11, 1)),
+                h.source.meetings.map { it.date },
+            )
+            assertEquals(ids.take(2), result.meetings.map { it.meetingSourceId })
+            assertEquals(ids.take(2).sorted(), h.storedSourceIds().sorted())
+            assertEquals(2, dashboardRepository.series(h.clock.instant()).size)
+            assertFalse(h.source.agendaFetches.containsKey(ids[2]))
+        }
+
+    @Test
+    fun `scenario with an unpublished extra agenda stores nothing for that meeting`() =
+        scenarioTest("extra-agenda-niet-gepubliceerd") { h ->
+            val result = h.checkNow()
+            val (published, unpublished) = h.source.sourceIds()
+
+            assertEquals(listOf(MeetingCheckOutcome.NEW_DOCUMENTS, MeetingCheckOutcome.AGENDA_UNPUBLISHED), result.meetings.map { it.outcome })
+            assertNull(result.meetings[1].meetingId)
+            assertEquals(unpublished, result.meetings[1].meetingSourceId)
+            assertEquals(0, result.meetings[1].newAnalyses)
+            assertEquals(listOf(published), h.storedSourceIds())
+            val storedId = requireNotNull(result.meetings[0].meetingId)
+            assertEquals(1, jdbc.queryForObject("SELECT COUNT(DISTINCT meeting_id) FROM agenda_item WHERE meeting_id = ?", Int::class.java, storedId))
+            assertEquals(1, h.events.size)
+            assertEquals(published, h.events.single().meetingSourceId)
+            assertEquals(listOf(storedId), dashboardRepository.series(h.clock.instant()).map { it.id })
+        }
+
+    @Test
+    fun `scenario with a failing meeting answers 200 and keeps the other two`() = scenarioTest("een-vergadering-mislukt") { h ->
+        val response = h.controller.checkNow(adviser, "scenario-${UUID.randomUUID()}")
+        val result = requireNotNull(response.body)
+        val ids = h.source.sourceIds()
+
+        assertEquals(HttpStatus.OK, response.statusCode)
+        assertEquals(
+            listOf(MeetingCheckOutcome.NEW_DOCUMENTS, MeetingCheckOutcome.FAILED, MeetingCheckOutcome.NEW_DOCUMENTS),
+            result.meetings.map { it.outcome },
+        )
+        assertEquals(MeetingCheckWorkflow.FAILURE_DESCRIPTION, result.meetings[1].errorDescription)
+        assertNull(result.meetings[0].errorDescription)
+        assertNull(result.meetings[2].errorDescription)
+        assertEquals(listOf(ids[0], ids[2]).sorted(), h.storedSourceIds().sorted())
+        listOf(0, 2).forEach { index ->
+            val id = requireNotNull(result.meetings[index].meetingId)
+            assertTrue(meetingRepository.findAgendaItems(id).isNotEmpty())
+        }
+        assertEquals(listOf(result.meetings[0].meetingId, result.meetings[2].meetingId), dashboardRepository.series(h.clock.instant()).map { it.id })
+    }
+
+    @Test
+    fun `scenario one meeting is the regression with a single meeting and no series frame`() = scenarioTest("een-vergadering") { h ->
+        val result = h.checkNow()
+
+        assertEquals(1, result.meetings.size)
+        assertEquals(MeetingScenarioSource.LEGACY_ID, result.meetings.single().meetingSourceId)
+        assertEquals(listOf(MeetingScenarioSource.LEGACY_ID), h.storedSourceIds())
+        assertEquals(1, dashboardRepository.series(h.clock.instant()).size)
+    }
+
+    @Test
+    fun `a repeated check creates no new analysis and a changed document creates one for that document only`() =
+        scenarioTest("twee-vergaderingen") { h ->
+            val first = h.checkNow()
+            // Een afgeronde analyse zet de revisie van REPROCESSING terug; zonder die afronding zou elke
+            // controle de wachtrijgebeurtenis opnieuw sturen.
+            h.completeAnalyses(first)
+            val queuedAfterFirst = h.events.size
+            val runsAfterFirst = countAllRuns()
+            val revisionsAfterFirst = countAllRevisions()
+            val ingestionsAfterFirst = h.ingestor.calls
+
+            val repeated = h.checkNow()
+
+            assertEquals(listOf(MeetingCheckOutcome.UNCHANGED, MeetingCheckOutcome.UNCHANGED), repeated.meetings.map { it.outcome })
+            assertEquals(listOf(0, 0), repeated.meetings.map { it.newAnalyses })
+            assertEquals(first.meetings.map { it.meetingId }, repeated.meetings.map { it.meetingId })
+            assertEquals(queuedAfterFirst, h.events.size)
+            assertEquals(runsAfterFirst, countAllRuns())
+            assertTrue(h.ingestor.calls > ingestionsAfterFirst, "de documenten worden elke controle opnieuw gelezen")
+
+            h.source.changeDocument(h.source.meetings[1].documentIds.first())
+            val changed = h.checkNow()
+
+            assertEquals(listOf(MeetingCheckOutcome.UNCHANGED, MeetingCheckOutcome.NEW_DOCUMENTS), changed.meetings.map { it.outcome })
+            assertEquals(0, changed.meetings[0].newAnalyses)
+            assertEquals(1, changed.meetings[1].newAnalyses)
+            assertEquals(queuedAfterFirst + 1, h.events.size)
+            assertEquals(h.source.sourceIds()[1], h.events.last().meetingSourceId)
+            assertEquals(revisionsAfterFirst + 1, countAllRevisions())
+
+            // Zonder verdere wijziging is de volgende controle weer rustig.
+            h.completeAnalyses(changed)
+            val settled = h.checkNow()
+            assertEquals(listOf(0, 0), settled.meetings.map { it.newAnalyses })
+            assertEquals(queuedAfterFirst + 1, h.events.size)
+        }
+
+    @Test
+    fun `resetting the scenario returns to the single default meeting`() = scenarioTest("meer-dan-drie") { h ->
+        h.source.reset()
+        h.track()
+
+        val result = h.checkNow()
+
+        assertEquals(MeetingScenarioSource.DEFAULT, h.source.scenario)
+        assertEquals(listOf(MeetingScenarioSource.LEGACY_ID), result.meetings.map { it.meetingSourceId })
+    }
+
+    private fun countAllRevisions(): Int = jdbc.queryForObject("SELECT COUNT(*) FROM meeting_revision", Int::class.java) ?: 0
+
+    private inner class ScenarioHarness {
+        val clock: Clock = Clock.fixed(amsterdam(2026, 10, 20, 10, 0), java.time.ZoneOffset.UTC)
+        val source = MeetingScenarioSource(clock)
+        val ingestor = MeetingScenarioIngestor(source, documentRepository, clock)
+        val events = mutableListOf<MeetingImportedEvent>()
+        val controller = MeetingCheckController(
+            MeetingCheckWorkflow(
+                MeetingDiscoveryService(source, MeetingSourceProperties(), AgendaParser(), clock),
+                meetingRepository,
+                ingestor,
+                workflowLockRepository,
+                ApplicationEventPublisher { if (it is MeetingImportedEvent) events += it },
+                clock,
+                revisionComparator,
+                sourceRevisionRepository,
+                transactionManager,
+            ),
+            MutationGuard(Clock.systemUTC()),
+        )
+        private val known = mutableSetOf<String>()
+
+        // Gedeelde toestand die de test zelf verplaatst of aanpast; cleanup zet alles terug.
+        private val parked = jdbc.query(
+            "SELECT id, starts_at FROM meeting",
+            { rs, _ -> rs.getObject("id", UUID::class.java) to rs.getTimestamp("starts_at") },
+        )
+        private val previousLastSuccessful = meetingRepository.lastSuccessfulSourceId()
+
+        init {
+            parkExistingMeetings(Instant.now().plusSeconds(315_360_000))
+        }
+
+        fun select(name: String) {
+            source.select(name)
+            track()
+        }
+
+        fun track() {
+            known += source.sourceIds()
+        }
+
+        fun checkNow(): MeetingCheckResult {
+            val response = controller.checkNow(adviser, "scenario-${UUID.randomUUID()}")
+            assertEquals(HttpStatus.OK, response.statusCode)
+            return requireNotNull(response.body)
+        }
+
+        fun completeAnalyses(result: MeetingCheckResult) =
+            result.meetings.forEach { it.meetingId?.let(meetingRepository::markSuccessful) }
+
+        fun storedSourceIds(): List<String> = known.flatMap {
+            jdbc.queryForList("SELECT source_id FROM meeting WHERE source_id = ?", String::class.java, it)
+        }
+
+        fun cleanup() {
+            known.flatMap { jdbc.queryForList("SELECT id FROM meeting WHERE source_id = ?", UUID::class.java, it) }
+                .forEach(::removeSyntheticMeeting)
+            restoreStartTimes(parked)
+            restoreLastSuccessfulSourceId(previousLastSuccessful)
+        }
+    }
+
+    private fun scenarioTest(name: String, block: (ScenarioHarness) -> Unit) {
+        val harness = ScenarioHarness()
+        try {
+            harness.select(name)
+            block(harness)
+        } finally {
+            harness.cleanup()
+        }
+    }
 
     // Een check-now met een synthetische bron: de discovery zelf blijft ongemoeid, alleen de gateway
     // is vervangen zodat de controleroute zonder externe bron tegen de echte database kan draaien.

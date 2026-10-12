@@ -18,7 +18,7 @@ geblokkeerd totdat de technische acceptatiepoort T14 uit het stappenplan groen i
 - [Software Factory-aansluiting](docs/stappenplannen/03-software-factory-aansluiting.md)
 - [Factory-overzicht](docs/factory/README.md)
 - [Architectuurbesluiten](docs/adr/README.md)
-- [Technische integraties](docs/technical-integrations.md)
+- [Technische integraties](docs/technical-integrations.md), inclusief de acceptatiescenario's van de bronmock (`/api/scenarios`)
 - [OpenShift en GitOps](deploy/README.md)
 - [Operations en herstel](docs/operations.md)
 
