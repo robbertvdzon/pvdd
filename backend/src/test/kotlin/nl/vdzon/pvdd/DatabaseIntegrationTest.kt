@@ -48,6 +48,7 @@ import nl.vdzon.pvdd.meetings.DiscoveredMeeting
 import nl.vdzon.pvdd.meetings.DiscoveryOutcome
 import nl.vdzon.pvdd.meetings.ImportStatus
 import nl.vdzon.pvdd.meetings.Meeting
+import nl.vdzon.pvdd.meetings.MeetingCheckOutcome
 import nl.vdzon.pvdd.meetings.MeetingCheckStatus
 import nl.vdzon.pvdd.meetings.MeetingCheckWorkflow
 import nl.vdzon.pvdd.meetings.MeetingDiscoveryGateway
@@ -949,6 +950,76 @@ class DatabaseIntegrationTest(
     }
 
     @Test
+    fun `a failing meeting rolls back alone while the others stay stored`() {
+        val template = AgendaParser().parse(
+            requireNotNull(javaClass.getResource("/fixtures/meetings/agenda-full.html")).readText(),
+            URI("https://noordholland.bestuurlijkeinformatie.nl/Agenda/Index/meeting-template"),
+        )
+        val unique = UUID.randomUUID()
+        val ids = listOf("a", "b", "c").map { "meeting-isolation-$it-$unique" }
+        val agendas = ids.mapIndexed { index, id ->
+            val url = URI("https://noordholland.bestuurlijkeinformatie.nl/Agenda/Index/$id")
+            template.copy(
+                sourceId = id,
+                sourceUrl = url,
+                startsAt = Instant.now().plusSeconds(86400L * (index + 1)),
+                endsAt = Instant.now().plusSeconds(86400L * (index + 1) + 3600),
+            )
+        }
+        val previousLastSuccessful = meetingRepository.lastSuccessfulSourceId()
+        val stored = mutableListOf<UUID>()
+        try {
+            var current = ""
+            val workflow = MeetingCheckWorkflow(
+                object : MeetingDiscoveryGateway {
+                    override fun discover(now: Instant): List<DiscoveryOutcome> = agendas.map {
+                        DiscoveryOutcome.Found(DiscoveredMeeting(it.sourceId, it.startsAt, it.sourceUrl))
+                    }
+
+                    override fun fetchAgenda(sourceUrl: URI, enrichReports: Boolean): ParsedMeetingAgenda =
+                        agendas.single { it.sourceUrl == sourceUrl }.also { current = it.sourceId }
+                },
+                meetingRepository,
+                DocumentIngestor { _, _ ->
+                    // Faalt nadat de vergadering en eerdere agendapunten al zijn geschreven.
+                    check(current != ids[1]) { "synthetic failure" }
+                    DocumentIngestionSummary(emptyList(), true)
+                },
+                workflowLockRepository,
+                ApplicationEventPublisher { },
+                Clock.systemUTC(),
+                revisionComparator,
+                sourceRevisionRepository,
+                transactionManager,
+            )
+
+            val result = workflow.check()
+
+            assertEquals(
+                listOf(MeetingCheckOutcome.NEW_DOCUMENTS, MeetingCheckOutcome.FAILED, MeetingCheckOutcome.NEW_DOCUMENTS),
+                result.meetings.map { it.outcome },
+            )
+            assertEquals(MeetingCheckWorkflow.FAILURE_DESCRIPTION, result.meetings[1].errorDescription)
+            ids.forEach { id ->
+                jdbc.queryForList("SELECT id FROM meeting WHERE source_id = ?", UUID::class.java, id).forEach(stored::add)
+            }
+            assertEquals(2, stored.size)
+            assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM meeting WHERE source_id = ?", Int::class.java, ids[1]))
+            assertEquals(
+                0,
+                jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM meeting_revision mr JOIN meeting m ON m.id = mr.meeting_id WHERE m.source_id = ?",
+                    Int::class.java,
+                    ids[1],
+                ),
+            )
+        } finally {
+            stored.forEach(::removeSyntheticMeeting)
+            restoreLastSuccessfulSourceId(previousLastSuccessful)
+        }
+    }
+
+    @Test
     fun `an archive without past meetings stays empty instead of showing a blank list`() {
         val hidden = hideExistingPastMeetings()
         try {
@@ -1551,6 +1622,7 @@ class DatabaseIntegrationTest(
             Clock.systemUTC(),
             revisionComparator,
             sourceRevisionRepository,
+            transactionManager,
         ),
         MutationGuard(Clock.systemUTC()),
     )

@@ -7,8 +7,9 @@ import nl.vdzon.pvdd.documents.DocumentIngestor
 import nl.vdzon.pvdd.documents.DocumentReference
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
-import org.springframework.transaction.interceptor.TransactionAspectSupport
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.TransactionDefinition
+import org.springframework.transaction.support.TransactionTemplate
 import org.slf4j.LoggerFactory
 
 enum class MeetingCheckStatus {
@@ -28,6 +29,25 @@ data class MeetingCheckResult(
     val errorCode: String? = null,
     val revisionNumber: Int? = null,
     val differences: Set<DifferenceType> = emptySet(),
+    val meetings: List<MeetingCheckMeeting> = emptyList(),
+)
+
+enum class MeetingCheckOutcome {
+    UNCHANGED,
+    NEW_DOCUMENTS,
+    AGENDA_UNPUBLISHED,
+    FAILED,
+}
+
+data class MeetingCheckMeeting(
+    val meetingId: UUID?,
+    val meetingSourceId: String?,
+    val title: String?,
+    val startsAt: Instant?,
+    val location: String?,
+    val outcome: MeetingCheckOutcome,
+    val newAnalyses: Int,
+    val errorDescription: String?,
 )
 
 data class MeetingImportedEvent(
@@ -46,80 +66,152 @@ class MeetingCheckWorkflow(
     private val clock: Clock,
     private val comparator: AgendaRevisionComparator = AgendaRevisionComparator(),
     private val revisions: SourceRevisionStore = TransientRevisionStore,
+    transactionManager: PlatformTransactionManager? = null,
 ) {
-    @Transactional
+    private val transactions: TransactionTemplate? = transactionManager?.let {
+        TransactionTemplate(it).apply { propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW }
+    }
+
     fun check(): MeetingCheckResult {
         val owner = UUID.randomUUID()
         if (!locks.tryAcquire(WORKFLOW_LOCK, owner)) return MeetingCheckResult(MeetingCheckStatus.ALREADY_RUNNING)
-        var meetingId: UUID? = null
         return (try {
-            when (val outcome = discovery.discover(clock.instant()).first()) {
-                DiscoveryOutcome.NoFutureMeeting -> MeetingCheckResult(MeetingCheckStatus.NO_FUTURE_MEETING)
-                is DiscoveryOutcome.SourceFailure -> MeetingCheckResult(
-                    MeetingCheckStatus.SOURCE_FAILURE,
-                    errorCode = outcome.code.name,
-                )
-                is DiscoveryOutcome.AgendaUnpublished -> {
-                    val agenda = discovery.fetchAgenda(outcome.meeting.sourceUrl, enrichReports = true)
-                    val baseline = revisions.baseline(agenda.sourceId)
-                    if (agenda.items.none { it.substantive && it.category in ANALYSIS_CATEGORIES }) {
-                        meetingId = saveMeeting(
-                            agenda,
-                            MeetingStatus.AGENDA_UNPUBLISHED,
-                            imported = false,
-                            publicationStatus = PublicationStatus.PREVIEW,
-                        )
-                        val comparison = comparator.compare(agenda, PublicationStatus.PREVIEW, emptyList(), baseline)
-                        val stored = revisions.record(
-                            meetingId,
-                            agenda,
-                            PublicationStatus.PREVIEW,
-                            emptyList(),
-                            comparison,
-                            clock.instant(),
-                        )
-                        MeetingCheckResult(
-                            MeetingCheckStatus.AGENDA_UNPUBLISHED,
-                            agenda.sourceId,
-                            revisionNumber = stored.number,
-                            differences = comparison.differences,
-                        )
-                    } else {
-                        meetingId = saveMeeting(
-                            agenda,
-                            MeetingStatus.IMPORTING,
-                            imported = true,
-                            publicationStatus = PublicationStatus.PREVIEW,
-                        )
-                        importAgenda(
-                            meetingId,
-                            agenda,
-                            baseline,
-                            PublicationStatus.PREVIEW,
-                            SourceState.PREVIEW,
-                        )
-                    }
-                }
-                is DiscoveryOutcome.Found -> {
-                    val agenda = discovery.fetchAgenda(outcome.meeting.sourceUrl, enrichReports = true)
-                    val baseline = revisions.baseline(agenda.sourceId)
-                    meetingId = saveMeeting(
-                        agenda,
-                        MeetingStatus.IMPORTING,
-                        imported = true,
-                        publicationStatus = PublicationStatus.CURRENT,
-                    )
-                    importAgenda(meetingId, agenda, baseline)
-                }
+            val outcomes = discovery.discover(clock.instant())
+            val single = outcomes.singleOrNull()
+            if (single == DiscoveryOutcome.NoFutureMeeting) {
+                MeetingCheckResult(MeetingCheckStatus.NO_FUTURE_MEETING)
+            } else if (single is DiscoveryOutcome.SourceFailure) {
+                MeetingCheckResult(MeetingCheckStatus.SOURCE_FAILURE, errorCode = single.code.name)
+            } else {
+                val processed = outcomes.mapIndexedNotNull { index, outcome -> processIsolated(outcome, index > 0) }
+                val first = processed.first()
+                first.result.copy(meetings = processed.map { it.entry })
             }
         } catch (failure: Exception) {
-            log.warn("Meeting import failed with {}", safeCode(failure), failure)
-            meetingId?.let { meetings.markFailed(it, "IMPORT_FAILED") }
-            if (meetingId != null) markTransactionForRollback()
+            log.warn("Meeting check failed with {}", safeCode(failure), failure)
             MeetingCheckResult(MeetingCheckStatus.FAILED, errorCode = "IMPORT_FAILED")
         } finally {
             locks.release(WORKFLOW_LOCK, owner)
         }).also(::logResult)
+    }
+
+    private class Processed(val result: MeetingCheckResult, val entry: MeetingCheckMeeting)
+
+    /** Handles one meeting in its own transaction; a failure rolls back only this meeting. */
+    private fun processIsolated(outcome: DiscoveryOutcome, extra: Boolean): Processed? {
+        if (outcome == DiscoveryOutcome.NoFutureMeeting) return null
+        return try {
+            transactions?.execute { process(outcome, extra) } ?: process(outcome, extra)
+        } catch (failure: Exception) {
+            log.warn("Meeting import failed with {}", safeCode(failure), failure)
+            val known = when (outcome) {
+                is DiscoveryOutcome.Found -> outcome.meeting
+                is DiscoveryOutcome.AgendaUnpublished -> outcome.meeting
+                else -> null
+            }
+            Processed(
+                MeetingCheckResult(MeetingCheckStatus.FAILED, errorCode = "IMPORT_FAILED"),
+                MeetingCheckMeeting(
+                    meetingId = null,
+                    meetingSourceId = known?.sourceId,
+                    title = null,
+                    startsAt = known?.startsAt,
+                    location = null,
+                    outcome = MeetingCheckOutcome.FAILED,
+                    newAnalyses = 0,
+                    errorDescription = FAILURE_DESCRIPTION,
+                ),
+            )
+        }
+    }
+
+    private fun process(outcome: DiscoveryOutcome, extra: Boolean): Processed {
+        var meetingId: UUID? = null
+        var analyses = 0
+        fun entry(agenda: ParsedMeetingAgenda, result: MeetingCheckResult) = MeetingCheckMeeting(
+            meetingId = meetingId,
+            meetingSourceId = agenda.sourceId,
+            title = agenda.title,
+            startsAt = agenda.startsAt,
+            location = agenda.location,
+            outcome = when {
+                result.status == MeetingCheckStatus.AGENDA_UNPUBLISHED -> MeetingCheckOutcome.AGENDA_UNPUBLISHED
+                result.status == MeetingCheckStatus.UNCHANGED -> MeetingCheckOutcome.UNCHANGED
+                result.differences.isEmpty() -> MeetingCheckOutcome.UNCHANGED
+                else -> MeetingCheckOutcome.NEW_DOCUMENTS
+            },
+            newAnalyses = analyses,
+            errorDescription = null,
+        )
+        return when (outcome) {
+            DiscoveryOutcome.NoFutureMeeting -> error("not processable")
+            is DiscoveryOutcome.SourceFailure -> Processed(
+                MeetingCheckResult(MeetingCheckStatus.SOURCE_FAILURE, errorCode = outcome.code.name),
+                MeetingCheckMeeting(
+                    null, null, null, null, null, MeetingCheckOutcome.FAILED, 0, FAILURE_DESCRIPTION,
+                ),
+            )
+            is DiscoveryOutcome.AgendaUnpublished -> {
+                if (extra) {
+                    return Processed(
+                        MeetingCheckResult(MeetingCheckStatus.AGENDA_UNPUBLISHED, outcome.meeting.sourceId),
+                        MeetingCheckMeeting(
+                            null, outcome.meeting.sourceId, null, outcome.meeting.startsAt, null,
+                            MeetingCheckOutcome.AGENDA_UNPUBLISHED, 0, null,
+                        ),
+                    )
+                }
+                val agenda = discovery.fetchAgenda(outcome.meeting.sourceUrl, enrichReports = true)
+                val baseline = revisions.baseline(agenda.sourceId)
+                val result = if (agenda.items.none { it.substantive && it.category in ANALYSIS_CATEGORIES }) {
+                    meetingId = saveMeeting(
+                        agenda,
+                        MeetingStatus.AGENDA_UNPUBLISHED,
+                        imported = false,
+                        publicationStatus = PublicationStatus.PREVIEW,
+                    )
+                    val comparison = comparator.compare(agenda, PublicationStatus.PREVIEW, emptyList(), baseline)
+                    val stored = revisions.record(
+                        meetingId,
+                        agenda,
+                        PublicationStatus.PREVIEW,
+                        emptyList(),
+                        comparison,
+                        clock.instant(),
+                    )
+                    MeetingCheckResult(
+                        MeetingCheckStatus.AGENDA_UNPUBLISHED,
+                        agenda.sourceId,
+                        revisionNumber = stored.number,
+                        differences = comparison.differences,
+                    )
+                } else {
+                    meetingId = saveMeeting(
+                        agenda,
+                        MeetingStatus.IMPORTING,
+                        imported = true,
+                        publicationStatus = PublicationStatus.PREVIEW,
+                    )
+                    importAgenda(meetingId, agenda, baseline, PublicationStatus.PREVIEW, SourceState.PREVIEW)
+                        .also { analyses = it.second }
+                        .first
+                }
+                Processed(result, entry(agenda, result))
+            }
+            is DiscoveryOutcome.Found -> {
+                val agenda = discovery.fetchAgenda(outcome.meeting.sourceUrl, enrichReports = true)
+                val baseline = revisions.baseline(agenda.sourceId)
+                meetingId = saveMeeting(
+                    agenda,
+                    MeetingStatus.IMPORTING,
+                    imported = true,
+                    publicationStatus = PublicationStatus.CURRENT,
+                )
+                val (result, count) = importAgenda(meetingId, agenda, baseline)
+                analyses = count
+                Processed(result, entry(agenda, result))
+            }
+        }
     }
 
     private fun logResult(result: MeetingCheckResult) {
@@ -139,7 +231,7 @@ class MeetingCheckWorkflow(
         baseline: RevisionBaseline?,
         publicationStatus: PublicationStatus = PublicationStatus.CURRENT,
         sourceState: SourceState = SourceState.CURRENT,
-    ): MeetingCheckResult {
+    ): Pair<MeetingCheckResult, Int> {
         val unreadable = mutableListOf<String>()
         val revisionItems = mutableListOf<RevisionItem>()
         val meetingDocuments = mutableListOf<nl.vdzon.pvdd.documents.SourceDocument>()
@@ -218,7 +310,8 @@ class MeetingCheckWorkflow(
                 comparison,
                 clock.instant(),
             )
-            if (comparison.unchanged) {
+            val analyses = comparison.items.count(ItemDifference::requiresAnalysis)
+            (if (comparison.unchanged) {
                 if (baseline?.revisionStatus == RevisionStatus.REPROCESSING) {
                     meetings.markAnalysing(meetingId)
                     events.publishEvent(MeetingImportedEvent(meetingId, agenda.sourceId, clock.instant()))
@@ -247,7 +340,7 @@ class MeetingCheckWorkflow(
                     revisionNumber = stored.number,
                     differences = comparison.differences,
                 )
-            }
+            }) to analyses
         }
     }
 
@@ -304,6 +397,7 @@ class MeetingCheckWorkflow(
 
     companion object {
         const val WORKFLOW_LOCK = "meeting-check"
+        const val FAILURE_DESCRIPTION = "Deze vergadering kon niet worden verwerkt. Probeer het later opnieuw."
         private val ANALYSIS_CATEGORIES = setOf(AgendaCategory.A, AgendaCategory.B, AgendaCategory.C)
         private val log = LoggerFactory.getLogger(MeetingCheckWorkflow::class.java)
 
@@ -321,9 +415,5 @@ class MeetingCheckWorkflow(
             comparison: RevisionComparison,
             checkedAt: Instant,
         ) = StoredRevision(UUID.randomUUID(), 1, comparison)
-    }
-
-    private fun markTransactionForRollback() {
-        runCatching { TransactionAspectSupport.currentTransactionStatus().setRollbackOnly() }
     }
 }
