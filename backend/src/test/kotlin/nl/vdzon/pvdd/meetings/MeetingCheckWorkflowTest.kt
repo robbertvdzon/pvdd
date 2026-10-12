@@ -12,6 +12,7 @@ import nl.vdzon.pvdd.documents.DocumentIngestionSummary
 import nl.vdzon.pvdd.documents.DocumentIngestor
 import nl.vdzon.pvdd.documents.DocumentReference
 import org.junit.jupiter.api.Test
+import nl.vdzon.pvdd.meetings.api.MeetingCheckController
 import org.springframework.context.ApplicationEventPublisher
 
 class MeetingCheckWorkflowTest {
@@ -203,8 +204,179 @@ class MeetingCheckWorkflowTest {
         assertEquals(0, fixture.documents.calls)
     }
 
+    @Test
+    fun `every returned meeting is processed and reported under one lock`() {
+        val fx = multiFixture(listOf("a", "b"))
+        val result = fx.workflow.check()
+
+        assertEquals(1, fx.lock.acquires)
+        assertEquals(MeetingCheckStatus.IMPORTED, result.status)
+        assertEquals("a", result.meetingSourceId)
+        assertEquals(listOf("a", "b"), result.meetings.map { it.meetingSourceId })
+        assertTrue(result.meetings.all { it.outcome == MeetingCheckOutcome.NEW_DOCUMENTS && it.newAnalyses > 0 })
+        assertEquals(listOf("a", "b"), fx.events.map { it.meetingSourceId })
+        assertEquals(2, fx.store.savedMeetings.size)
+    }
+
+    @Test
+    fun `repeated check without changes reports nothing changed for every meeting`() {
+        val fx = multiFixture(listOf("a", "b"))
+        fx.workflow.check()
+        fx.revisions.markCurrent()
+        val result = fx.workflow.check()
+
+        assertTrue(result.meetings.all { it.outcome == MeetingCheckOutcome.UNCHANGED && it.newAnalyses == 0 })
+        assertEquals(2, fx.events.size)
+    }
+
+    @Test
+    fun `failure of one meeting does not stop the next and carries no technical detail`() {
+        val fx = multiFixture(listOf("a", "b", "c"), failing = setOf("b"))
+        val result = fx.workflow.check()
+
+        assertEquals(listOf("a", "b", "c"), result.meetings.map { it.meetingSourceId })
+        assertEquals(
+            listOf(MeetingCheckOutcome.NEW_DOCUMENTS, MeetingCheckOutcome.FAILED, MeetingCheckOutcome.NEW_DOCUMENTS),
+            result.meetings.map { it.outcome },
+        )
+        val failed = result.meetings[1]
+        assertEquals(0, failed.newAnalyses)
+        assertEquals(MeetingCheckWorkflow.FAILURE_DESCRIPTION, failed.errorDescription)
+        assertFalse(failed.errorDescription!!.contains("Exception"))
+        assertEquals(listOf("a", "c"), fx.events.map { it.meetingSourceId })
+    }
+
+    @Test
+    fun `extra meeting with unpublished agenda stores nothing and starts no analysis`() {
+        val fx = multiFixture(listOf("a", "b"), unpublished = setOf("b"))
+        val result = fx.workflow.check()
+
+        assertEquals(MeetingCheckOutcome.AGENDA_UNPUBLISHED, result.meetings[1].outcome)
+        assertEquals(null, result.meetings[1].meetingId)
+        assertEquals(0, result.meetings[1].newAnalyses)
+        assertEquals(listOf("a"), fx.store.savedMeetings.map { it.sourceId })
+        assertEquals(listOf("a"), fx.events.map { it.meetingSourceId })
+        assertEquals(1, fx.discovery.fetched.size)
+    }
+
+    @Test
+    fun `a single source failure keeps the whole check failing without a list`() {
+        val discovery = MultiDiscovery(
+            listOf(DiscoveryOutcome.SourceFailure(SourceErrorCode.HTTP_ERROR)),
+            emptyMap(),
+        )
+        val result = fixture(discovery = discovery).workflow.check()
+        assertEquals(MeetingCheckStatus.SOURCE_FAILURE, result.status)
+        assertTrue(result.meetings.isEmpty())
+    }
+
+    @Test
+    fun `a source failure among several meetings only fails that meeting`() {
+        val agenda = AgendaParser().parse(resource("agenda-full.html"), meetingUrl)
+        val found = DiscoveryOutcome.Found(DiscoveredMeeting("a", now.plusSeconds(3600), meetingUrl))
+        val discovery = MultiDiscovery(
+            listOf(found, DiscoveryOutcome.SourceFailure(SourceErrorCode.HTTP_ERROR)),
+            mapOf(meetingUrl to agenda),
+        )
+        val result = fixture(discovery = discovery).workflow.check()
+        assertEquals(MeetingCheckStatus.IMPORTED, result.status)
+        assertEquals(MeetingCheckOutcome.FAILED, result.meetings[1].outcome)
+    }
+
+    @Test
+    fun `workflow never touches a meeting outside the returned list`() {
+        val fx = multiFixture(listOf("a", "b", "c"))
+        fx.workflow.check()
+        assertEquals(setOf("a", "b", "c"), fx.discovery.fetched.map { it.path.substringAfterLast('/') }.toSet())
+        assertEquals(3, fx.store.savedMeetings.size)
+    }
+
+    @Test
+    fun `check-now answers 409 when locked and 200 with the list otherwise`() {
+        val guard = MutationGuard(Clock.fixed(now, ZoneOffset.UTC))
+        val locked = fixture(discovery = StubDiscovery(DiscoveryOutcome.NoFutureMeeting), lockAvailable = false)
+        val busy = MeetingCheckController(locked.workflow, guard).checkNow("a@example.org", "check-key-0000000001")
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, busy.statusCode)
+
+        val fx = multiFixture(listOf("a", "b"), failing = setOf("b"))
+        val ok = MeetingCheckController(fx.workflow, guard).checkNow("a@example.org", "check-key-0000000002")
+        assertEquals(org.springframework.http.HttpStatus.OK, ok.statusCode)
+        assertEquals("a", ok.body!!.meetingSourceId)
+        assertEquals(2, ok.body!!.meetings.size)
+
+        assertEquals(MeetingCheckStatus.IMPORTED, ok.body!!.status)
+        assertEquals(MeetingCheckOutcome.FAILED, ok.body!!.meetings[1].outcome)
+    }
+
+    @Test
+    fun `scheduler and controller call the same workflow bean`() {
+        val fx = multiFixture(listOf("a"))
+        MeetingCheckScheduler(fx.workflow).scheduledCheck()
+        assertEquals("0 0 5 * * *", MeetingCheckScheduler.CRON)
+        assertEquals("Europe/Amsterdam", MeetingCheckScheduler.ZONE)
+        assertEquals(1, fx.lock.acquires)
+    }
+
+    private class MultiFixture(
+        val workflow: MeetingCheckWorkflow,
+        val store: StubStore,
+        val discovery: MultiDiscovery,
+        val events: List<MeetingImportedEvent>,
+        val revisions: InMemoryRevisionStore,
+        val lock: StubLock,
+    )
+
+    private fun multiFixture(
+        ids: List<String>,
+        failing: Set<String> = emptySet(),
+        unpublished: Set<String> = emptySet(),
+    ): MultiFixture {
+        val template = AgendaParser().parse(resource("agenda-full.html"), meetingUrl)
+        val urls = ids.associateWith { URI("https://noordholland.bestuurlijkeinformatie.nl/Agenda/Index/$it") }
+        val outcomes = ids.map {
+            val meeting = DiscoveredMeeting(it, now.plusSeconds(3600), urls.getValue(it))
+            if (it in unpublished) DiscoveryOutcome.AgendaUnpublished(meeting) else DiscoveryOutcome.Found(meeting)
+        }
+        val discovery = MultiDiscovery(
+            outcomes,
+            urls.entries.associate { (id, url) -> url to template.copy(sourceId = id, sourceUrl = url) },
+            failing.map { urls.getValue(it) }.toSet(),
+        )
+        val store = StubStore(null)
+        val events = mutableListOf<MeetingImportedEvent>()
+        val revisions = InMemoryRevisionStore()
+        val lock = StubLock(true)
+        val workflow = MeetingCheckWorkflow(
+            discovery,
+            store,
+            CountingDocuments(true),
+            lock,
+            ApplicationEventPublisher { event -> if (event is MeetingImportedEvent) events += event },
+            Clock.fixed(now, ZoneOffset.UTC),
+            AgendaRevisionComparator(),
+            revisions,
+        )
+        return MultiFixture(workflow, store, discovery, events, revisions, lock)
+    }
+
+    private class MultiDiscovery(
+        private val outcomes: List<DiscoveryOutcome>,
+        private val agendas: Map<URI, ParsedMeetingAgenda>,
+        private val failing: Set<URI> = emptySet(),
+    ) : MeetingDiscoveryGateway {
+        val fetched = mutableListOf<URI>()
+
+        override fun discover(now: Instant): List<DiscoveryOutcome> = outcomes
+
+        override fun fetchAgenda(sourceUrl: URI, enrichReports: Boolean): ParsedMeetingAgenda {
+            fetched += sourceUrl
+            check(sourceUrl !in failing) { "boom at https://internal/secret" }
+            return agendas.getValue(sourceUrl)
+        }
+    }
+
     private fun fixture(
-        discovery: StubDiscovery,
+        discovery: MeetingDiscoveryGateway,
         lastSuccessful: String? = null,
         lockAvailable: Boolean = true,
         documentsFullyRead: Boolean = true,
@@ -282,17 +454,22 @@ class MeetingCheckWorkflowTest {
     }
 
     private class StubLock(private val available: Boolean) : WorkflowLock {
-        override fun tryAcquire(lockName: String, ownerId: UUID): Boolean = available
+        var acquires = 0
+
+        override fun tryAcquire(lockName: String, ownerId: UUID): Boolean {
+            acquires++
+            return available
+        }
         override fun release(lockName: String, ownerId: UUID) = Unit
     }
 
     private class InMemoryRevisionStore : SourceRevisionStore {
-        private var current: RevisionBaseline? = null
+        private val baselines = mutableMapOf<String, RevisionBaseline>()
 
-        override fun baseline(meetingSourceId: String): RevisionBaseline? = current
+        override fun baseline(meetingSourceId: String): RevisionBaseline? = baselines[meetingSourceId]
 
         fun markCurrent() {
-            current = current?.copy(revisionStatus = RevisionStatus.CURRENT)
+            baselines.replaceAll { _, baseline -> baseline.copy(revisionStatus = RevisionStatus.CURRENT) }
         }
 
         override fun record(
@@ -303,7 +480,7 @@ class MeetingCheckWorkflowTest {
             comparison: RevisionComparison,
             checkedAt: Instant,
         ): StoredRevision {
-            val existing = current
+            val existing = baselines[agenda.sourceId]
             if (existing != null && existing.publicationStatus == publicationStatus &&
                 existing.canonicalFingerprint == comparison.canonicalFingerprint
             ) return StoredRevision(existing.revisionId, existing.revisionNumber, comparison)
@@ -316,7 +493,7 @@ class MeetingCheckWorkflowTest {
                 items.associateBy(RevisionItem::sourceId),
                 if (comparison.requiresAnalysis) RevisionStatus.REPROCESSING else RevisionStatus.CURRENT,
             )
-            current = revision
+            baselines[agenda.sourceId] = revision
             return StoredRevision(revision.revisionId, revision.revisionNumber, comparison)
         }
     }
