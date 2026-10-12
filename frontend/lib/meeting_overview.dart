@@ -45,6 +45,9 @@ class MeetingOverviewPage extends StatefulWidget {
 
 class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
   MeetingOverview? _overview;
+  // De reeks uit het laatste overzicht en de gekozen vergadering daarin (alleen bij >= 2).
+  List<SeriesMeeting> _series = const [];
+  String? _selectedId;
   List<AgendaItemSummary> _items = const [];
   String _filter = 'ALLE';
   bool _loading = true;
@@ -87,18 +90,38 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
       final overview = archivedId == null
           ? await widget.gateway.overview()
           : await widget.gateway.meeting(archivedId);
+      var shown = overview;
+      final series = archivedId == null
+          ? overview.series
+          : const <SeriesMeeting>[];
+      if (series.length >= 2) {
+        // De keuze blijft staan na een verversing zolang die vergadering nog in de reeks zit;
+        // anders is de eerstvolgende (standaard) geopend.
+        if (!series.any((m) => m.id == _selectedId)) {
+          _selectedId = series.first.id;
+        }
+        if (_selectedId != overview.meeting?.id) {
+          shown = _withCheckedAt(
+            await widget.gateway.meeting(_selectedId!),
+            overview,
+          );
+        }
+      } else {
+        _selectedId = null;
+      }
       headerLoaded = true;
       // De vergaderkop wordt meteen vastgelegd, zodat hij blijft staan wanneer het laden van de
       // agendapunten daarna alsnog mislukt.
       if (mounted) {
         setState(() {
-          _overview = overview;
+          _overview = shown;
+          _series = series;
           _error = null;
         });
       }
-      final items = overview.meeting == null
+      final items = shown.meeting == null
           ? <AgendaItemSummary>[]
-          : await widget.gateway.agendaItems(overview.meeting!.id);
+          : await widget.gateway.agendaItems(shown.meeting!.id);
       if (mounted) {
         setState(() {
           _items = items;
@@ -118,6 +141,41 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
               : 'Deze vergadering kon niet worden geladen';
           _loading = false;
         });
+      }
+    }
+  }
+
+  // Het controlemoment hoort bij het overzicht, niet bij de gekozen vergadering.
+  MeetingOverview _withCheckedAt(
+    MeetingOverview shown,
+    MeetingOverview overview,
+  ) => MeetingOverview(
+    status: shown.status,
+    meeting: shown.meeting,
+    lastCheckedAt: overview.lastCheckedAt,
+    progress: shown.progress,
+  );
+
+  // Een klik op een tegel: alleen de agenda en adviezen van die vergadering worden gelezen, via
+  // dezelfde routes als het archief. De gekozen tegel blijft zichtbaar gemarkeerd.
+  Future<void> _select(String id) async {
+    if (id == _selectedId) return;
+    setState(() => _selectedId = id);
+    try {
+      final meeting = await widget.gateway.meeting(id);
+      final items = await widget.gateway.agendaItems(id);
+      if (!mounted || _selectedId != id) return;
+      setState(() {
+        _overview = _withCheckedAt(meeting, _overview!);
+        _items = items;
+        _error = null;
+      });
+    } on Object {
+      if (mounted && _selectedId == id) {
+        setState(
+          () => _error =
+              'Het vergaderingsoverzicht is tijdelijk niet beschikbaar.',
+        );
       }
     }
   }
@@ -176,13 +234,34 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
                   ],
                   const SizedBox(height: 16),
                   if (_overview?.meeting == null) ...[
-                    if (!widget.readOnly)
+                    if (!widget.readOnly) ...[
                       _message(
                         Icons.event_busy_outlined,
                         'Er is nog geen toekomstige vergadering gevonden.',
                         PvddColors.primary,
                       ),
+                      if (widget.onOpenArchive != null) ...[
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Zodra er een nieuwe agenda is, verschijnt die hier. Eerdere '
+                          'vergaderingen en hun bewaarde adviezen lees je terug in het overzicht.',
+                        ),
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: OutlinedButton.icon(
+                            onPressed: widget.onOpenArchive,
+                            icon: const Icon(Icons.history),
+                            label: const Text('Alle eerdere vergaderingen'),
+                          ),
+                        ),
+                      ],
+                    ],
                   ] else ...[
+                    if (_series.length >= 2) ...[
+                      _seriesBox(context),
+                      const SizedBox(height: 16),
+                    ],
                     // De startweergave valt terug op de meest recente voorbije vergadering zodra er
                     // geen toekomstige is. Dat mag de gebruiker niet voor een nieuwe agenda aanzien,
                     // dus staat de melding boven de vergaderkaart. Het archiefscherm heeft in
@@ -237,6 +316,109 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
     );
   }
 
+  // Het groene kader met een tegel per vergadering uit de reeks: naast elkaar op brede schermen,
+  // onder elkaar op smalle.
+  Widget _seriesBox(BuildContext context) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: PvddColors.primary.withValues(alpha: 0.10),
+      border: Border.all(color: PvddColors.primary),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Deze vergaderingen horen bij elkaar',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 12),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final tiles = _series.map(_seriesTile).toList();
+            if (constraints.maxWidth < 600) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final tile in tiles) ...[
+                    tile,
+                    if (tile != tiles.last) const SizedBox(height: 8),
+                  ],
+                ],
+              );
+            }
+            return IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final tile in tiles) ...[
+                    Expanded(child: tile),
+                    if (tile != tiles.last) const SizedBox(width: 12),
+                  ],
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    ),
+  );
+
+  Widget _seriesTile(SeriesMeeting meeting) {
+    final selected = meeting.id == _selectedId;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        key: ValueKey('series-tile-${meeting.id}'),
+        color: selected ? PvddColors.surface : Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(
+            color: selected ? PvddColors.primary : PvddColors.outline,
+            width: selected ? 3 : 1,
+          ),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => unawaited(_select(meeting.id)),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    if (selected) ...[
+                      const Icon(
+                        Icons.check_circle,
+                        size: 18,
+                        color: PvddColors.primary,
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Expanded(
+                      child: Text(
+                        meetingLongDate(meeting.startsAt),
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(meeting.place ?? 'Plaats onbekend'),
+                const SizedBox(height: 4),
+                Text(_statusLabel(meeting.status)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   // Alleen-lezen kop: terugactie en, wanneer de server de vergadering als voorbij markeert, de
   // duidelijke melding dat bekijken geen analyse start. Geen 'Nu controleren'.
   Widget _archiveHeader(BuildContext context) {
@@ -266,70 +448,66 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
   /// agenda hier verschijnt, en de doorstap naar het overzicht van eerdere vergaderingen.
   ///
   /// De melding hangt aan `meeting.past` uit het serverantwoord, nooit aan de browserklok.
-  Widget _noNewAgendaNotice(BuildContext context, MeetingInfo meeting) =>
-      LayoutBuilder(
-        builder: (context, constraints) {
-          final colors = Theme.of(context).colorScheme;
-          // Op mobiel loopt de doorstap over de volle breedte mee met de knoppen in de kop; het
-          // label wordt daarbij afgebroken in plaats van afgekort.
-          final narrow = constraints.maxWidth < 600;
-          final archive = OutlinedButton.icon(
-            onPressed: widget.onOpenArchive,
-            icon: const Icon(Icons.history),
-            label: const Text('Alle eerdere vergaderingen'),
-          );
-          return Semantics(
-            liveRegion: true,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: colors.surfaceContainerLow,
-                border: Border(
-                  left: BorderSide(color: PvddColors.primary, width: 6),
-                ),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(
-                    Icons.event_busy_outlined,
-                    color: PvddColors.primary,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Er is nog geen nieuwe agenda',
-                          style: TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Je ziet de meest recente vergadering, en die is al geweest: '
-                          '${meetingLongDate(meeting.startsAt)}. Zodra de provincie een nieuwe '
-                          'agenda publiceert, staat die hier.',
-                        ),
-                        if (widget.onOpenArchive != null) ...[
-                          const SizedBox(height: 12),
-                          if (narrow)
-                            SizedBox(width: double.infinity, child: archive)
-                          else
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: archive,
-                            ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
+  Widget _noNewAgendaNotice(
+    BuildContext context,
+    MeetingInfo meeting,
+  ) => LayoutBuilder(
+    builder: (context, constraints) {
+      final colors = Theme.of(context).colorScheme;
+      // Op mobiel loopt de doorstap over de volle breedte mee met de knoppen in de kop; het
+      // label wordt daarbij afgebroken in plaats van afgekort.
+      final narrow = constraints.maxWidth < 600;
+      final archive = OutlinedButton.icon(
+        onPressed: widget.onOpenArchive,
+        icon: const Icon(Icons.history),
+        label: const Text('Alle eerdere vergaderingen'),
       );
+      return Semantics(
+        liveRegion: true,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerLow,
+            border: Border(
+              left: BorderSide(color: PvddColors.primary, width: 6),
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.event_busy_outlined, color: PvddColors.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Er is nog geen nieuwe agenda',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Je ziet de meest recente vergadering, en die is al geweest: '
+                      '${meetingLongDate(meeting.startsAt)}. Zodra de provincie een nieuwe '
+                      'agenda publiceert, staat die hier.',
+                    ),
+                    if (widget.onOpenArchive != null) ...[
+                      const SizedBox(height: 12),
+                      if (narrow)
+                        SizedBox(width: double.infinity, child: archive)
+                      else
+                        Align(alignment: Alignment.centerLeft, child: archive),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 
   Widget _pastMeetingNotice(BuildContext context, MeetingInfo meeting) {
     final colors = Theme.of(context).colorScheme;
@@ -625,7 +803,9 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
   AdviceVersion? get _selectedEarlierVersion {
     final versions = _versions;
     if (versions == null) return null;
-    if (_selectedVersion < 1 || _selectedVersion >= versions.length) return null;
+    if (_selectedVersion < 1 || _selectedVersion >= versions.length) {
+      return null;
+    }
     return versions[_selectedVersion];
   }
 
@@ -924,7 +1104,8 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ..._versionChoice(context, versions),
-          if (earlier != null) _earlierVersionNotice(context, versions, earlier),
+          if (earlier != null)
+            _earlierVersionNotice(context, versions, earlier),
           if (detail.explanation != null) Text(detail.explanation!),
           if (detail.adviceActuality == 'STALE')
             _actualityWarning(
@@ -1046,7 +1227,10 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
   /// die zegt welke versie het laatste advies verving. Bij precies één bewaarde versie staat op
   /// dezelfde plek de expliciete melding dat er geen eerdere versie is bewaard. Bij nul bewaarde
   /// versies verandert er niets aan de weergave; de bestaande toestand blijft leidend.
-  List<Widget> _versionChoice(BuildContext context, List<AdviceVersion> versions) {
+  List<Widget> _versionChoice(
+    BuildContext context,
+    List<AdviceVersion> versions,
+  ) {
     if (_versionsFailed) return [_versionsErrorNotice(context)];
     if (versions.length == 1) {
       return [
@@ -1065,7 +1249,9 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
     }
     if (versions.length < 2) return const [];
     // De regel hoort bij het laatste advies: die versie verving de eerstvolgende oudere.
-    final replacement = _selectedVersion == 0 ? _replacementLine(versions) : null;
+    final replacement = _selectedVersion == 0
+        ? _replacementLine(versions)
+        : null;
     return [
       Padding(
         padding: const EdgeInsets.only(top: 16),
@@ -1122,27 +1308,23 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
     final replaced = adviceVersionDate(newer.createdAt);
     return Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: _filledNotice(
-        context,
-        Icons.lock_outline,
-        [
-          Text(
-            'Je bekijkt een eerdere versie van '
-            '${adviceVersionDate(earlier.createdAt)}',
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            reason == null
-                ? 'Vervangen op $replaced.'
-                : 'Vervangen op $replaced. Reden: $reason.',
-          ),
-          Text(
-            'Aanvullende analyse-instructie van toen: '
-            '${earlier.analysisGuidance ?? 'niet vastgelegd'}.',
-          ),
-        ],
-      ),
+      child: _filledNotice(context, Icons.lock_outline, [
+        Text(
+          'Je bekijkt een eerdere versie van '
+          '${adviceVersionDate(earlier.createdAt)}',
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          reason == null
+              ? 'Vervangen op $replaced.'
+              : 'Vervangen op $replaced. Reden: $reason.',
+        ),
+        Text(
+          'Aanvullende analyse-instructie van toen: '
+          '${earlier.analysisGuidance ?? 'niet vastgelegd'}.',
+        ),
+      ]),
     );
   }
 
@@ -1411,6 +1593,7 @@ String _statusLabel(String status) => switch (status) {
   'STALE' => 'Oud advies — analyse wordt vernieuwd',
   'WITHDRAWN' => 'Ingetrokken',
   'AGENDA_UNPUBLISHED' => 'Agenda nog niet gepubliceerd',
+  'DISCOVERED' => 'Agenda gepubliceerd',
   'IMPORTING' => 'Stukken worden ingelezen',
   'ANALYSING' ||
   'RUNNING' ||

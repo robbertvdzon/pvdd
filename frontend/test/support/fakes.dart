@@ -56,6 +56,8 @@ class FakeDashboardGateway implements DashboardGateway {
     this.withSources = false,
     this.title = 'Commissie Ruimte 14 september 2026',
     DateTime? startsAt,
+    this.series = const [],
+    this.itemsByMeeting = const {},
   }) : startsAt = startsAt ?? DateTime.utc(2026, 9, 14, 16, 30);
   final bool withMeeting;
   final bool preview;
@@ -79,6 +81,12 @@ class FakeDashboardGateway implements DashboardGateway {
   /// De titel van de vergadering.
   final String title;
 
+  /// Het reeks-overzicht dat `overview()` meegeeft; leeg = oudere backend zonder veld.
+  final List<SeriesMeeting> series;
+
+  /// Eigen agendapunten per vergadering-id; ontbreekt een id, dan geldt [items].
+  final Map<String, List<AgendaItemSummary>> itemsByMeeting;
+
   /// Alle aanroepen in volgorde, bijvoorbeeld `meeting:meeting-id` of `agendaItem:item-a`.
   final List<String> calls = <String>[];
 
@@ -89,20 +97,30 @@ class FakeDashboardGateway implements DashboardGateway {
     (call) => call.startsWith('checkNow') || call.startsWith('retryAnalysis'),
   );
 
-  MeetingInfo meetingInfo(String id) => MeetingInfo(
-    id: id,
-    title: title,
-    startsAt: startsAt,
-    endsAt: startsAt.add(const Duration(hours: 4)),
-    location: 'Statenzaal',
-    sourceUrl: Uri.parse('https://example.test/agenda'),
-    status: preview ? 'COMPLETE' : 'ANALYSING',
-    publicationStatus: preview ? 'PREVIEW' : 'CURRENT',
-    revisionNumber: 2,
-    canonicalFingerprint: List.filled(64, 'a').join(),
-    revisionStatus: 'REPROCESSING',
-    past: past,
-  );
+  MeetingInfo meetingInfo(String id) {
+    final inSeries = series.where((m) => m.id == id).firstOrNull;
+    return _meetingInfo(
+      id,
+      inSeries?.startsAt ?? startsAt,
+      inSeries?.place ?? 'Statenzaal',
+    );
+  }
+
+  MeetingInfo _meetingInfo(String id, DateTime startsAt, String? location) =>
+      MeetingInfo(
+        id: id,
+        title: title,
+        startsAt: startsAt,
+        endsAt: startsAt.add(const Duration(hours: 4)),
+        location: location,
+        sourceUrl: Uri.parse('https://example.test/agenda'),
+        status: preview ? 'COMPLETE' : 'ANALYSING',
+        publicationStatus: preview ? 'PREVIEW' : 'CURRENT',
+        revisionNumber: 2,
+        canonicalFingerprint: List.filled(64, 'a').join(),
+        revisionStatus: 'REPROCESSING',
+        past: past,
+      );
 
   @override
   Future<MeetingOverview> overview() async {
@@ -112,6 +130,7 @@ class FakeDashboardGateway implements DashboardGateway {
       meeting: withMeeting ? meetingInfo('meeting-id') : null,
       lastCheckedAt: DateTime.utc(2026, 8, 31, 5),
       progress: Progress(withMeeting ? 3 : 0, withMeeting ? 1 : 0, 0),
+      series: series,
     );
   }
 
@@ -152,7 +171,7 @@ class FakeDashboardGateway implements DashboardGateway {
   Future<List<AgendaItemSummary>> agendaItems(String meetingId) async {
     calls.add('agendaItems:$meetingId');
     if (failAgendaItems) throw const DashboardUnavailable();
-    return items;
+    return itemsByMeeting[meetingId] ?? items;
   }
 
   List<AgendaItemSummary> get items => [
@@ -558,3 +577,11 @@ class UnusedSettingsGateway implements SettingsGateway {
   @override
   Future<int> retryAllFailedAnalyses() => throw UnimplementedError();
 }
+
+/// Zaaihelper voor een reeks-tegel.
+SeriesMeeting syntheticSeriesMeeting(
+  String id,
+  DateTime startsAt, {
+  String? place = 'Statenzaal',
+  String status = 'DISCOVERED',
+}) => SeriesMeeting(id: id, startsAt: startsAt, place: place, status: status);

@@ -330,6 +330,21 @@ melding verschijnt dan niet en de bestaande lege melding blijft alleen staan. Op
 stapelen melding, vergaderkaart en knoppen, loopt de doorstap over de volle breedte en blijven
 markering en uitleg even prominent; er komt geen inklapper, tooltip of afgekorte tekst.
 
+Staan er binnen tien kalenderdagen na de eerstvolgende vergadering nog meer opgeslagen
+vergaderingen, dan toont de agendaweergave boven de agenda een groen kader “Deze vergaderingen
+horen bij elkaar” met een tegel per vergadering (datum in de bestaande Nederlandse opmaak, plaats
+en korte status). De eerstvolgende is standaard geopend; een klik op een andere tegel laadt agenda
+en adviezen van die vergadering via de bestaande routes met vergaderingsid (dezelfde
+`MeetingOverviewPage`, geen kopie) en markeert de gekozen tegel. Elke vergadering blijft apart met
+eigen datum, agenda en stukken. Een toekomstige vergadering uit de reeks is niet alleen-lezen:
+“Nu controleren” en de 15-secondenverversing blijven werken en de gekozen vergadering blijft
+gekozen na een verversing. Bij precies één vergadering in het venster blijft het scherm ongewijzigd
+en komt er geen kader. Een ontbrekend veld `series` (oudere backend tijdens de uitrol) telt als een
+lege lijst. Zonder toekomstige vergadering verandert niets aan de melding “Er is nog geen nieuwe
+agenda” met de ene doorstap naar **Alle eerdere vergaderingen**; er komt geen tweede knop bij. Op
+een breed scherm staan de tegels naast elkaar, op een smal scherm onder elkaar zonder overflow, en
+alle adviezen houden het label “AI-concept — controleer bronnen en formulering vóór gebruik”.
+
 Op het alleen-lezen scherm staat bovenaan “Deze vergadering is al geweest — <vergaderdatum>”, met
 de mededeling dat bekijken geen analyse start en niets verandert. Alle acties die nieuw werk zouden
 starten ontbreken daar: geen “Nu controleren”, geen analyseaanvraag en geen herstartactie per
@@ -541,6 +556,21 @@ die precies nu begint valt in de toekomsttak, gelijk aan de `past`-berekening hi
 geen vergaderingen bewaard, dan blijft het antwoord `NO_MEETING` met `meeting = null` en de
 telling 0/0/0. De voortgangstelling en het antwoordmodel veranderen hier niet door, en er komt
 geen route, index of migratie bij.
+
+`GET /api/meetings/next` bevat daarnaast de additieve lijst `series` (de bestaande velden blijven
+ongewijzigd; `/api/meetings/{id}` geeft altijd een lege lijst). `DashboardRepository.series(now)`
+neemt de eerstvolgende opgeslagen vergadering met `starts_at > now` (strikt; gelijk aan nu telt
+niet) plus de daarna volgende vergaderingen waarvan de kalenderdatum in Europe/Amsterdam
+(`LocalDate`, dus ook correct over de einde-zomertijd heen) hoogstens tien dagen na die van de
+eerste valt — dag 10 telt mee, dag 11 niet. Het maximum is drie; volgorde `starts_at` oplopend,
+bij gelijke tijd op `id`. Voorbije vergaderingen zitten er nooit in; zonder toekomstige vergadering
+is `series` leeg. Per item: `id`, `startsAt`, `place` (de locatie) en `status`, afgeleid uit de
+bestaande codes: `PREVIEW` bij een voorlopige agenda (`publication_status = PREVIEW`, tenzij de
+status `AGENDA_UNPUBLISHED` is), anders de bestaande vergaderstatus; de frontend gebruikt de
+bestaande labels. Tien dagen en drie zijn vaste constanten (`SERIES_WINDOW_DAYS`,
+`SERIES_MAX_MEETINGS`), geen configuratie. Geen nieuwe route, tabel, migratie, index of
+AI-aanroep; `ProductionReadAccessFilter` is dus ongewijzigd. De gekozen vergadering laadt via de
+bestaande GET-routes voor vergaderdetail en agendapunten.
 
 Het antwoordmodel van `/api/meetings/next` en `/api/meetings/{id}` bevat het veld `past`, dat
 aangeeft of de vergadering al is geweest. De waarde wordt server-side berekend als
@@ -845,6 +875,11 @@ niet gecommit. Scripts lezen env-bestanden als data en voeren ze niet uit met `s
   aan nu dat als toekomst telt, en de lege tabel met `NO_MEETING` en telling 0/0/0; in de
   keuzetests hoort een assertie op de voortgangstelling, zodat een sorteerwijziging de telling
   aantoonbaar niet raakt;
+- het leesmodel `series` van `/api/meetings/next` (integratietest op de echte database met vaste
+  klok): drie in het venster, vier in het venster met alleen de eerste drie, dag 10 wel en dag 11
+  niet met een voorbeeld dat de einde-zomertijd kruist, gelijke tijd stabiel op `id`, alleen
+  verleden of niets als lege lijst, `starts_at` gelijk aan nu telt niet als eerstvolgende,
+  voorbije vergaderingen buiten `series` en ongewijzigde bestaande velden;
 - de leesroute voor één vergadering: `404` bij een geldige maar onbekende UUID, de server-side
   bepaalde waarde van `past` op zowel `/api/meetings/next` als `/api/meetings/{id}`, en een
   ongewijzigd aantal rijen in `analysis_run` vóór en ná het leesverkeer;
@@ -898,6 +933,12 @@ smoketest mag gecontroleerd de publieke bronnen lezen.
   weergave met en zonder de alleen-lezen/archiefvlag, de fouttoestand met **Versies opnieuw laden**
   die dezelfde aanvraag herhaalt, uitsluitend leesverkeer zonder extra aanroep bij het wisselen, en
   de keuze plus meldingen op een smal en een breed venster zonder overflow;
+- het reeks-overzicht in de agendaweergave (fake gateway die aanroepen registreert): drie
+  vergaderingen met kader, drie tegels, de eerste geopend, wisselen van agenda en markering met
+  ophalen van de juiste vergaderingsid en uitsluitend leesverkeer; één vergadering zonder kader;
+  nul vergaderingen met uitleg en de doorstap naar `/archief`; een ontbrekend veld `series` als
+  tevoren; en dezelfde drie vergaderingen op een breed venster (naast elkaar) en een smal venster
+  (onder elkaar) zonder overflow en met het AI-label bij adviezen;
 - de padherkenning van `/archief` en `/archief/<vergadering-id>` en de aanwezigheid van de
   SPA-fallback;
 - Nginx-cachecontract en gehashte bundlenaam.
