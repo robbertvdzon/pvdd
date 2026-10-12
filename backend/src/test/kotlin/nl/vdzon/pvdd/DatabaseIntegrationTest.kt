@@ -1556,8 +1556,8 @@ class DatabaseIntegrationTest(
     )
 
     private class StubDiscovery(private val agenda: ParsedMeetingAgenda) : MeetingDiscoveryGateway {
-        override fun discover(now: Instant): DiscoveryOutcome =
-            DiscoveryOutcome.Found(DiscoveredMeeting(agenda.sourceId, agenda.startsAt, agenda.sourceUrl))
+        override fun discover(now: Instant): List<DiscoveryOutcome> =
+            listOf(DiscoveryOutcome.Found(DiscoveredMeeting(agenda.sourceId, agenda.startsAt, agenda.sourceUrl)))
 
         override fun fetchAgenda(sourceUrl: URI, enrichReports: Boolean): ParsedMeetingAgenda = agenda
     }

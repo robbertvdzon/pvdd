@@ -53,7 +53,7 @@ class MeetingCheckWorkflow(
         if (!locks.tryAcquire(WORKFLOW_LOCK, owner)) return MeetingCheckResult(MeetingCheckStatus.ALREADY_RUNNING)
         var meetingId: UUID? = null
         return (try {
-            when (val outcome = discovery.discover(clock.instant())) {
+            when (val outcome = discovery.discover(clock.instant()).first()) {
                 DiscoveryOutcome.NoFutureMeeting -> MeetingCheckResult(MeetingCheckStatus.NO_FUTURE_MEETING)
                 is DiscoveryOutcome.SourceFailure -> MeetingCheckResult(
                     MeetingCheckStatus.SOURCE_FAILURE,

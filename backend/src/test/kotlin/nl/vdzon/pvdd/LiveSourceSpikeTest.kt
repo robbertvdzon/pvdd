@@ -38,7 +38,7 @@ class LiveSourceSpikeTest {
             AgendaParser(),
             Clock.systemUTC(),
         )
-        val outcome = discovery.discover()
+        val outcome = discovery.discover().first()
         val meeting = when (outcome) {
             is DiscoveryOutcome.Found -> outcome.meeting
             is DiscoveryOutcome.AgendaUnpublished -> outcome.meeting
