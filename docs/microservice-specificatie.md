@@ -164,6 +164,23 @@ vergadering wordt alleen in het antwoord vastgelegd, niet in de database. Een ge
 mislukte controle geeft HTTP 200. Schema, tijdstip en knop zijn ongewijzigd en roepen dezelfde
 workflow aan; er is geen migratie, configuratie of nieuwe route.
 
+Sinds story hkh-327 toont de frontend die lijst na **Nu controleren** als kader “Resultaat van de
+controle”, zonder backendwijziging. `MeetingCheckOutcome` heeft daarvoor `meetings`
+(`MeetingCheckResult`: `meetingId`, `title`, `startsAt`, `location`, `outcome`, `newAnalyses`,
+`errorDescription`; ontbrekend `newAnalyses` is 0). Op een breed venster (vanaf 720 px) is dit een
+tabel met Datum, Plaats, Uitkomst en Nieuwe analyses, op een smal venster een blok per vergadering.
+Uitkomsttekst: “Niets gewijzigd”, “Nieuwe stukken ingelezen” (alleen hier het aantal),
+“Agenda nog niet gepubliceerd” (met de melding dat er niets is opgeslagen en dat de app bij de
+volgende controle opnieuw kijkt) en “Mislukt” (rood, met de `errorDescription` bij alleen die
+vergadering; de andere rijen blijven zichtbaar en, met `meetingId`, klikbaar). Ontbreekt of is de
+lijst leeg, dan valt de frontend terug op het oude enkelvoudige `status` als één resultaatregel
+(`UNCHANGED`/`NO_FUTURE_MEETING` → niets gewijzigd, `IMPORTED` → nieuwe stukken, `AGENDA_UNPUBLISHED`).
+Is de hele controle mislukt (netwerkfout, 5xx, bron onbereikbaar, of één mislukt element zonder
+vergadergegevens), dan toont de app de melding “Controleren is niet gelukt” met **Opnieuw proberen**,
+dat een nieuwe `check-now`-aanroep doet; de eerder geladen agenda en adviezen blijven staan. HTTP 409
+`ALREADY_RUNNING` behoudt de bestaande melding en geeft geen foutkader. Na een geslaagde controle
+worden overzicht, agenda en reeks-kader opnieuw geladen; bij falen volgen geen extra leesaanroepen.
+
 Wanneer er geen toekomstige vergadering is, toont de app dat expliciet. Wanneer iBabs tijdelijk
 niet beschikbaar is, blijft de laatst succesvol geïmporteerde analyse zichtbaar met een duidelijke
 waarschuwing dat actualiteit niet kon worden gecontroleerd.
@@ -908,6 +925,11 @@ smoketest mag gecontroleerd de publieke bronnen lezen.
 - vergadering zonder gepubliceerde agenda;
 - vrije Markdownweergave voor A, B en C;
 - voortgang, fout en “Nu controleren” zonder dubbele verwerking;
+- het controleresultaat per vergadering (`check_result_test.dart`): drie uitkomsten tegelijk als
+  tabel en als blokken, de melding bij een niet-gepubliceerde agenda, één mislukte vergadering naast
+  geslaagde, de mislukte hele controle met **Opnieuw proberen** en behoud van de agendakaarten, het
+  verversen na succes (en niet bij falen), 409 `ALREADY_RUNNING`, de terugval op het oude
+  enkelvoudige veld en het AI-label op 1200 en 390 px zonder overflow;
 - bronlinks en conceptwaarschuwing;
 - builddialoog en updatebeschikbaarheid;
 - responsive gedrag, toetsenbordfocus en semantiek;
