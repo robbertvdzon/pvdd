@@ -498,6 +498,7 @@ class MeetingCheckOutcome {
     required this.status,
     required this.revisionNumber,
     required this.differences,
+    this.meetings = const [],
   });
   factory MeetingCheckOutcome.fromJson(Map<String, dynamic> json) =>
       MeetingCheckOutcome(
@@ -505,8 +506,73 @@ class MeetingCheckOutcome {
         revisionNumber: json['revisionNumber'] as int?,
         differences: (json['differences'] as List<dynamic>? ?? const [])
             .cast<String>(),
+        meetings: (json['meetings'] as List<dynamic>? ?? const [])
+            .map((m) => MeetingCheckResult.fromJson(m as Map<String, dynamic>))
+            .toList(growable: false),
       );
   final String status;
   final int? revisionNumber;
   final List<String> differences;
+
+  /// De uitkomst per vergadering; leeg bij een oudere backend, dan geldt [status].
+  final List<MeetingCheckResult> meetings;
+
+  /// De hele controle is mislukt: de bron was onbereikbaar, of de lijst bestaat uit één mislukt
+  /// element zonder vergadergegevens (oud foutgedrag).
+  bool get wholeCheckFailed {
+    if (meetings.isEmpty) {
+      return status == 'SOURCE_FAILURE' || status == 'FAILED';
+    }
+    return meetings.length == 1 && meetings.first.isUnidentifiedFailure;
+  }
+
+  /// De rijen die getoond worden: de lijst, of het oude enkelvoudige veld als één element.
+  List<MeetingCheckResult> get rows => meetings.isNotEmpty
+      ? meetings
+      : [
+          MeetingCheckResult(
+            outcome: switch (status) {
+              'UNCHANGED' || 'NO_FUTURE_MEETING' => 'UNCHANGED',
+              'AGENDA_UNPUBLISHED' => 'AGENDA_UNPUBLISHED',
+              'IMPORTED' => 'NEW_DOCUMENTS',
+              _ => status,
+            },
+          ),
+        ];
+}
+
+class MeetingCheckResult {
+  const MeetingCheckResult({
+    this.meetingId,
+    this.title,
+    this.startsAt,
+    this.location,
+    required this.outcome,
+    this.newAnalyses = 0,
+    this.errorDescription,
+  });
+  factory MeetingCheckResult.fromJson(Map<String, dynamic> json) =>
+      MeetingCheckResult(
+        meetingId: json['meetingId'] as String?,
+        title: json['title'] as String?,
+        startsAt: json['startsAt'] is String
+            ? DateTime.tryParse(json['startsAt'] as String)
+            : null,
+        location: json['location'] as String?,
+        outcome: json['outcome'] as String? ?? 'UNCHANGED',
+        newAnalyses: (json['newAnalyses'] as num?)?.toInt() ?? 0,
+        errorDescription: json['errorDescription'] as String?,
+      );
+  final String? meetingId;
+  final String? title;
+  final DateTime? startsAt;
+  final String? location;
+
+  /// UNCHANGED, NEW_DOCUMENTS, AGENDA_UNPUBLISHED of FAILED.
+  final String outcome;
+  final int newAnalyses;
+  final String? errorDescription;
+
+  bool get isUnidentifiedFailure =>
+      outcome == 'FAILED' && startsAt == null && location == null;
 }

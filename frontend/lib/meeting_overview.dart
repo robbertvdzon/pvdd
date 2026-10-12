@@ -52,6 +52,8 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
   String _filter = 'ALLE';
   bool _loading = true;
   bool _checking = false;
+  MeetingCheckOutcome? _checkResult;
+  bool _checkFailed = false;
   String? _error;
   Timer? _timer;
   Timer? _durationTimer;
@@ -182,27 +184,239 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
 
   Future<void> _checkNow() async {
     if (_checking) return;
-    setState(() => _checking = true);
+    setState(() {
+      _checking = true;
+      _checkFailed = false;
+    });
     try {
       final outcome = await widget.gateway.checkNow();
-      await _load(silent: true);
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_checkOutcomeLabel(outcome))));
+      if (outcome.status == 'ALREADY_RUNNING') {
+        await _load(silent: true);
+        if (mounted) {
+          setState(() => _checkResult = null);
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(_checkOutcomeLabel(outcome))));
+        }
+      } else if (outcome.wholeCheckFailed) {
+        // Eerder geladen gegevens blijven staan; alleen de melding met de herhaalknop komt erbij.
+        if (mounted) {
+          setState(() {
+            _checkResult = null;
+            _checkFailed = true;
+          });
+        }
+      } else {
+        await _load(silent: true);
+        if (mounted) {
+          setState(() => _checkResult = outcome);
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(_checkOutcomeLabel(outcome))));
+        }
       }
     } on Object {
       if (mounted) {
-        setState(
-          () =>
-              _error = 'Controleren is niet gelukt. Probeer het later opnieuw.',
-        );
+        setState(() {
+          _checkResult = null;
+          _checkFailed = true;
+        });
       }
     } finally {
       if (mounted) {
         setState(() => _checking = false);
       }
     }
+  }
+
+  Widget _checkFailedNotice(BuildContext context) => Card(
+    key: const ValueKey('check-failed'),
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.error_outline,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Controleren is niet gelukt. De bron is niet bereikbaar of gaf een fout. '
+                  'De eerder geladen agenda en adviezen blijven zichtbaar.',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _checking ? null : _checkNow,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Opnieuw proberen'),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  String _checkOutcomeText(MeetingCheckResult r) => switch (r.outcome) {
+    'NEW_DOCUMENTS' => 'Nieuwe stukken ingelezen',
+    'AGENDA_UNPUBLISHED' => 'Agenda nog niet gepubliceerd',
+    'FAILED' => 'Mislukt',
+    _ => 'Niets gewijzigd',
+  };
+
+  Widget _checkOutcomeDetail(BuildContext context, MeetingCheckResult r) {
+    if (r.outcome == 'AGENDA_UNPUBLISHED') {
+      return const Text(
+        'Er is niets opgeslagen. De app kijkt bij de volgende controle opnieuw.',
+      );
+    }
+    if (r.outcome == 'FAILED') {
+      return Text(
+        r.errorDescription ?? 'De controle van deze vergadering is mislukt.',
+        style: TextStyle(color: Theme.of(context).colorScheme.error),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _checkResultList(BuildContext context, MeetingCheckOutcome outcome) {
+    final rows = outcome.rows;
+    final error = Theme.of(context).colorScheme.error;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 720;
+        String date(MeetingCheckResult r) => r.startsAt == null
+            ? 'Datum onbekend'
+            : meetingLongDate(r.startsAt!);
+        String place(MeetingCheckResult r) => r.location ?? 'Plaats onbekend';
+        Widget tappable(MeetingCheckResult r, Widget child) =>
+            r.meetingId == null
+            ? child
+            : InkWell(onTap: () => _select(r.meetingId!), child: child);
+        Widget count(MeetingCheckResult r) => Text(
+          '${r.newAnalyses} nieuwe analyses',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        );
+        Widget outcomeText(MeetingCheckResult r) => Text(
+          _checkOutcomeText(r),
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: r.outcome == 'FAILED' ? error : null,
+          ),
+        );
+        return Card(
+          key: const ValueKey('check-result'),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Resultaat van de controle',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                if (narrow)
+                  for (final r in rows)
+                    tappable(
+                      r,
+                      Padding(
+                        key: ValueKey(
+                          'check-block-${r.meetingId ?? rows.indexOf(r)}',
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(date(r)),
+                            Text(place(r)),
+                            outcomeText(r),
+                            if (r.outcome == 'NEW_DOCUMENTS') count(r),
+                            _checkOutcomeDetail(context, r),
+                            const Divider(),
+                          ],
+                        ),
+                      ),
+                    )
+                else
+                  Table(
+                    key: const ValueKey('check-table'),
+                    columnWidths: const {
+                      0: FlexColumnWidth(2),
+                      1: FlexColumnWidth(1.5),
+                      2: FlexColumnWidth(3),
+                      3: FlexColumnWidth(1.5),
+                    },
+                    children: [
+                      const TableRow(
+                        children: [
+                          Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Text('Datum'),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Text('Plaats'),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Text('Uitkomst'),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Text('Nieuwe analyses'),
+                          ),
+                        ],
+                      ),
+                      for (final r in rows)
+                        TableRow(
+                          children: [
+                            tappable(
+                              r,
+                              Padding(
+                                padding: const EdgeInsets.all(6),
+                                child: Text(date(r)),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.all(6),
+                              child: Text(place(r)),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.all(6),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  outcomeText(r),
+                                  _checkOutcomeDetail(context, r),
+                                ],
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.all(6),
+                              child: Text(
+                                r.outcome == 'NEW_DOCUMENTS'
+                                    ? '${r.newAnalyses}'
+                                    : '',
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -231,6 +445,14 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
                       _error!,
                       Theme.of(context).colorScheme.error,
                     ),
+                  ],
+                  if (_checkFailed && !widget.readOnly) ...[
+                    const SizedBox(height: 12),
+                    _checkFailedNotice(context),
+                  ],
+                  if (_checkResult != null && !widget.readOnly) ...[
+                    const SizedBox(height: 12),
+                    _checkResultList(context, _checkResult!),
                   ],
                   const SizedBox(height: 16),
                   if (_overview?.meeting == null) ...[

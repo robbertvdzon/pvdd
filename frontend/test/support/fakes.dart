@@ -312,9 +312,21 @@ class FakeDashboardGateway implements DashboardGateway {
     return adviceVersionsByItem[itemId] ?? const <AdviceVersion>[];
   }
 
+  /// Het antwoord van `checkNow`; standaard 'UNCHANGED' zonder lijst.
+  MeetingCheckOutcome? checkNowOutcome;
+
+  /// Fouten die opeenvolgende `checkNow`-aanroepen gooien (eerste aanroep eerst); daarna slaagt
+  /// de aanroep weer met [checkNowOutcome].
+  final List<Object> checkNowFailures = <Object>[];
+
   @override
   Future<MeetingCheckOutcome> checkNow() async {
     calls.add('checkNow');
+    final failure = checkNowFailures.isEmpty
+        ? null
+        : checkNowFailures.removeAt(0);
+    if (failure != null) throw failure;
+    if (checkNowOutcome != null) return checkNowOutcome!;
     return const MeetingCheckOutcome(
       status: 'UNCHANGED',
       revisionNumber: 2,
