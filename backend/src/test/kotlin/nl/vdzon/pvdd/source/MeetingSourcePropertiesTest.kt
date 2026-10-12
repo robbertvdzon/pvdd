@@ -1,7 +1,11 @@
 package nl.vdzon.pvdd.source
 
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
 
 class MeetingSourcePropertiesTest {
@@ -32,6 +36,27 @@ class MeetingSourcePropertiesTest {
     fun `unknown environments fail closed`() {
         assertFailsWith<IllegalStateException> {
             MeetingSourceProperties(URI("http://localhost:18091"), "typo").validateEnvironmentBoundary()
+        }
+    }
+
+    @Test
+    fun `the backend and the production deployment know no scenario route and no mock`() {
+        val sources = Files.walk(Path.of("src", "main")).use { it.filter(Files::isRegularFile).toList() }
+        assertTrue(sources.isNotEmpty())
+        sources.forEach { assertTrue(!Files.readString(it).contains("api/scenarios"), "$it bevat de scenarioroute") }
+
+        val production = Path.of("..", "deploy", "overlays", "production")
+        val files = Files.list(production).use { it.filter { f -> f.toString().endsWith(".yaml") }.toList() }
+        assertTrue(files.isNotEmpty())
+        files.forEach { file ->
+            val text = Files.readString(file)
+            listOf("meeting-source-mock", "MOCKED", "api/scenarios").forEach {
+                assertEquals(false, text.contains(it), "$file bevat $it")
+            }
+        }
+        // Productie accepteert bovendien alleen de goedgekeurde bron, nooit de mockservice.
+        assertFailsWith<IllegalArgumentException> {
+            MeetingSourceProperties(URI("http://pvdd-meeting-source-mock:8080"), "production").validateEnvironmentBoundary()
         }
     }
 }
