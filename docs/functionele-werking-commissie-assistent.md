@@ -392,6 +392,16 @@ runs en start niets opnieuw; lopende runs en bestaande adviezen blijven ongewijz
 niet mee in de bronfingerprint. Per run wordt het gebruikte model vastgelegd
 (`analysis_run.execution_model`), zodat kwaliteit en kosten per model te vergelijken zijn.
 
+Horen er binnen tien dagen na de eerstvolgende vergadering nog één of twee andere vergaderingen
+bij (maximaal drie in totaal, alleen vergaderingen die de applicatie al heeft opgeslagen), dan staat
+boven de agenda een groen kader “Deze vergaderingen horen bij elkaar”. Daarin staat een tegel per
+vergadering met datum, plaats en een korte status. De eerstvolgende vergadering is geopend; klik
+je op een andere tegel, dan zie je de agenda en adviezen van die vergadering, met eigen datum,
+agendapunten en stukken, en is die tegel gemarkeerd. Op een computer staan de tegels naast elkaar,
+op een telefoon onder elkaar. Is er maar één vergadering in dat venster, dan ziet de agenda er uit
+zoals altijd, zonder kader. Alle adviezen houden het label “AI-concept — controleer bronnen en
+formulering vóór gebruik”.
+
 Zolang er een toekomstige vergadering bekend is, toont **Agenda** die en verandert er niets aan
 het scherm. Is er geen toekomstige vergadering meer, dan toont **Agenda** de meest recente
 vergadering die al is geweest — niet de oudste. Boven de vergaderkaart staat dan “Er is nog geen

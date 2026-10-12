@@ -118,6 +118,16 @@ alleen-lezen vlag als het archiefscherm; “Nu controleren” blijft beschikbaar
 blijft lopen. Bij `past = false` en bij `NO_MEETING` verandert de startweergave niet. Geen
 migratie, geen nieuwe route, geen extra AI-aanroep.
 
+`GET /api/meetings/next` levert ook de additieve lijst `series`: de eerstvolgende opgeslagen
+vergadering (`starts_at > nu`) plus vergaderingen met een kalenderdatum (Europe/Amsterdam) tot en met
+tien dagen na die van de eerste, maximaal drie, elk met `id`, `startsAt`, `place` en `status`. Zonder
+toekomstige vergadering is de lijst leeg. Bij twee of meer items toont de agenda boven de agenda het
+groene kader “Deze vergaderingen horen bij elkaar” met een tegel per vergadering (eerstvolgende
+standaard geopend, klik laadt die vergadering via de bestaande routes met vergaderingsid, gekozen
+tegel gemarkeerd); bij één item en bij een ontbrekend veld blijft het scherm ongewijzigd. Tegels
+staan naast elkaar op een breed en onder elkaar op een smal scherm. Vaste constanten, geen nieuwe
+route, migratie of AI-aanroep; `ProductionReadAccessFilter` is ongewijzigd.
+
 `GET /api/meetings/{id}` leest één bekende vergadering met hetzelfde antwoordmodel als
 `/api/meetings/next`: een geldige maar onbekende ID geeft `404`, een niet-UUID `400`. Beide routes
 leveren `past`, server-side berekend als `starts_at < CURRENT_TIMESTAMP` op databasetijd; bij
