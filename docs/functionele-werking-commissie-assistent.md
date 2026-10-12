@@ -86,6 +86,14 @@ inhoudelijk en worden niet door AI geanalyseerd.
 De agenda wordt iedere dag om **05:00 uur** gecontroleerd. De knop **Nu controleren** voert
 dezelfde controle direct uit. Twee gelijktijdige controles worden voorkomen met een lock.
 
+Na **Nu controleren** toont de app per gecontroleerde vergadering datum, plaats, uitkomst en het
+aantal nieuwe analyses: op een computer als tabel, op een telefoon als blok per vergadering. De
+uitkomst is “Niets gewijzigd”, “Nieuwe stukken ingelezen”, “Agenda nog niet gepubliceerd” (er is
+niets opgeslagen en de app kijkt bij de volgende controle opnieuw) of “Mislukt” (rood, met de
+oorzaak bij alleen die vergadering; de andere vergaderingen blijven bruikbaar). Mislukt de hele
+controle, dan staat er een melding met **Opnieuw proberen** en blijven de eerder geladen agenda en
+adviezen zichtbaar. Na een geslaagde controle wordt het scherm ververst.
+
 Een ongewijzigde controle maakt geen nieuwe AI-run. Een tijdelijke bronfout verwijdert het laatst
 geldige resultaat niet.
 

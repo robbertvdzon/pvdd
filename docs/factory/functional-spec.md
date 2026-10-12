@@ -14,7 +14,11 @@ orkestratie draait dagelijks om 05:00 uur in `Europe/Amsterdam` en via **Nu cont
 toekomstige vergadering, bij hetzelfde reeds succesvol verwerkte bron-ID én dezelfde canonieke
 inhoud, of bij een ongepubliceerde agenda zonder zichtbare verwerkbare stukken ontstaan geen
 documentdownloads en geen AI-jobs. Zichtbare voorlopige stukken worden direct gedownload en
-geanalyseerd; het voorlopige advies wordt bij een nieuwe bronversie gericht vervangen.
+geanalyseerd; het voorlopige advies wordt bij een nieuwe bronversie gericht vervangen. De frontend
+toont het antwoord van `check-now` per vergadering (lijst `meetings`: tabel vanaf 720 px, anders
+blokken; uitkomsten niets gewijzigd, nieuwe stukken, agenda niet gepubliceerd, mislukt), valt bij
+ontbrekende lijst terug op het enkelvoudige `status`, en toont bij een mislukte hele controle een
+melding met **Opnieuw proberen**; 409 `ALREADY_RUNNING` behoudt de bestaande melding.
 
 ## Vergadering en agenda
 
