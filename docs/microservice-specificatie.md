@@ -141,8 +141,28 @@ nooit meer dan drie agenda's worden opgehaald. De grenzen zijn vaste constanten,
 Een extra vergadering met een niet-gepubliceerde agenda levert `AgendaUnpublished` en er wordt niets
 opgeslagen; een fout bij de agenda van één extra vergadering is een `SourceFailure` voor alleen die
 vergadering, een fout op de jaarpagina's een enkele `SourceFailure` voor de hele controle. Zonder
-toekomstige vergadering bevat de lijst één `NoFutureMeeting`. De workflow gebruikt voorlopig alleen
-het eerste element, dus het gedrag van de dagelijkse controle en van `check-now` is ongewijzigd.
+toekomstige vergadering bevat de lijst één `NoFutureMeeting`.
+
+Sinds story hkh-313 verwerkt `MeetingCheckWorkflow.check()` alle elementen van die lijst, onder één
+workflow-lock per controle (een tweede gelijktijdige `check-now` geeft nog steeds HTTP 409). Elke
+vergadering wordt in een eigen transactie (`PROPAGATION_REQUIRES_NEW`) verwerkt met dezelfde
+behandeling als voorheen: agenda inlezen, stukken ophalen, wijzigingen herkennen via fingerprints en
+revisies en uitsluitend voor nieuwe of gewijzigde, verwerkbare stukken een conceptanalyse inplannen.
+Een fout bij één vergadering draait alleen die transactie terug (inclusief de bijbehorende
+analyse-jobs), laat reeds vastgelegde vergaderingen staan en stopt de volgende niet. Een extra
+vergadering met `AgendaUnpublished` wordt niet opgeslagen en krijgt geen analyse; de eerstvolgende
+vergadering behoudt het bestaande PREVIEW-gedrag. Een lijst met precies één `SourceFailure` is een
+mislukte hele controle met het bestaande foutgedrag; een `SourceFailure` binnen een langere lijst
+wordt `FAILED` voor alleen die vergadering.
+
+`MeetingCheckResult` heeft naast de bestaande velden (ongewijzigd, gevuld vanuit het eerste element)
+een lijst `meetings` in de volgorde van de zoeklaag. Per element: `meetingId` (null als niet
+opgeslagen), `meetingSourceId`, `title`, `startsAt`, `location`, `outcome` (`UNCHANGED`,
+`NEW_DOCUMENTS`, `AGENDA_UNPUBLISHED` of `FAILED`), `newAnalyses` en bij `FAILED` een korte,
+niet-technische `errorDescription` (geen stacktrace, SQL, URL's of klassennamen). Een mislukte
+vergadering wordt alleen in het antwoord vastgelegd, niet in de database. Een gedeeltelijk
+mislukte controle geeft HTTP 200. Schema, tijdstip en knop zijn ongewijzigd en roepen dezelfde
+workflow aan; er is geen migratie, configuratie of nieuwe route.
 
 Wanneer er geen toekomstige vergadering is, toont de app dat expliciet. Wanneer iBabs tijdelijk
 niet beschikbaar is, blijft de laatst succesvol geïmporteerde analyse zichtbaar met een duidelijke
