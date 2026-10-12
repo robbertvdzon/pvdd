@@ -24,9 +24,9 @@ class MeetingDiscoveryService(
     private val parser: AgendaParser,
     private val clock: Clock,
 ) : MeetingDiscoveryGateway {
-    fun discover(): DiscoveryOutcome = discover(clock.instant())
+    fun discover(): List<DiscoveryOutcome> = discover(clock.instant())
 
-    override fun discover(now: Instant): DiscoveryOutcome {
+    override fun discover(now: Instant): List<DiscoveryOutcome> {
         return try {
             val today = LocalDate.ofInstant(now, AMSTERDAM)
             val candidates = (today.year..today.year + 1)
@@ -35,19 +35,41 @@ class MeetingDiscoveryService(
                 .distinctBy { it.url }
                 .sortedBy { it.date }
 
-            for (candidate in candidates) {
+            for ((index, candidate) in candidates.withIndex()) {
                 val agenda = fetchAgenda(candidate.url, enrichReports = false)
                 if (agenda.startsAt <= now) continue
-                val meeting = DiscoveredMeeting(agenda.sourceId, agenda.startsAt, agenda.sourceUrl)
-                return if (agenda.published) DiscoveryOutcome.Found(meeting) else DiscoveryOutcome.AgendaUnpublished(meeting)
+                val first = outcomeFor(agenda)
+                val windowEnd = LocalDate.ofInstant(agenda.startsAt, AMSTERDAM).plusDays(WINDOW_DAYS)
+                // Kalenderdatum uit de jaarpagina; afkappen vóór het ophalen van de agenda's.
+                val extras = candidates.drop(index + 1)
+                    .filter { !it.date.isAfter(windowEnd) }
+                    .take(MAX_MEETINGS - 1)
+                return listOf(first) + extras.mapNotNull { extra -> extraOutcome(extra, now, windowEnd) }
             }
-            DiscoveryOutcome.NoFutureMeeting
+            listOf(DiscoveryOutcome.NoFutureMeeting)
+        } catch (failure: SourceTransportException) {
+            listOf(DiscoveryOutcome.SourceFailure(failure.code.toErrorCode()))
+        } catch (failure: AgendaParseException) {
+            listOf(DiscoveryOutcome.SourceFailure(failure.code))
+        }
+    }
+
+    private fun outcomeFor(agenda: ParsedMeetingAgenda): DiscoveryOutcome {
+        val meeting = DiscoveredMeeting(agenda.sourceId, agenda.startsAt, agenda.sourceUrl)
+        return if (agenda.published) DiscoveryOutcome.Found(meeting) else DiscoveryOutcome.AgendaUnpublished(meeting)
+    }
+
+    /** Uitkomst voor een extra kandidaat; een fout blijft beperkt tot die kandidaat. Schrijft nooit iets weg. */
+    private fun extraOutcome(candidate: MeetingCandidate, now: Instant, windowEnd: LocalDate): DiscoveryOutcome? =
+        try {
+            val agenda = fetchAgenda(candidate.url, enrichReports = false)
+            val inWindow = !LocalDate.ofInstant(agenda.startsAt, AMSTERDAM).isAfter(windowEnd)
+            if (agenda.startsAt > now && inWindow) outcomeFor(agenda) else null
         } catch (failure: SourceTransportException) {
             DiscoveryOutcome.SourceFailure(failure.code.toErrorCode())
         } catch (failure: AgendaParseException) {
             DiscoveryOutcome.SourceFailure(failure.code)
         }
-    }
 
     override fun fetchAgenda(sourceUrl: URI, enrichReports: Boolean): ParsedMeetingAgenda {
         val agenda = parser.parse(source.fetch(sourceUrl).body, sourceUrl)
@@ -110,6 +132,8 @@ class MeetingDiscoveryService(
 
     companion object {
         private val AMSTERDAM = ZoneId.of("Europe/Amsterdam")
+        private const val WINDOW_DAYS = 10L
+        private const val MAX_MEETINGS = 3
         private val DUTCH = Locale.forLanguageTag("nl-NL")
         private val DATE_FORMAT = DateTimeFormatter.ofPattern("EEEE d MMMM uuuu", DUTCH)
         private val DATE_PATTERN = Regex("(?:maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag) \\d{1,2} [a-z]+ \\d{4}")
@@ -119,6 +143,6 @@ class MeetingDiscoveryService(
 }
 
 interface MeetingDiscoveryGateway {
-    fun discover(now: Instant): DiscoveryOutcome
+    fun discover(now: Instant): List<DiscoveryOutcome>
     fun fetchAgenda(sourceUrl: URI, enrichReports: Boolean = true): ParsedMeetingAgenda
 }

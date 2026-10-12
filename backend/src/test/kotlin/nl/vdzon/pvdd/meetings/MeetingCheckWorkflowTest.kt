@@ -245,9 +245,9 @@ class MeetingCheckWorkflowTest {
         var fetchCount = 0
         var discoverCalled = false
 
-        override fun discover(now: Instant): DiscoveryOutcome {
+        override fun discover(now: Instant): List<DiscoveryOutcome> {
             discoverCalled = true
-            return outcome
+            return listOf(outcome)
         }
 
         override fun fetchAgenda(sourceUrl: URI, enrichReports: Boolean): ParsedMeetingAgenda {
