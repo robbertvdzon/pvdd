@@ -27,3 +27,22 @@ per-vergadering-workflow met `MeetingCheckResult.meetings`, leesmodel `series`
   `markSuccessful`, zoals de orchestrator doet.
 - De scenarioroute staat in de Python-mock (er is geen andere mock); `MOCK_SCENARIO_ROUTES=disabled`
   schakelt haar uit.
+
+## hkh-345 — documentation (2026-10-12)
+
+### Doel
+Controleren of de documentatie klopt met de volledige storydiff (scenariomock, route, tests).
+
+### Bijgewerkt
+- Geen inhoudelijke wijzigingen nodig: `docs/technical-integrations.md` (sectie
+  'Meerdere-vergaderingenscenario's') en de verwijzing in `README.md` beschrijven de route
+  `/api/scenarios`, de zes scenario's, de reset, de documentwijziging en de tests al correct.
+- Deze sectie in de worklog toegevoegd.
+
+### Bewust niet gewijzigd
+- `docs/microservice-specificatie.md` en `docs/factory/*`: geen productiegedrag, beleid of limieten
+  gewijzigd; alleen mock en testcode.
+- `docs/stappenplannen/*`: uitvoeringsplannen, geen beschrijving van huidig gedrag.
+
+### Verificatie
+- `bash tools/verify-documentation.sh` uitgevoerd; alleen `docs/` is geraakt.
