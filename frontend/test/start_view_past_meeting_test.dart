@@ -109,24 +109,27 @@ void main() {
     expect(gateway.startingCalls, isEmpty);
   });
 
-  testWidgets('the notice steps through to the earlier meetings in one action', (
-    tester,
-  ) async {
-    final gateway = pastMeetingGateway();
-    final navigated = <String>[];
-    await pumpStartView(tester, gateway, navigated: navigated);
+  testWidgets(
+    'the notice steps through to the earlier meetings in one action',
+    (tester) async {
+      final gateway = pastMeetingGateway();
+      final navigated = <String>[];
+      await pumpStartView(tester, gateway, navigated: navigated);
 
-    expect(find.text(stepToArchive), findsOneWidget);
-    await tester.tap(find.text(stepToArchive));
-    await tester.pumpAndSettle();
+      expect(find.text(stepToArchive), findsOneWidget);
+      await tester.tap(find.text(stepToArchive));
+      await tester.pumpAndSettle();
 
-    expect(navigated, ['/archief']);
-    expect(
-      find.text('Vergaderingen die al zijn geweest, de meest recente bovenaan.'),
-      findsOneWidget,
-    );
-    expect(gateway.calls, contains('pastMeetings:first'));
-  });
+      expect(navigated, ['/archief']);
+      expect(
+        find.text(
+          'Vergaderingen die al zijn geweest, de meest recente bovenaan.',
+        ),
+        findsOneWidget,
+      );
+      expect(gateway.calls, contains('pastMeetings:first'));
+    },
+  );
 
   testWidgets('an upcoming meeting leaves the start view unchanged', (
     tester,
@@ -151,18 +154,20 @@ void main() {
     expect(find.text('Opnieuw proberen'), findsOneWidget);
   });
 
-  testWidgets('without any meeting the existing empty notice stays alone', (
-    tester,
-  ) async {
-    final gateway = FakeDashboardGateway();
-    await pumpStartView(tester, gateway, navigated: []);
+  testWidgets(
+    'without any meeting the empty notice offers the step to the archive',
+    (tester) async {
+      final gateway = FakeDashboardGateway();
+      await pumpStartView(tester, gateway, navigated: []);
 
-    expect(find.text(emptyNotice), findsOneWidget);
-    expect(find.text(noticeHeading), findsNothing);
-    expect(find.text(stepToArchive), findsNothing);
-    expect(find.text('AL GEWEEST'), findsNothing);
-    expect(find.text('Nu controleren'), findsOneWidget);
-  });
+      expect(find.text(emptyNotice), findsOneWidget);
+      expect(find.text(noticeHeading), findsNothing);
+      // Hergebruik van de bestaande doorstap: precies één knop, geen tweede.
+      expect(find.text(stepToArchive), findsOneWidget);
+      expect(find.text('AL GEWEEST'), findsNothing);
+      expect(find.text('Nu controleren'), findsOneWidget);
+    },
+  );
 
   for (final size in const [Size(360, 1400), Size(1400, 1200)]) {
     testWidgets('stays usable and complete at ${size.width.toInt()} pixels', (

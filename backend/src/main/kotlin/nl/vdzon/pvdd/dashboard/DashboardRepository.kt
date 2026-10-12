@@ -14,7 +14,13 @@ data class MeetingOverviewDto(
     val meeting: MeetingDto?,
     val lastCheckedAt: Instant?,
     val progress: ProgressDto,
+    // Additief leesmodel: de eerstvolgende vergadering plus de vergaderingen die er binnen het
+    // tiendagenvenster bij horen. Leeg zonder toekomstige vergadering en bij `/meetings/{id}`.
+    val series: List<SeriesMeetingDto> = emptyList(),
 )
+
+/** Eén vergadering uit [MeetingOverviewDto.series]; [status] is een bestaande statuscode. */
+data class SeriesMeetingDto(val id: UUID, val startsAt: Instant, val place: String?, val status: String)
 
 data class MeetingDto(
     val id: UUID,
@@ -158,8 +164,34 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             LIMIT 1
             """.trimIndent(),
             { rs, _ -> meetingRow(rs) },
-        ).singleOrNull() ?: return MeetingOverviewDto("NO_MEETING", null, null, ProgressDto(0, 0, 0))
-        return overviewOf(meeting)
+        ).singleOrNull() ?: return MeetingOverviewDto("NO_MEETING", null, null, ProgressDto(0, 0, 0), series(Instant.now()))
+        return overviewOf(meeting).copy(series = series(Instant.now()))
+    }
+
+    /**
+     * De vergaderingen die bij elkaar horen: de eerstvolgende opgeslagen vergadering met
+     * `startsAt > now` plus de daaropvolgende met kalenderdatum (Europe/Amsterdam) uiterlijk
+     * [SERIES_WINDOW_DAYS] dagen na die van de eerste, maximaal [SERIES_MAX_MEETINGS]. Omdat de lijst
+     * op `startsAt` is geordend, zijn de eerste drie toekomstige rijen genoeg om uit te filteren.
+     */
+    fun series(now: Instant): List<SeriesMeetingDto> {
+        val upcoming = jdbc.query(
+            """
+            SELECT id, starts_at, location, status, publication_status
+            FROM meeting WHERE starts_at > ?
+            ORDER BY starts_at ASC, id ASC
+            LIMIT $SERIES_MAX_MEETINGS
+            """.trimIndent(),
+            { rs, _ ->
+                SeriesMeetingDto(
+                    rs.getObject("id", UUID::class.java), rs.getTimestamp("starts_at").toInstant(),
+                    rs.getString("location"),
+                    seriesStatus(rs.getString("status"), rs.getString("publication_status")),
+                )
+            },
+            java.sql.Timestamp.from(now),
+        )
+        return withinSeriesWindow(upcoming)
     }
 
     // Dezelfde SELECT en hetzelfde antwoordmodel als `overview()`, maar voor één bekende
@@ -174,6 +206,15 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             id,
         ).singleOrNull() ?: return null
         return overviewOf(meeting)
+    }
+
+    private fun seriesStatus(status: String, publicationStatus: String) =
+        if (publicationStatus == "PREVIEW" && status != "AGENDA_UNPUBLISHED") "PREVIEW" else status
+
+    private fun withinSeriesWindow(upcoming: List<SeriesMeetingDto>): List<SeriesMeetingDto> {
+        val first = upcoming.firstOrNull() ?: return emptyList()
+        val last = first.startsAt.atZone(SERIES_ZONE).toLocalDate().plusDays(SERIES_WINDOW_DAYS)
+        return upcoming.filter { !it.startsAt.atZone(SERIES_ZONE).toLocalDate().isAfter(last) }
     }
 
     private fun overviewOf(meeting: Pair<MeetingDto, Instant>) =
@@ -535,6 +576,10 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
 
         // Gedeeld tussen `overview()` en `meeting(id)`: beide leveren exact hetzelfde antwoordmodel
         // en dus ook hetzelfde `past`-veld, berekend op databasetijd.
+        private const val SERIES_WINDOW_DAYS = 10L
+        private const val SERIES_MAX_MEETINGS = 3
+        private val SERIES_ZONE = java.time.ZoneId.of("Europe/Amsterdam")
+
         private val MEETING_SELECT = """
             SELECT m.id, m.source_id, m.title, m.committee, m.starts_at, m.ends_at, m.location,
                    m.source_url, m.status, m.checked_at, m.publication_status,

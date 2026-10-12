@@ -909,6 +909,94 @@ class DatabaseIntegrationTest(
     }
 
     @Test
+    fun `the series holds the next meeting and those up to ten calendar days later, at most three`() = inRolledBackTransaction {
+        parkExistingMeetings(Instant.now().plusSeconds(315_360_000))
+        val now = amsterdam(2026, 10, 18, 0, 0)
+        val first = seedMeetingWithAgendaItem(amsterdam(2026, 10, 19, 12, 0))
+        val second = seedMeetingWithAgendaItem(amsterdam(2026, 10, 22, 12, 0))
+        val third = seedMeetingWithAgendaItem(amsterdam(2026, 10, 27, 12, 0))
+        seedMeetingWithAgendaItem(amsterdam(2026, 10, 28, 12, 0))
+
+        val series = dashboardRepository.series(now)
+
+        // Vier vergaderingen vallen in het venster; alleen de eerste drie, op datum.
+        assertEquals(listOf(first.meetingId, second.meetingId, third.meetingId), series.map { it.id })
+        assertEquals(amsterdam(2026, 10, 19, 12, 0), series.first().startsAt)
+        assertEquals(
+            jdbc.queryForObject("SELECT location FROM meeting WHERE id = ?", String::class.java, first.meetingId),
+            series.first().place,
+        )
+        assertTrue(series.all { it.status.isNotBlank() })
+    }
+
+    @Test
+    fun `calendar day ten is inside the window and day eleven is outside, across the end of summer time`() = inRolledBackTransaction {
+        parkExistingMeetings(Instant.now().plusSeconds(315_360_000))
+        val now = amsterdam(2026, 10, 18, 0, 0)
+        // 25 oktober 2026 is de overgang naar wintertijd. Dag 10 is 29 oktober (tot 23:59 lokaal,
+        // dat is 22:59Z); 30 oktober 00:30 lokaal is nog 29 oktober in UTC en moet toch buiten vallen.
+        val first = seedMeetingWithAgendaItem(amsterdam(2026, 10, 19, 12, 0))
+        val dayTen = seedMeetingWithAgendaItem(amsterdam(2026, 10, 29, 23, 30))
+        val dayEleven = seedMeetingWithAgendaItem(amsterdam(2026, 10, 30, 0, 30))
+
+        val ids = dashboardRepository.series(now).map { it.id }
+
+        assertEquals(listOf(first.meetingId, dayTen.meetingId), ids)
+        assertFalse(ids.contains(dayEleven.meetingId))
+    }
+
+    @Test
+    fun `meetings with the same start time are ordered by id`() = inRolledBackTransaction {
+        parkExistingMeetings(Instant.now().plusSeconds(315_360_000))
+        val at = amsterdam(2026, 10, 20, 10, 0)
+        val ids = listOf(
+            seedMeetingWithAgendaItem(at).meetingId,
+            seedMeetingWithAgendaItem(at).meetingId,
+            seedMeetingWithAgendaItem(at).meetingId,
+        ).sortedBy { it.toString() }
+
+        assertEquals(ids, dashboardRepository.series(amsterdam(2026, 10, 18, 0, 0)).map { it.id })
+    }
+
+    @Test
+    fun `the series is empty without upcoming meetings and never contains past ones`() = inRolledBackTransaction {
+        parkExistingMeetings(Instant.now().minusSeconds(315_360_000))
+        val now = amsterdam(2026, 10, 18, 0, 0)
+        seedMeetingWithAgendaItem(amsterdam(2026, 10, 10, 12, 0))
+        assertEquals(emptyList<Any>(), dashboardRepository.series(now))
+
+        val next = seedMeetingWithAgendaItem(amsterdam(2026, 10, 20, 12, 0))
+        assertEquals(listOf(next.meetingId), dashboardRepository.series(now).map { it.id })
+    }
+
+    @Test
+    fun `a meeting that starts exactly at the reference time is not part of the series`() = inRolledBackTransaction {
+        parkExistingMeetings(Instant.now().minusSeconds(315_360_000))
+        val now = amsterdam(2026, 10, 18, 12, 0)
+        seedMeetingWithAgendaItem(now)
+        val next = seedMeetingWithAgendaItem(amsterdam(2026, 10, 19, 12, 0))
+
+        assertEquals(listOf(next.meetingId), dashboardRepository.series(now).map { it.id })
+    }
+
+    @Test
+    fun `the series is additive and leaves the existing overview fields unchanged`() = inRolledBackTransaction {
+        parkExistingMeetings(Instant.now().plusSeconds(315_360_000))
+        val soon = seedMeetingWithAdvice(Instant.now().plusSeconds(86_400))
+
+        val overview = dashboardRepository.overview()
+        val byId = requireNotNull(dashboardRepository.meeting(soon.meetingId))
+
+        assertEquals(soon.meetingId, overview.series.first().id)
+        assertEquals(byId.copy(series = overview.series), overview)
+        assertEquals(emptyList<Any>(), byId.series)
+        assertEquals(ProgressDto(1, 1, 0), overview.progress)
+    }
+
+    private fun amsterdam(year: Int, month: Int, day: Int, hour: Int, minute: Int): Instant =
+        java.time.ZonedDateTime.of(year, month, day, hour, minute, 0, 0, java.time.ZoneId.of("Europe/Amsterdam")).toInstant()
+
+    @Test
     fun `check now keeps importing while the last known meeting already took place`() {
         val startedAt = Instant.now().minusSeconds(7200)
         val pastId = meetingRepository.upsert(pastMeeting(startedAt))

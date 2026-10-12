@@ -49,14 +49,15 @@ class HttpDashboardGateway implements DashboardGateway {
       );
 
   @override
-  Future<PastMeetingPage> pastMeetings({String? cursor}) async =>
-      PastMeetingPage.fromJson(
-        await _get(
-              '/api/meetings?state=past&limit=$pastMeetingPageSize'
-              '${cursor == null ? '' : '&cursor=${Uri.encodeQueryComponent(cursor)}'}',
-            )
-            as Map<String, dynamic>,
-      );
+  Future<PastMeetingPage> pastMeetings({
+    String? cursor,
+  }) async => PastMeetingPage.fromJson(
+    await _get(
+          '/api/meetings?state=past&limit=$pastMeetingPageSize'
+          '${cursor == null ? '' : '&cursor=${Uri.encodeQueryComponent(cursor)}'}',
+        )
+        as Map<String, dynamic>,
+  );
 
   @override
   Future<List<AgendaItemSummary>> agendaItems(String meetingId) async {
@@ -76,7 +77,9 @@ class HttpDashboardGateway implements DashboardGateway {
         await _get('/api/agenda-items/$itemId/advice-versions')
             as Map<String, dynamic>;
     return (value['versions'] as List<dynamic>)
-        .map((version) => AdviceVersion.fromJson(version as Map<String, dynamic>))
+        .map(
+          (version) => AdviceVersion.fromJson(version as Map<String, dynamic>),
+        )
         .toList(growable: false);
   }
 
@@ -142,22 +145,49 @@ class MeetingOverview {
     required this.meeting,
     required this.lastCheckedAt,
     required this.progress,
+    this.series = const [],
   });
-  factory MeetingOverview.fromJson(Map<String, dynamic> json) =>
-      MeetingOverview(
-        status: json['status'] as String,
-        meeting: json['meeting'] == null
-            ? null
-            : MeetingInfo.fromJson(json['meeting'] as Map<String, dynamic>),
-        lastCheckedAt: DateTime.tryParse(
-          json['lastCheckedAt'] as String? ?? '',
-        ),
-        progress: Progress.fromJson(json['progress'] as Map<String, dynamic>),
-      );
+  factory MeetingOverview.fromJson(
+    Map<String, dynamic> json,
+  ) => MeetingOverview(
+    status: json['status'] as String,
+    meeting: json['meeting'] == null
+        ? null
+        : MeetingInfo.fromJson(json['meeting'] as Map<String, dynamic>),
+    lastCheckedAt: DateTime.tryParse(json['lastCheckedAt'] as String? ?? ''),
+    progress: Progress.fromJson(json['progress'] as Map<String, dynamic>),
+    // Ontbrekend veld (oudere backend tijdens de uitrol) telt als een lege reeks.
+    series: ((json['series'] as List<dynamic>?) ?? const [])
+        .map((e) => SeriesMeeting.fromJson(e as Map<String, dynamic>))
+        .toList(growable: false),
+  );
   final String status;
   final MeetingInfo? meeting;
   final DateTime? lastCheckedAt;
   final Progress progress;
+
+  /// De vergaderingen die bij elkaar horen, de eerstvolgende vooraan. Leeg als er geen is.
+  final List<SeriesMeeting> series;
+}
+
+/// Eén vergadering uit het reeks-overzicht: genoeg voor een tegel; de rest laadt via de meeting-id.
+class SeriesMeeting {
+  const SeriesMeeting({
+    required this.id,
+    required this.startsAt,
+    required this.place,
+    required this.status,
+  });
+  factory SeriesMeeting.fromJson(Map<String, dynamic> json) => SeriesMeeting(
+    id: json['id'] as String,
+    startsAt: DateTime.parse(json['startsAt'] as String),
+    place: json['place'] as String?,
+    status: json['status'] as String,
+  );
+  final String id;
+  final DateTime startsAt;
+  final String? place;
+  final String status;
 }
 
 class MeetingInfo {
@@ -213,13 +243,14 @@ class PastMeetingPage {
     required this.nextCursor,
     required this.total,
   });
-  factory PastMeetingPage.fromJson(Map<String, dynamic> json) => PastMeetingPage(
-    items: (json['items'] as List<dynamic>)
-        .map((value) => PastMeeting.fromJson(value as Map<String, dynamic>))
-        .toList(growable: false),
-    nextCursor: json['nextCursor'] as String?,
-    total: json['total'] as int,
-  );
+  factory PastMeetingPage.fromJson(Map<String, dynamic> json) =>
+      PastMeetingPage(
+        items: (json['items'] as List<dynamic>)
+            .map((value) => PastMeeting.fromJson(value as Map<String, dynamic>))
+            .toList(growable: false),
+        nextCursor: json['nextCursor'] as String?,
+        total: json['total'] as int,
+      );
   final List<PastMeeting> items;
   final String? nextCursor;
   final int total;
