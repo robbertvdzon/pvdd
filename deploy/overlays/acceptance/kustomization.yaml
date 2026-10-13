@@ -10,13 +10,13 @@ resources:
 - sealed-secret-ai-access.yaml
 - sealed-central-postgres.yaml
 images:
-- digest: sha256:166656b8f5ecc2baa14cbcc54656cb8a5ec0402214e5cec49d4218f3214938ae
+- digest: sha256:f320903a89b1a1e0fe4f43ed7070d4d354f28f4887d0445a290d37395fccad43
   name: ghcr.io/robbertvdzon/pvdd-backend
   newName: ghcr.io/robbertvdzon/pvdd-backend
-- digest: sha256:5a71fc79cb3ddf679692e0f7f31df652b4f2d2f0dcf64e3a7ca4bdf39df803f2
+- digest: sha256:d97b6e36270782e3dfb4d05faada4e4ed737fffa2d63d6f4c1f35eecb3617904
   name: ghcr.io/robbertvdzon/pvdd-frontend
   newName: ghcr.io/robbertvdzon/pvdd-frontend
-- digest: sha256:74b99488b43d34b9aa739211b750a4c16300708b627dfc270e357be1df061b19
+- digest: sha256:48141d0b77706189bf1cad6e503690c6947876070dfab68c6dd35571b6dc4e79
   name: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
   newName: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
 patches:
