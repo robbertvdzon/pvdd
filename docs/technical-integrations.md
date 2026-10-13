@@ -1,7 +1,7 @@
 # Technische integraties
 
-Dit document beschrijft alleen de technische fase. Er is nog geen parser, vergaderingselectie of
-politieke analyse geïmplementeerd.
+Dit document beschrijft de Runtime-koppeling en de synthetische acceptatievoorzieningen van
+de Commissie-assistent. De parser, vergaderingselectie en analyseworkflow zijn geïmplementeerd.
 
 ## Agent Runtime
 
@@ -18,6 +18,16 @@ job aanmaken, status opvragen, resultaat ophalen en annuleren. Alle instellingen
 | `PVDD_AGENT_RUNTIME_CONNECT_TIMEOUT` | Korte connect-time-out, standaard één seconde |
 | `PVDD_AGENT_RUNTIME_REQUEST_TIMEOUT` | HTTP-time-out, standaard drie seconden |
 | `PVDD_AGENT_RUNTIME_UPLOAD_TIMEOUT` | Time-out per uploadrequest, standaard dertig seconden |
+| `PVDD_AGENT_RUNTIME_ACCEPTANCE_FIXTURES_ENABLED` | Registreert exacte Runtime-v2-testantwoorden vóór een job; uitsluitend acceptatie |
+| `PVDD_AGENT_RUNTIME_MOCK_CONTROL_TOKEN` | Aparte testcontrolcredential op de backend; nooit beschikbaar voor browsers of testerjobs |
+
+Met acceptatiefixtures ingeschakeld registreert de backend een deterministisch antwoord voor
+tenant `pvdd` en de exacte idempotentiesleutel op `/v2/test-control/mocks`. De normale
+consumertoken wordt voor uploads en jobs gebruikt; alleen de registratie gebruikt de aparte
+testcontrolcredential. De profielen komen uit de analysefase en categorie, niet uit instructies
+in brontekst. Productie weigert deze flag en credential bij het starten. Mocks worden niet globaal
+gewist. De handmatige helper `tools/prepare-acceptance-runtime-mocks.sh` gebruikt eveneens v2
+en vereist een specifieke jobsleutel; de oude v1-wachtrij van generieke antwoorden is vervallen.
 
 De prompt wordt altijd als `text/markdown` in door de Runtime bepaalde chunks geüpload. De jobbody
 bevat alleen de korte instructie, objectreferentie en het JSON-schema. Voor submit zoekt de client
@@ -31,15 +41,17 @@ stringveld `message` op bij de centrale Runtime-mock.
 
 ## Vergaderbronmock
 
-`meeting-source-mock` is een afzonderlijk non-root Nginx-image. Het levert alleen:
+`meeting-source-mock` is een afzonderlijk non-root Python-image. Het levert:
 
 - `/health/live` en `/health/ready`;
 - statische bestanden onder `/fixtures/`.
+- synthetische vergaderlijsten, agenda's en documenten;
+- de hieronder begrensde acceptatiescenario's.
 
 De backendguard koppelt de omgeving gesloten aan de bron-URL. Acceptance accepteert alleen de
 interne mockservice. Production accepteert uitsluitend
 `https://noordholland.bestuurlijkeinformatie.nl` en weigert HTTP, subdomeintrucs, paden en interne
-servicenamen. De functionele downloader en parser worden pas in fase 2 toegevoegd.
+servicenamen. De gewone downloader en parser verwerken de synthetische bron via dezelfde workflow.
 
 ### Meerdere-vergaderingenscenario's (alleen acceptatie)
 
@@ -63,8 +75,10 @@ de backend geen scenarioroute heeft geldt dus uitsluitend voor productie.
 | Methode en pad | Toegestaan |
 |---|---|
 | `GET /api/scenarios` | overzicht |
-| `POST` of `PUT /api/scenarios/<naam>` | naam uit `een-vergadering`, `twee-vergaderingen`, `meer-dan-drie`, `grens-dag-10-en-11`, `extra-agenda-niet-gepubliceerd`, `een-vergadering-mislukt`; een onbekende naam geeft de 400 `unknown_scenario` van de mock; er wordt geen body doorgestuurd |
+| `POST` of `PUT /api/scenarios/<naam>` | naam uit de scenariotabel hieronder; een onbekende naam geeft 400 `unknown_scenario`; er wordt geen body doorgestuurd |
 | `POST /api/scenarios/reset` | terug naar `een-vergadering` |
+| `POST /api/scenarios/reset-data` | gecontroleerde reset van uitsluitend synthetische vergadergegevens; actieve verwerking geeft 409 |
+| `POST /api/scenarios/scheduled-check` | roept de echte dagelijkse scheduler aan; dezelfde idempotentie- en snelheidsgrens als `check-now` |
 | `PUT /api/scenarios/documents/<documentId>` | documentId `[A-Za-z0-9._-]{1,100}`; optionele body `{"version": <geheel getal>}` van maximaal 1 KB, anders 400 |
 
 Authenticatie valt onder het gewone `/api/`-regime: zonder sessie 401. Inloggen en sessiecookie gaan zoals
@@ -100,6 +114,8 @@ toekomst; starttijd 18:30):
 | `extra-agenda-niet-gepubliceerd` | D, D+3 (voorlopig) | D+3 'Agenda nog niet gepubliceerd', niets opgeslagen |
 | `een-vergadering-mislukt` | D, D+2 (HTTP 500 op de agenda), D+4 | D en D+4 verwerkt, fout bij de tweede, HTTP 200 |
 | `een-vergadering` (standaard) | 31 december 2035 | de bestaande situatie, geen kader |
+| `geen-toekomstige-vergadering` | lege bronlijst | geen toekomstige vergadering; na schone reset uitleg met doorstap naar eerdere vergaderingen |
+| `gehele-broncontrole-mislukt` | HTTP 503 op de bronlijst | hele controle mislukt; bestaande agenda's en adviezen blijven bewaard |
 
 Het scenario is interne toestand van de mock: een herstart geeft weer `een-vergadering`. Elke selectie
 maakt nieuwe vergaderings-id's (`scn-<naam>-<volgnummer>-<n>`) en wist documentversies en
@@ -113,8 +129,11 @@ curl -X PUT http://pvdd-meeting-source-mock:8080/api/scenarios/documents/<id>-do
 curl -X POST http://pvdd-meeting-source-mock:8080/api/scenarios/reset
 ```
 
-Vergaderingen van een eerder scenario blijven in de acceptatiedatabase staan; ze verdwijnen niet door
-een reset.
+Vergaderingen van een eerder scenario blijven staan bij selectie en bij `/reset`. Gebruik
+`/reset-data` voor onafhankelijke scenario's, zodra lopende verwerking is afgelopen. Bij het
+testen van een gehele bronfout is juist behoud gewenst: importeer eerst een normaal scenario,
+kies daarna de bronfout zonder reset. De volledige uitvoering, het schedulerbewijs en de
+wachttijden om 429 te voorkomen staan in [het actuele acceptatierunbook](epic9-acceptance.md).
 
 Reproduceerbare tests:
 

@@ -15,6 +15,10 @@ deploy:   kustomize build deploy/overlays/acceptance
 Tests gebruiken mocks en fixtures. CI raadpleegt geen echte vergaderbron en voert geen echte AI uit.
 Secrets, gedownloade documenten, databases en buildoutput worden niet gecommit.
 
+De actuele werkwijze voor browserverificatie van meerdere vergaderingen staat in
+[Acceptatie van meerdere vergaderingen](../epic9-acceptance.md): synthetische scenario's,
+schone reset, afgeronde Runtime-v2-mocks, desktop/mobiel en schedulerbewijs.
+
 ## Databasetests
 
 `DatabaseIntegrationTest` draait tegen een echte PostgreSQL. Is Docker beschikbaar, zoals in CI, dan

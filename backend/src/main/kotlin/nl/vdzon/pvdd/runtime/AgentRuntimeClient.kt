@@ -46,6 +46,8 @@ data class RuntimeCreateRequest(
     val executionTimeoutSeconds: Int = 900,
     /** Leeg: de geconfigureerde standaarduitvoering. */
     val execution: RuntimeExecution? = null,
+    /** Backend-only fixture profile; never serialized into the application job or prompt. */
+    val acceptanceFixture: AcceptanceRuntimeFixture? = null,
 )
 
 interface AgentRuntimeGateway {
@@ -67,10 +69,14 @@ private data class RuntimeUpload(val uploadId: String, val objectId: String, val
 class AgentRuntimeClient(
     private val properties: AgentRuntimeProperties,
     private val mapper: ObjectMapper,
-    private val httpClient: HttpClient = HttpClient.newBuilder().connectTimeout(properties.connectTimeout).build(),
+    private val httpClient: HttpClient = HttpClient.newBuilder().connectTimeout(properties.connectTimeout)
+        .followRedirects(HttpClient.Redirect.NEVER).build(),
 ) : AgentRuntimeGateway {
     override fun create(request: RuntimeCreateRequest): RuntimeJob {
+        val execution = request.execution ?: RuntimeExecution(properties.vendorId, properties.model, properties.mode)
+        validateExecution(execution, request.acceptanceFixture)
         findByIdempotencyKey(request.idempotencyKey)?.let { return it }
+        if (request.acceptanceFixture != null) prepareAcceptanceFixture(request)?.let { return it }
 
         val promptBytes = request.prompt.toByteArray(StandardCharsets.UTF_8)
         val upload = reservePrompt(promptBytes)
@@ -81,8 +87,7 @@ class AgentRuntimeClient(
                 "idempotencyKey" to request.idempotencyKey,
                 "jobKind" to "APPLICATION_WORK",
                 "taskType" to "STRUCTURED_GENERATION",
-                "execution" to (request.execution ?: RuntimeExecution(properties.vendorId, properties.model, properties.mode))
-                    .let { mapOf("vendorId" to it.vendorId, "model" to it.model, "mode" to it.mode) },
+                "execution" to mapOf("vendorId" to execution.vendorId, "model" to execution.model, "mode" to execution.mode),
                 "input" to mapOf(
                     "instruction" to PROMPT_INSTRUCTION,
                     "objects" to listOf(mapOf("objectId" to upload.objectId, "name" to "prompt", "role" to "PROMPT")),
@@ -101,6 +106,52 @@ class AgentRuntimeClient(
             bestEffortDeleteUpload(upload.uploadId)
             existing ?: throw rejected
         }
+    }
+
+    private fun validateExecution(execution: RuntimeExecution, fixture: AcceptanceRuntimeFixture?) {
+        require(execution.mode in setOf("MOCK", "API", "SUBSCRIPTION")) { "Invalid Runtime execution mode." }
+        if (properties.environment.equals("production", true)) {
+            require(execution.mode != "MOCK" && execution.vendorId != "mock" && fixture == null &&
+                !properties.acceptanceFixturesEnabled && properties.mockControlToken.isBlank()) {
+                "Production cannot use mocked Runtime execution or fixture control."
+            }
+        }
+        if (properties.environment.equals("acceptance", true)) {
+            require(execution == RuntimeExecution("mock", "mock", "MOCK")) { "Acceptance must use mocked Runtime execution." }
+        }
+        if (fixture != null) require(properties.environment.equals("acceptance", true) &&
+            properties.acceptanceFixturesEnabled && properties.mockControlToken.isNotBlank() &&
+            execution == RuntimeExecution("mock", "mock", "MOCK")) { "Acceptance fixture control is not configured." }
+    }
+
+    private fun prepareAcceptanceFixture(request: RuntimeCreateRequest): RuntimeJob? {
+        require(request.idempotencyKey.isNotBlank() && request.idempotencyKey.length <= 160) { "Invalid fixture jobsleutel." }
+        val result = requireNotNull(request.acceptanceFixture).result(mapper)
+        val body = mapper.writeValueAsString(mapOf("tenantId" to "pvdd", "idempotencyKey" to request.idempotencyKey, "result" to result))
+        val httpRequest = HttpRequest.newBuilder(resolve("/v2/test-control/mocks"))
+            .timeout(properties.requestTimeout)
+            .header("Authorization", "Bearer ${properties.mockControlToken}")
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(body)).build()
+        // Administrative response bodies are never logged or surfaced to an application caller.
+        val status = send(httpRequest, HttpResponse.BodyHandlers.discarding()).statusCode()
+        if (status != 409) { requireSuccess(status); return null }
+        // A previous submit may have lost its response or another caller may have completed it.
+        findByIdempotencyKey(request.idempotencyKey)?.let { return it }
+        val lookup = HttpRequest.newBuilder(resolve("/v2/test-control/mocks"))
+            .timeout(properties.requestTimeout).header("Authorization", "Bearer ${properties.mockControlToken}").GET().build()
+        val response = send(lookup, HttpResponse.BodyHandlers.ofString())
+        requireSuccess(response.statusCode())
+        val existing = try {
+            mapper.readTree(response.body()).filter { it.path("tenantId").asText() == "pvdd" &&
+                it.path("idempotencyKey").asText() == request.idempotencyKey }.singleOrNull()
+        } catch (_: Exception) { throw AgentRuntimeInvalidResponseException() }
+        val errorCode = existing?.get("errorCode")
+        if (existing == null || existing.path("result") != result ||
+            (errorCode != null && !errorCode.isNull) || !existing.path("outputSequence").isEmpty) {
+            throw AgentRuntimeException("The existing acceptance fixture does not match this job.")
+        }
+        return null
     }
 
     override fun status(jobId: String): RuntimeJob = jsonExchange("GET", "/v2/jobs/${safeId(jobId)}", null, RuntimeJob::class.java)

@@ -6,6 +6,7 @@ import java.net.InetSocketAddress
 import java.net.URI
 import java.net.http.HttpClient
 import java.time.Duration
+import java.time.Clock
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -18,10 +19,20 @@ import nl.vdzon.pvdd.auth.GoogleIdentity
 import nl.vdzon.pvdd.auth.ProductionReadAccessFilter
 import nl.vdzon.pvdd.auth.UserSessionService
 import nl.vdzon.pvdd.source.MeetingSourceProperties
+import nl.vdzon.pvdd.meetings.AcceptanceResetResult
+import nl.vdzon.pvdd.meetings.AcceptanceScenarioResetService
+import nl.vdzon.pvdd.meetings.MeetingCheckResult
+import nl.vdzon.pvdd.meetings.MeetingCheckScheduler
+import nl.vdzon.pvdd.meetings.MeetingCheckStatus
+import nl.vdzon.pvdd.meetings.MeetingCheckWorkflow
+import nl.vdzon.pvdd.meetings.MutationGuard
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.times
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.context.annotation.Bean
@@ -45,6 +56,8 @@ class AcceptanceScenarioControllerTest {
     private var stubStatus = 200
     private var stubBody = """{"scenario":"een-vergadering"}"""
     private lateinit var baseUrl: URI
+    private lateinit var workflow: MeetingCheckWorkflow
+    private lateinit var resets: AcceptanceScenarioResetService
 
     @BeforeEach
     fun startStub() {
@@ -68,8 +81,13 @@ class AcceptanceScenarioControllerTest {
         ApplicationContextRunner()
             .withUserConfiguration(ScenarioOnly::class.java)
             .withPropertyValues("pvdd.environment=$environment", "test.url=$url")
-            .run { controllers = it.getBeansOfType(AcceptanceScenarioController::class.java).values.toList() }
-        if (environment == "acceptance") assertEquals(1, controllers.size) else assertEquals(0, controllers.size)
+            .run {
+                controllers = it.getBeansOfType(AcceptanceScenarioController::class.java).values.toList()
+                workflow = it.getBean(MeetingCheckWorkflow::class.java)
+                resets = it.getBean(AcceptanceScenarioResetService::class.java)
+                if (environment == "acceptance") controllers += MeetingCheckController(workflow, it.getBean(MutationGuard::class.java))
+            }
+        if (environment == "acceptance") assertEquals(2, controllers.size) else assertEquals(0, controllers.size)
         val config = AuthConfig("client", environment, mode)
         val authenticator = Authenticator(config) { GoogleIdentity("robbertvdzon@gmail.com", true) }
         val sessions = mock(UserSessionService::class.java)
@@ -89,6 +107,14 @@ class AcceptanceScenarioControllerTest {
         @Bean fun properties(@org.springframework.beans.factory.annotation.Value("\${test.url}") url: String) =
             MeetingSourceProperties(URI(url), "local", requestTimeout = Duration.ofSeconds(2))
         @Bean(destroyMethod = "") fun client(): HttpClient = HttpClient.newHttpClient()
+        @Bean fun resets(): AcceptanceScenarioResetService = mock(AcceptanceScenarioResetService::class.java).apply {
+            `when`(reset()).thenReturn(AcceptanceResetResult(deletedMeetings = 3, preservedMeetings = 1))
+        }
+        @Bean fun workflow(): MeetingCheckWorkflow = mock(MeetingCheckWorkflow::class.java).apply {
+            `when`(check()).thenReturn(MeetingCheckResult(MeetingCheckStatus.IMPORTED))
+        }
+        @Bean fun scheduler(workflow: MeetingCheckWorkflow) = MeetingCheckScheduler(workflow)
+        @Bean fun guard() = MutationGuard(Clock.systemUTC())
     }
 
     private fun MockHttpServletRequestBuilder.session(): MockHttpServletRequestBuilder =
@@ -100,6 +126,7 @@ class AcceptanceScenarioControllerTest {
     private val scenarios = listOf(
         "een-vergadering", "twee-vergaderingen", "meer-dan-drie",
         "grens-dag-10-en-11", "extra-agenda-niet-gepubliceerd", "een-vergadering-mislukt",
+        "geen-toekomstige-vergadering", "gehele-broncontrole-mislukt",
     )
 
     private fun assertForwardedJson(result: MvcResult, status: Int, body: String) {
@@ -117,7 +144,7 @@ class AcceptanceScenarioControllerTest {
     }
 
     @Test
-    fun `POST and PUT select each of the six scenarios exactly once`() {
+    fun `POST and PUT select each scenario exactly once`() {
         val mvc = mvc("acceptance")
         scenarios.forEach { name ->
             listOf("POST", "PUT").forEach { method ->
@@ -155,6 +182,43 @@ class AcceptanceScenarioControllerTest {
             ),
             calls,
         )
+    }
+
+    @Test
+    fun `reset data is authenticated csrf protected and returns a bounded cleanup receipt`() {
+        val mvc = mvc("acceptance", mode = "google")
+        assertEquals(401, mvc.perform(post("/api/scenarios/reset-data").header("Idempotency-Key", "reset-data-1")).andReturn().response.status)
+        assertEquals(403, mvc.perform(post("/api/scenarios/reset-data").session().header("Idempotency-Key", "reset-data-1")).andReturn().response.status)
+        verifyNoInteractions(resets)
+        val result = mvc.perform(post("/api/scenarios/reset-data").session().csrf().header("Idempotency-Key", "reset-data-1")).andReturn()
+        assertEquals(200, result.response.status)
+        assertTrue(result.response.contentAsString.contains("\"mode\":\"synthetic-only\""))
+        assertTrue(result.response.contentAsString.contains("\"deletedMeetings\":3"))
+        assertTrue(result.response.contentAsString.contains("\"preservedMeetings\":1"))
+        mvc.perform(post("/api/scenarios/reset-data").session().csrf().header("Idempotency-Key", "reset-data-1"))
+        verify(resets, times(1)).reset()
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test
+    fun `scheduled check calls the real scheduler and shares check-now idempotency and rate limit`() {
+        val mvc = mvc("acceptance", mode = "google")
+        assertEquals(401, mvc.perform(post("/api/scenarios/scheduled-check").header("Idempotency-Key", "scheduled-1")).andReturn().response.status)
+        assertEquals(403, mvc.perform(post("/api/scenarios/scheduled-check").session().header("Idempotency-Key", "scheduled-1")).andReturn().response.status)
+        verifyNoInteractions(workflow)
+        val result = mvc.perform(post("/api/scenarios/scheduled-check").session().csrf().header("Idempotency-Key", "scheduled-1")).andReturn()
+        assertEquals(200, result.response.status)
+        assertTrue(result.response.contentAsString.contains("\"status\":\"IMPORTED\""))
+        assertEquals(MeetingCheckScheduler.CRON, result.response.getHeader("X-Meeting-Check-Cron"))
+        assertEquals(MeetingCheckScheduler.ZONE, result.response.getHeader("X-Meeting-Check-Zone"))
+        mvc.perform(post("/api/meetings/check-now").session().csrf().header("Idempotency-Key", "scheduled-1"))
+        verify(workflow, times(1)).check()
+        (2..6).forEach { index ->
+            assertEquals(200, mvc.perform(post("/api/meetings/check-now").session().csrf().header("Idempotency-Key", "scheduled-$index")).andReturn().response.status)
+        }
+        assertEquals(429, mvc.perform(post("/api/scenarios/scheduled-check").session().csrf().header("Idempotency-Key", "scheduled-7")).andReturn().response.status)
+        verify(workflow, times(6)).check()
+        assertTrue(calls.isEmpty())
     }
 
     @Test
@@ -216,6 +280,8 @@ class AcceptanceScenarioControllerTest {
             listOf(
                 get("/api/scenarios").session(),
                 post("/api/scenarios/reset").session().csrf(),
+                post("/api/scenarios/reset-data").session().csrf().header("Idempotency-Key", "reset-data-1"),
+                post("/api/scenarios/scheduled-check").session().csrf().header("Idempotency-Key", "scheduled-1"),
                 post("/api/scenarios/meer-dan-drie").session().csrf(),
                 get("/api/scenarios").header(ProductionReadAccessFilter.HEADER, "x".repeat(40)),
             ).forEach { request ->
@@ -231,15 +297,14 @@ class AcceptanceScenarioControllerTest {
     @Test
     fun `controller maps connection failure and timeout to 502`() {
         val closed = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).let { val p = it.address.port; it.stop(0); p }
-        val dead = AcceptanceScenarioController(MeetingSourceProperties(URI("http://127.0.0.1:$closed"), "local"), HttpClient.newHttpClient())
+        val dead = testController(MeetingSourceProperties(URI("http://127.0.0.1:$closed"), "local"))
         val slow = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
             createContext("/") { Thread.sleep(1500) }
             start()
         }
         try {
-            val timing = AcceptanceScenarioController(
+            val timing = testController(
                 MeetingSourceProperties(URI("http://127.0.0.1:${slow.address.port}"), "local", requestTimeout = Duration.ofMillis(200)),
-                HttpClient.newHttpClient(),
             )
             listOf(dead, timing).forEach { controller ->
                 val mvc = MockMvcBuilders.standaloneSetup(controller, HealthStub()).build()
@@ -251,6 +316,11 @@ class AcceptanceScenarioControllerTest {
             slow.stop(0)
         }
     }
+
+    private fun testController(properties: MeetingSourceProperties) = AcceptanceScenarioController(
+        properties, HttpClient.newHttpClient(), mock(AcceptanceScenarioResetService::class.java),
+        MeetingCheckScheduler(mock(MeetingCheckWorkflow::class.java)), MutationGuard(Clock.systemUTC()),
+    )
 
     @org.springframework.web.bind.annotation.RestController
     class HealthStub {

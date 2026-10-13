@@ -16,6 +16,7 @@ import nl.vdzon.pvdd.policy.PolicyImportService
 import nl.vdzon.pvdd.policy.PolicySelector
 import nl.vdzon.pvdd.policy.PolicySnapshotActivatedEvent
 import nl.vdzon.pvdd.runtime.AgentRuntimeGateway
+import nl.vdzon.pvdd.runtime.AcceptanceRuntimeFixture
 import nl.vdzon.pvdd.runtime.AgentRuntimeProperties
 import nl.vdzon.pvdd.runtime.RuntimeCreateRequest
 import nl.vdzon.pvdd.runtime.RuntimeJob
@@ -154,7 +155,7 @@ class AnalysisOrchestrator(
         try {
             val job = runtime.create(
                 RuntimeCreateRequest(
-                    idempotencyKey = runtimeExecutionKey(prepared.run),
+                    idempotencyKey = runtimeExecutionKey(prepared.run, runtimeProperties.acceptanceFixturesEnabled),
                     prompt = requireNotNull(prepared.prompt),
                     responseSchema = prepared.responseSchema,
                     environmentKeys = emptyList(),
@@ -162,6 +163,10 @@ class AnalysisOrchestrator(
                         if (prepared.runType == AnalysisRunType.SOURCE_NOTES) AnalysisModelTask.SOURCE_NOTES
                         else AnalysisModelTask.FINAL_ADVICE,
                     ),
+                    acceptanceFixture = if (!runtimeProperties.acceptanceFixturesEnabled) null
+                        else if (prepared.runType == AnalysisRunType.SOURCE_NOTES) AcceptanceRuntimeFixture.SOURCE_NOTES
+                        else if (prepared.category == "C") AcceptanceRuntimeFixture.ADVICE_C
+                        else AcceptanceRuntimeFixture.ADVICE_AB,
                 ),
             )
             repository.markSubmitted(prepared.run.id, job.id, job.status.toActiveStatus(), job.execution.vendorId, job.execution.model)
@@ -376,8 +381,8 @@ class AnalysisOrchestrator(
     }
 }
 
-internal fun runtimeExecutionKey(run: AnalysisRun): String =
-    "${run.idempotencyKey}-execution-${run.runtimeAttemptCount + 1}"
+internal fun runtimeExecutionKey(run: AnalysisRun, acceptanceFixture: Boolean = false): String =
+    "${run.idempotencyKey}-execution-${run.runtimeAttemptCount + 1}" + if (acceptanceFixture) "-fixture-${run.id}" else ""
 
 internal fun automaticRetryDelay(errorCode: String, completedAttempts: Int): Duration? {
     if (errorCode !in setOf("ENGINE_FAILED", "EXECUTION_TIMEOUT", "RUNTIME_FAILED")) return null

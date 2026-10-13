@@ -1,0 +1,14 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: pvdd-runtime-test-control
+  namespace: pvdd-acceptance
+spec:
+  encryptedData:
+    PVDD_AGENT_RUNTIME_MOCK_CONTROL_TOKEN: AgAmSpwnXzG96CMiusof9WGwG5MnsB5gjfcB124UbsWZ9om3FTliYSUZr5NbS7xe6EB7g9YaMtnMKD+JTi04G112WcaUgQfWYcJg/hRtJMaoqwFKJlHWyPFWeRFd4hLFf00i2+VfvyJSPrQIMg9QyC6S6VTsI5A6XHcz1HgqYbutQpcAfvwdkLhbFR9O5hR78KTl0SP5WqEo2h9hrBnYXjPcBx0NnrXcmb3L6RU8GlvJLLOO9dXhfF80nDIYT4skL9uS3zWUZd0rrM0Xn+gS39NSgLphii8SZcXBXgHvBqg4fQmuENN/YJLHRMPhRacQgh2XD5owU9w02xmzIPV+akKv+EWbS9GPxED1QUemPGCwOsIIJAPdLBetS9HQWDT7tQuXQK4tVUEthy9ZFoa5FdMK3BNnCENoeFsFu9sxlU+239qEu4IoU/dbaVJiQak6QHEOFTe165TC3U1I8db+8VQgeARLE/+X81rOcxGALxLHbhMqdppQpO15zDqcTgWex94ygVnfan2tUbWuErnrSa6u3udTgipNaV02oAB6NzHRiR38t9y4c2OgujQxL2YQeR3SR0JfchcSr+08s2rXea/CNUgwHiq2bXeYMfio4ujWpeKB9OnteXjl+RpU7wGz+POQ7hVEjqEABOE2DSm1xLTZJHR1KUOoZLmcoQgzHDNeBTKvirSEXZbBRBl/IoEHbtSUcH91+lXt4Yywqg35fHxgEhocWwM7Mj7rcIr8jA8feyWPGbcNuKxABPzc4kMG1UdwMGbkJkqNXvLZN26Qwyx+
+  template:
+    metadata:
+      name: pvdd-runtime-test-control
+      namespace: pvdd-acceptance
+    type: Opaque

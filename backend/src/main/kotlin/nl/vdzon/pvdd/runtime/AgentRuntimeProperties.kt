@@ -17,6 +17,8 @@ data class AgentRuntimeProperties(
     var requestTimeout: Duration = Duration.ofSeconds(3),
     var uploadTimeout: Duration = Duration.ofSeconds(30),
     var selfTestTimeout: Duration = Duration.ofSeconds(15),
+    var acceptanceFixturesEnabled: Boolean = false,
+    var mockControlToken: String = "",
 ) {
     @PostConstruct
     fun validate() {
@@ -29,6 +31,10 @@ data class AgentRuntimeProperties(
         require(!connectTimeout.isNegative && !connectTimeout.isZero && connectTimeout <= Duration.ofSeconds(5))
         require(!requestTimeout.isNegative && !requestTimeout.isZero && requestTimeout <= Duration.ofSeconds(30))
         require(!uploadTimeout.isNegative && !uploadTimeout.isZero && uploadTimeout <= Duration.ofMinutes(5))
+        require(environment.equals("acceptance", ignoreCase = true) || (!acceptanceFixturesEnabled && mockControlToken.isBlank())) {
+            "Runtime fixture control is only allowed in acceptance."
+        }
+        require(!acceptanceFixturesEnabled || mockControlToken.isNotBlank()) { "Acceptance Runtime fixture control credential is required." }
         when (environment.lowercase()) {
             "local" -> Unit
             "acceptance" -> require(vendorId == "mock" && model == "mock" && mode == "MOCK") { "Acceptance must use the deterministic mocked Runtime." }
@@ -36,4 +42,6 @@ data class AgentRuntimeProperties(
             else -> error("Unknown PvdD environment: $environment")
         }
     }
+
+    override fun toString() = "AgentRuntimeProperties(environment=$environment, mode=$mode, acceptanceFixturesEnabled=$acceptanceFixturesEnabled, credentials=REDACTED)"
 }

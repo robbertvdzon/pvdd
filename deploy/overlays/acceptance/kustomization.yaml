@@ -8,6 +8,7 @@ resources:
 - route.yaml
 - sealed-secret.yaml
 - sealed-secret-ai-access.yaml
+- sealed-runtime-test-control.yaml
 - sealed-central-postgres.yaml
 images:
 - digest: sha256:f320903a89b1a1e0fe4f43ed7070d4d354f28f4887d0445a290d37395fccad43
@@ -21,6 +22,7 @@ images:
   newName: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
 patches:
 - path: agent-access-patch.yaml
+- path: runtime-test-control-patch.yaml
 - path: backend-memory.yaml
 - path: frontend-memory.yaml
 - path: central-postgres-patch.yaml

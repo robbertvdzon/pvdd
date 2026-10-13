@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  template:
+    spec:
+      containers:
+      - name: backend
+        env:
+        - name: PVDD_AGENT_RUNTIME_MOCK_CONTROL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: pvdd-runtime-test-control
+              key: PVDD_AGENT_RUNTIME_MOCK_CONTROL_TOKEN

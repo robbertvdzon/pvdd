@@ -45,3 +45,12 @@ PvdD Runtime-tokens naar het genegeerde `secrets.env`; databasewachtwoorden blij
 behouden. Na een bewuste bronrotatie voert men `deploy/seal-secrets.sh` uit, commit men uitsluitend
 de twee `sealed-secret.yaml`-bestanden en controleert men beide omgevingen. Productie- en
 acceptatietokens zijn niet onderling uitwisselbaar.
+
+De acceptatie-backend heeft daarnaast `pvdd-runtime-test-control`, uitsluitend voor het
+registreren van synthetische Runtime-v2-fixtures. De SealedSecret is gebonden aan naam en namespace
+`pvdd-acceptance` en wordt alleen door de acceptatie-overlay gemount. De bron is de bestaande
+`AR_TEST_CONTROL_TOKEN` uit de Runtime-acceptatieomgeving; dit is geen productiecredential en
+geen admintoken. Na rotatie daarvan moet ook `sealed-runtime-test-control.yaml` opnieuw worden
+verzegeld. Houd de plaintext tijdens het verzegelen buiten bestanden, uitvoer en shellhistorie.
+De credential komt nooit in een testerjob. `tools/verify-deployment.sh` controleert dat flag,
+secret en mount geheel ontbreken in de productie-overlay.

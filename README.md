@@ -19,6 +19,7 @@ geblokkeerd totdat de technische acceptatiepoort T14 uit het stappenplan groen i
 - [Factory-overzicht](docs/factory/README.md)
 - [Architectuurbesluiten](docs/adr/README.md)
 - [Technische integraties](docs/technical-integrations.md), inclusief de acceptatiescenario's van de bronmock (`/api/scenarios`)
+- [Acceptatie van meerdere vergaderingen](docs/epic9-acceptance.md), inclusief schone testdata, AI-mocks en desktop-/mobielbewijs
 - [OpenShift en GitOps](deploy/README.md)
 - [Operations en herstel](docs/operations.md)
 

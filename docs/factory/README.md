@@ -10,6 +10,7 @@ gaat die specificatie voor. De uitvoeringsvolgorde staat in de drie stappenplann
 - [Functionele specificatie](functional-spec.md)
 - [Technische specificatie](technical-spec.md)
 - [Ontwikkelen en verifiëren](development.md)
+- [Acceptatie van meerdere vergaderingen](../epic9-acceptance.md)
 - [Deployment](deployment.md)
 - [Lokale secrets](secrets-local.md)
 - [Agent Runtime](agent-runtime.md)

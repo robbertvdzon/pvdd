@@ -6,6 +6,13 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import nl.vdzon.pvdd.auth.ApiAuthenticationFilter
+import nl.vdzon.pvdd.meetings.AcceptanceResetResult
+import nl.vdzon.pvdd.meetings.AcceptanceScenarioResetService
+import nl.vdzon.pvdd.meetings.MeetingCheckResult
+import nl.vdzon.pvdd.meetings.MeetingCheckScheduler
+import nl.vdzon.pvdd.meetings.MeetingCheckStatus
+import nl.vdzon.pvdd.meetings.MutationGuard
 import nl.vdzon.pvdd.source.MeetingSourceProperties
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.http.HttpStatus
@@ -14,6 +21,8 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
+import org.springframework.web.bind.annotation.RequestAttribute
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
@@ -27,12 +36,36 @@ import org.springframework.web.bind.annotation.RestController
 class AcceptanceScenarioController(
     private val properties: MeetingSourceProperties,
     private val client: HttpClient,
+    private val resets: AcceptanceScenarioResetService,
+    private val scheduler: MeetingCheckScheduler,
+    private val guard: MutationGuard,
 ) {
     @GetMapping
     fun overview(): ResponseEntity<String> = forward("GET", "/api/scenarios", null)
 
     @PostMapping("/reset")
     fun reset(): ResponseEntity<String> = forward("POST", "/api/scenarios/reset", null)
+
+    @PostMapping("/reset-data")
+    fun resetData(
+        @RequestAttribute(ApiAuthenticationFilter.AUTHENTICATED_EMAIL_ATTRIBUTE) email: String,
+        @RequestHeader("Idempotency-Key") idempotencyKey: String,
+    ): ResponseEntity<AcceptanceResetResult> = ResponseEntity.ok()
+        .header("Cache-Control", "no-store")
+        .body(guard.execute(email, "acceptance-reset-data", idempotencyKey, resets::reset))
+
+    @PostMapping("/scheduled-check")
+    fun scheduledCheck(
+        @RequestAttribute(ApiAuthenticationFilter.AUTHENTICATED_EMAIL_ATTRIBUTE) email: String,
+        @RequestHeader("Idempotency-Key") idempotencyKey: String,
+    ): ResponseEntity<MeetingCheckResult> {
+        val result = guard.execute(email, "check-now", idempotencyKey, scheduler::scheduledCheck)
+        return ResponseEntity.status(if (result.status == MeetingCheckStatus.ALREADY_RUNNING) HttpStatus.CONFLICT else HttpStatus.OK)
+            .header("Cache-Control", "no-store")
+            .header("X-Meeting-Check-Cron", MeetingCheckScheduler.CRON)
+            .header("X-Meeting-Check-Zone", MeetingCheckScheduler.ZONE)
+            .body(result)
+    }
 
     @PostMapping("/{name}")
     fun selectPost(@PathVariable name: String): ResponseEntity<String> = select("POST", name)
@@ -56,7 +89,7 @@ class AcceptanceScenarioController(
     }
 
     private fun select(method: String, name: String): ResponseEntity<String> =
-        if (!NAME.matches(name) || name == "documents") error(HttpStatus.NOT_FOUND, "not_found")
+        if (!NAME.matches(name) || name in setOf("documents", "reset-data", "scheduled-check")) error(HttpStatus.NOT_FOUND, "not_found")
         else forward(method, "/api/scenarios/$name", null)
 
     private fun forward(method: String, path: String, body: String?): ResponseEntity<String> {

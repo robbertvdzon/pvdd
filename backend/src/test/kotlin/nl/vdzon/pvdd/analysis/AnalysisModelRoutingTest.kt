@@ -6,6 +6,9 @@ import java.time.ZoneOffset
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
+import nl.vdzon.pvdd.runtime.AcceptanceRuntimeFixture
 import nl.vdzon.pvdd.documents.DocumentRepository
 import nl.vdzon.pvdd.meetings.MeetingRepository
 import nl.vdzon.pvdd.policy.PolicyImportService
@@ -16,6 +19,7 @@ import nl.vdzon.pvdd.runtime.RuntimeCreateRequest
 import nl.vdzon.pvdd.runtime.RuntimeExecution
 import nl.vdzon.pvdd.runtime.RuntimeJob
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import tools.jackson.module.kotlin.jacksonObjectMapper
@@ -27,6 +31,8 @@ class AnalysisModelRoutingTest {
 
     private val repository = mock(AnalysisRepository::class.java)
     private val runtime = mock(AgentRuntimeGateway::class.java)
+    private val runtimeProperties = AgentRuntimeProperties()
+    private val submittedRequests = mutableListOf<RuntimeCreateRequest>()
     private val models = mock(AnalysisModelSettings::class.java).also {
         `when`(it.execution(AnalysisModelTask.SOURCE_NOTES)).thenReturn(notesModel)
         `when`(it.execution(AnalysisModelTask.FINAL_ADVICE)).thenReturn(adviceModel)
@@ -42,7 +48,7 @@ class AnalysisModelRoutingTest {
         mock(PromptBuilder::class.java),
         mock(ContentResultValidator::class.java),
         runtime,
-        AgentRuntimeProperties(),
+        runtimeProperties,
         models,
         mapper,
         Clock.fixed(Instant.parse("2026-10-10T08:00:00Z"), ZoneOffset.UTC),
@@ -54,14 +60,36 @@ class AnalysisModelRoutingTest {
         assertEquals(adviceModel, submittedExecution(AnalysisRunType.FINAL_ADVICE))
     }
 
-    private fun submittedExecution(type: AnalysisRunType): RuntimeExecution? {
-        val prepared = prepared(type)
+    @Test
+    fun `acceptance selects typed fixtures from trusted phase and category with distinct keys for fresh runs`() {
+        runtimeProperties.environment = "acceptance"
+        runtimeProperties.acceptanceFixturesEnabled = true
+        runtimeProperties.mockControlToken = "backend-only-fixture-credential"
+        val mockExecution = RuntimeExecution("mock", "mock", "MOCK")
+        `when`(models.execution(AnalysisModelTask.SOURCE_NOTES)).thenReturn(mockExecution)
+        `when`(models.execution(AnalysisModelTask.FINAL_ADVICE)).thenReturn(mockExecution)
+        submittedExecution(AnalysisRunType.SOURCE_NOTES)
+        submittedExecution(AnalysisRunType.FINAL_ADVICE, "A")
+        submittedExecution(AnalysisRunType.FINAL_ADVICE, "B")
+        submittedExecution(AnalysisRunType.FINAL_ADVICE, "C")
+        assertEquals(listOf(AcceptanceRuntimeFixture.SOURCE_NOTES, AcceptanceRuntimeFixture.ADVICE_AB,
+            AcceptanceRuntimeFixture.ADVICE_AB, AcceptanceRuntimeFixture.ADVICE_C), submittedRequests.map { it.acceptanceFixture })
+        assertTrue(submittedRequests.all { it.idempotencyKey.contains("-fixture-") && it.idempotencyKey.length <= 160 })
+        val run = prepared(AnalysisRunType.FINAL_ADVICE).run
+        assertEquals(runtimeExecutionKey(run, true), runtimeExecutionKey(run.copy(), true))
+        assertNotEquals(runtimeExecutionKey(run, true), runtimeExecutionKey(run.copy(id=UUID.randomUUID()), true))
+        assertEquals(runtimeExecutionKey(run), runtimeExecutionKey(run.copy(id=UUID.randomUUID())))
+    }
+
+    private fun submittedExecution(type: AnalysisRunType, category: String = "C"): RuntimeExecution? {
+        val prepared = prepared(type).copy(category=category)
         var submitted: RuntimeCreateRequest? = null
         `when`(repository.claimPendingRun()).thenReturn(prepared)
-        `when`(runtime.create(anyRequest())).thenAnswer { invocation ->
+        doAnswer { invocation ->
             submitted = invocation.getArgument(0)
+            submittedRequests += requireNotNull(submitted)
             RuntimeJob("job-${type.name}", "pvdd", prepared.run.idempotencyKey, RuntimeExecution("anthropic", "gebruikt", "SUBSCRIPTION"), "QUEUED", "QUEUED")
-        }
+        }.`when`(runtime).create(anyRequest())
 
         orchestrator.submitOneRun()
 

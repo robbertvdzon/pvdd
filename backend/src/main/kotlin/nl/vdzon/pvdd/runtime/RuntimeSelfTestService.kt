@@ -24,7 +24,8 @@ class RuntimeSelfTestService(
             """{"type":"object","additionalProperties":false,"required":["message"],"properties":{"message":{"type":"string"}}}"""
         )
         val key = "pvdd-self-test-${UUID.randomUUID()}"
-        val job = client.create(RuntimeCreateRequest(key, "Return the exact JSON object required by the response schema.", schema))
+        val job = client.create(RuntimeCreateRequest(key, "Return the exact JSON object required by the response schema.", schema,
+            acceptanceFixture = AcceptanceRuntimeFixture.SELF_TEST.takeIf { properties.acceptanceFixturesEnabled }))
         val deadline = Instant.now().plus(properties.selfTestTimeout)
         var current = job
         while (current.status !in TERMINAL && Instant.now().isBefore(deadline)) {

@@ -40,6 +40,8 @@ MEETING_SCENARIOS = {
     "grens-dag-10-en-11": [(0, True, False), (10, True, False), (11, True, False)],
     "extra-agenda-niet-gepubliceerd": [(0, True, False), (3, False, False)],
     "een-vergadering-mislukt": [(0, True, False), (2, True, True), (4, True, False)],
+    "geen-toekomstige-vergadering": [],
+    "gehele-broncontrole-mislukt": [],
     DEFAULT_MEETING_SCENARIO: [],
 }
 AMSTERDAM = "Europe/Amsterdam"
@@ -161,8 +163,11 @@ def meeting_by_id(meeting_id: str) -> dict | None:
 def year_page() -> bytes:
     with state_lock:
         meetings = list(meeting_state["meetings"])
-    if not meetings:
+        selected = meeting_state["scenario"]
+    if selected == DEFAULT_MEETING_SCENARIO:
         return fixture("year.html")
+    if not meetings:
+        return fixture("no-meeting.html")
     links = "".join(f'<a href="/Agenda/Index/{m["id"]}">{dutch_date(m["date"])}</a>' for m in meetings)
     return f'<!doctype html>\n<html lang="nl"><body>{links}</body></html>'.encode("utf-8")
 
@@ -213,8 +218,8 @@ def scenario_overview() -> dict:
             "meetings": [
                 {"id": m["id"], "date": m["date"].isoformat(), "published": m["published"], "fails": m["fails"]}
                 for m in meeting_state["meetings"]
-            ]
-            or [{"id": LEGACY_MEETING_ID, "date": "2035-12-31", "published": True, "fails": False}],
+            ] if meeting_state["scenario"] != DEFAULT_MEETING_SCENARIO
+            else [{"id": LEGACY_MEETING_ID, "date": "2035-12-31", "published": True, "fails": False}],
             "documentVersions": dict(meeting_state["versions"]),
             "agendaFetches": dict(meeting_state["fetches"]),
         }
@@ -281,12 +286,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/scenarios" and scenario_routes_enabled():
             return self.respond_json(200, scenario_overview())
         if path == "/Agenda/RetrieveAgendasForYear":
+            with state_lock:
+                source_failure = meeting_state["scenario"] == "gehele-broncontrole-mislukt"
+            if source_failure:
+                return self.respond_json(503, {"error": "synthetic_source_failure"})
             return self.respond(200, year_page(), "text/html; charset=utf-8")
         if path.startswith("/Agenda/Index/"):
             meeting_id = path.removeprefix("/Agenda/Index/")
             count_agenda_fetch(meeting_id)
             with state_lock:
-                default_meeting = not meeting_state["meetings"]
+                default_meeting = meeting_state["scenario"] == DEFAULT_MEETING_SCENARIO
             if meeting_id == LEGACY_MEETING_ID and default_meeting:
                 return self.respond(200, agenda_for(active), "text/html; charset=utf-8")
             meeting = meeting_by_id(meeting_id)

@@ -122,6 +122,26 @@ class MeetingScenarioTest(unittest.TestCase):
                 self.assertEqual(offsets, [(d - first).days for d in dates])
                 self.assertEqual(len(offsets), len(self.year_dates()))
 
+    def test_no_future_meeting_is_empty_without_the_legacy_fallback(self):
+        self.select("twee-vergaderingen")
+        overview = self.select("geen-toekomstige-vergadering")
+        self.assertEqual([], overview["meetings"])
+        self.assertEqual([], self.year_dates())
+        self.assertEqual(404, self.call("GET", "/Agenda/Index/acceptance-meeting-v1")[0])
+        self.assertEqual([], json.loads(self.call("GET", "/api/scenarios")[1])["meetings"])
+
+    def test_whole_source_failure_fails_year_discovery_without_selecting_a_fake_meeting(self):
+        self.select("twee-vergaderingen")
+        overview = self.select("gehele-broncontrole-mislukt")
+        self.assertEqual([], overview["meetings"])
+        for year in (2026, 2027):
+            status, body = self.call("GET", f"/Agenda/RetrieveAgendasForYear?year={year}")
+            self.assertEqual(503, status)
+            self.assertEqual("synthetic_source_failure", json.loads(body)["error"])
+        self.assertEqual(200, self.call("GET", "/api/scenarios")[0])
+        self.select("twee-vergaderingen")
+        self.assertEqual(2, len(self.year_dates()))
+
     def test_reset_returns_to_the_single_default_meeting(self):
         self.select("meer-dan-drie")
         status, body = self.call("POST", "/api/scenarios/reset")

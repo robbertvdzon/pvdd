@@ -12,9 +12,7 @@ class SchedulingConfiguration
 @Component
 class MeetingCheckScheduler(private val workflow: MeetingCheckWorkflow) {
     @Scheduled(cron = CRON, zone = ZONE)
-    fun scheduledCheck() {
-        workflow.check()
-    }
+    fun scheduledCheck(): MeetingCheckResult = workflow.check()
 
     companion object {
         const val CRON = "0 0 5 * * *"
