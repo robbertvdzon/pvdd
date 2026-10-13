@@ -223,15 +223,23 @@ class ProductionConfigurationTest(unittest.TestCase):
             for forbidden in ("meeting-source-mock", "MOCKED", "mock-model", "api/scenarios", "MOCK_SCENARIO_ROUTES"):
                 self.assertNotIn(forbidden, text, f"{path.name} bevat {forbidden}")
 
+    def test_production_overlay_does_not_enable_acceptance_environment(self):
+        for path in (self.root / "deploy" / "overlays" / "production").glob("*.yaml"):
+            text = path.read_text(encoding="utf-8")
+            self.assertNotRegex(text, r"PVDD_ENVIRONMENT:\s*[\"']?acceptance", path.name)
+
     def test_acceptance_overlay_is_the_only_one_with_the_mock(self):
         acceptance = (self.root / "deploy" / "overlays" / "acceptance" / "kustomization.yaml").read_text()
         production = (self.root / "deploy" / "overlays" / "production" / "kustomization.yaml").read_text()
         self.assertIn("mock.yaml", acceptance)
         self.assertNotIn("mock", production)
 
-    def test_backend_defines_no_scenario_route(self):
+    def test_backend_scenario_route_exists_only_for_acceptance(self):
         for path in (self.root / "backend" / "src" / "main").rglob("*.kt"):
-            self.assertNotIn("api/scenarios", path.read_text(encoding="utf-8"), path.name)
+            text = path.read_text(encoding="utf-8")
+            if "api/scenarios" in text:
+                self.assertEqual("AcceptanceScenarioController.kt", path.name)
+                self.assertIn('havingValue = "acceptance"', text)
 
 
 if __name__ == "__main__":

@@ -40,10 +40,14 @@ class MeetingSourcePropertiesTest {
     }
 
     @Test
-    fun `the backend and the production deployment know no scenario route and no mock`() {
+    fun `the backend and the production deployment know no unconditional scenario route and no mock`() {
         val sources = Files.walk(Path.of("src", "main")).use { it.filter(Files::isRegularFile).toList() }
         assertTrue(sources.isNotEmpty())
-        sources.forEach { assertTrue(!Files.readString(it).contains("api/scenarios"), "$it bevat de scenarioroute") }
+        // De route bestaat uitsluitend in de controller die alleen bij pvdd.environment=acceptance wordt geregistreerd.
+        sources.filter { Files.readString(it).contains("api/scenarios") }.forEach {
+            assertEquals("AcceptanceScenarioController.kt", it.fileName.toString())
+            assertTrue(Files.readString(it).contains("havingValue = \"acceptance\""), "$it is niet beperkt tot acceptatie")
+        }
 
         val production = Path.of("..", "deploy", "overlays", "production")
         val files = Files.list(production).use { it.filter { f -> f.toString().endsWith(".yaml") }.toList() }
