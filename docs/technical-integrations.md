@@ -45,10 +45,42 @@ servicenamen. De functionele downloader en parser worden pas in fase 2 toegevoeg
 
 De acceptatiemock (`meeting-source-mock/server.py`, Python, alleen in `deploy/overlays/acceptance`)
 kent een scenarioroute onder `/api/scenarios`. Die route bestaat niet in productie: de productie-overlay
-bevat geen mock en de backend heeft geen scenarioroute (`MeetingSourcePropertiesTest`,
+bevat geen mock en de backend registreert daar geen scenarioroute (`MeetingSourcePropertiesTest`,
 `ProductionConfigurationTest`). `MOCK_SCENARIO_ROUTES=disabled` zet de route ook in de mock zelf uit (404).
-De mock is alleen binnen het cluster bereikbaar, via `http://pvdd-meeting-source-mock:8080`, net als
+De mock blijft alleen binnen het cluster bereikbaar, via `http://pvdd-meeting-source-mock:8080`, net als
 de bestaande bronrevisieroute `POST /fixtures/control/<scenario>`, die ongewijzigd blijft.
+
+#### Bediening via de acceptatie-origin
+
+Op `https://pvdd-acceptance.vdzonsoftware.nl` stuurt de backend (`AcceptanceScenarioController`, alleen
+geregistreerd bij `pvdd.environment=acceptance`) uitsluitend de onderstaande aanroepen door naar
+`PVDD_MEETING_SOURCE_BASE_URL` + hetzelfde pad. Status en JSON-body komen ongewijzigd terug, met
+`Content-Type: application/json` en `Cache-Control: no-store`. Alles buiten de lijst wordt niet doorgestuurd
+(404/405). Is de mock onbereikbaar, dan volgt 502 `{"error":"scenario_mock_unreachable"}`.
+In productie en lokaal bestaat de route niet (404, ook met sessie of leestoken); de eerdere uitspraak dat
+de backend geen scenarioroute heeft geldt dus uitsluitend voor productie.
+
+| Methode en pad | Toegestaan |
+|---|---|
+| `GET /api/scenarios` | overzicht |
+| `POST` of `PUT /api/scenarios/<naam>` | naam uit `een-vergadering`, `twee-vergaderingen`, `meer-dan-drie`, `grens-dag-10-en-11`, `extra-agenda-niet-gepubliceerd`, `een-vergadering-mislukt`; een onbekende naam geeft de 400 `unknown_scenario` van de mock; er wordt geen body doorgestuurd |
+| `POST /api/scenarios/reset` | terug naar `een-vergadering` |
+| `PUT /api/scenarios/documents/<documentId>` | documentId `[A-Za-z0-9._-]{1,100}`; optionele body `{"version": <geheel getal>}` van maximaal 1 KB, anders 400 |
+
+Authenticatie valt onder het gewone `/api/`-regime: zonder sessie 401. Inloggen en sessiecookie gaan zoals
+voor de webapp (`POST /api/auth/session` of de acceptatie-inlogstap); de sessiecookie heet `pvdd_session`.
+In modus GOOGLE vereisen POST en PUT de CSRF-dubbele token: de waarde van de cookie `pvdd_csrf` moet ook
+in de header `X-CSRF-Token` (`UserSessionService.CSRF_HEADER_NAME`) staan, anders 403 `csrf_failed`. In
+`ACCEPTANCE_BYPASS` is dat niet nodig.
+
+```text
+B=https://pvdd-acceptance.vdzonsoftware.nl
+# na inloggen is de sessie opgeslagen in cookies.txt (cookiejar)
+CSRF=$(awk '$6=="pvdd_csrf"{print $7}' cookies.txt)
+curl -b cookies.txt $B/api/scenarios
+curl -b cookies.txt -H "X-CSRF-Token: $CSRF" -X POST $B/api/scenarios/meer-dan-drie
+curl -b cookies.txt -H "X-CSRF-Token: $CSRF" -X POST $B/api/scenarios/reset
+```
 
 | Aanroep | Betekenis |
 |---|---|
@@ -71,7 +103,7 @@ toekomst; starttijd 18:30):
 
 Het scenario is interne toestand van de mock: een herstart geeft weer `een-vergadering`. Elke selectie
 maakt nieuwe vergaderings-id's (`scn-<naam>-<volgnummer>-<n>`) en wist documentversies en
-ophaaltellingen. Voorbeeld voor een verificatiesessie (vanuit het cluster):
+ophaaltellingen. Voorbeeld voor een verificatiesessie (rechtstreeks op de mock, vanuit het cluster):
 
 ```text
 curl -X POST http://pvdd-meeting-source-mock:8080/api/scenarios/meer-dan-drie
@@ -89,6 +121,7 @@ Reproduceerbare tests:
 ```text
 python3 -m unittest discover -s meeting-source-mock          # mock, route, productie-overlay
 cd backend && mvn -B --no-transfer-progress test -Dtest=DatabaseIntegrationTest   # scenario's tegen PostgreSQL
+cd backend && mvn -B --no-transfer-progress test -Dtest=AcceptanceScenarioControllerTest   # doorstuurroute met stub-HTTP-server
 cd frontend && flutter test test/scenario_ui_test.dart       # kader, tegelwissel, resultaat; 1400 en 390 px
 ```
 
