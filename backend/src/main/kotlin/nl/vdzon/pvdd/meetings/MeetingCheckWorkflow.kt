@@ -44,6 +44,8 @@ data class CommissieCheckResult(
     val errorCode: String? = null,
     val meetingSourceId: String? = null,
     val meetings: List<MeetingCheckMeeting> = emptyList(),
+    /** Additief: meldingstekst voor de gebruiker over de uitkomst van deze commissie. */
+    val melding: String = "",
 )
 
 enum class MeetingCheckOutcome {
@@ -112,6 +114,7 @@ class MeetingCheckWorkflow(
                         errorCode = result.errorCode,
                         meetingSourceId = result.meetingSourceId,
                         meetings = result.meetings,
+                        melding = melding(source.weergavenaam, result.status),
                     )
                 },
             )
@@ -121,6 +124,16 @@ class MeetingCheckWorkflow(
         } finally {
             locks.release(WORKFLOW_LOCK, owner)
         }).also(::logResult)
+    }
+
+    private fun melding(naam: String, status: MeetingCheckStatus): String = when (status) {
+        MeetingCheckStatus.SOURCE_FAILURE, MeetingCheckStatus.FAILED ->
+            "Controle van commissie $naam is mislukt; de bestaande gegevens blijven beschikbaar."
+        MeetingCheckStatus.PARTIAL -> "Controle van commissie $naam is gedeeltelijk geslaagd."
+        MeetingCheckStatus.NO_FUTURE_MEETING -> "Commissie $naam heeft geen toekomstige vergadering."
+        MeetingCheckStatus.AGENDA_UNPUBLISHED -> "Controle van commissie $naam is geslaagd; de agenda is nog niet gepubliceerd."
+        MeetingCheckStatus.IMPORTED -> "Controle van commissie $naam is geslaagd; nieuwe gegevens zijn verwerkt."
+        else -> "Controle van commissie $naam is geslaagd."
     }
 
     /** Verwerkt één commissie in een eigen transactie; een fout blijft beperkt tot deze commissie. */

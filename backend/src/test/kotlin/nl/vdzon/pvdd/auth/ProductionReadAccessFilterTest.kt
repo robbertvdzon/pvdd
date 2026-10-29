@@ -113,6 +113,50 @@ class ProductionReadAccessFilterTest {
         }
     }
 
+    @Test fun `the commissie query parameter changes neither the path decision nor the headers`() {
+        val readPaths = ARCHIVE_PATHS + "/api/meetings/next" + "/api/meetings/$ARCHIVE_UUID/agenda-items"
+        for (path in readPaths) {
+            for (method in listOf("GET", "HEAD")) {
+                for (value in listOf("BESTUUR", "RUIMTE", "FOO", "")) {
+                    assertAllowed(withCommissie(method, path, value))
+                }
+            }
+        }
+        // Padvarianten blijven geweigerd (methode toegestaan, pad niet), met en zonder querystring.
+        val variants = listOf(
+            "/api/meetings/", "/api/meetings;a=b", "/api/meetings/$ARCHIVE_UUID/", "/api/meetings/$ARCHIVE_UUID/extra",
+            "/api/meetings/next/", "/api/meetings/next;a=b",
+        )
+        for (path in variants) {
+            val plain = MockHttpServletRequest("GET", path).apply { addHeader(ProductionReadAccessFilter.HEADER, token) }
+            val withQuery = withCommissie("GET", path, "BESTUUR").apply { addHeader(ProductionReadAccessFilter.HEADER, token) }
+            for (request in listOf(plain, withQuery)) {
+                val response = MockHttpServletResponse()
+                filter.doFilter(request, response) { _, _ -> fail("Denied request reached the application: $path") }
+                assertEquals(403, response.status, path)
+                assertEquals("no-store", response.getHeader("Cache-Control"), path)
+                assertNull(response.getHeader("Set-Cookie"), path)
+            }
+        }
+        for (method in listOf("POST", "PUT", "PATCH", "DELETE")) {
+            for (path in readPaths + "/api/meetings/check-now") {
+                val request = withCommissie(method, path, "BESTUUR").apply { addHeader(ProductionReadAccessFilter.HEADER, token) }
+                val response = MockHttpServletResponse()
+                filter.doFilter(request, response) { _, _ -> fail("Denied request reached the application: $method $path") }
+                assertEquals(403, response.status, "$method $path")
+                assertEquals("no-store", response.getHeader("Cache-Control"), "$method $path")
+                assertNull(response.getHeader("Set-Cookie"), "$method $path")
+            }
+        }
+        assertNoTokenLeak("GET", "/api/meetings", "wrong", 401)
+    }
+
+    private fun withCommissie(method: String, path: String, value: String) =
+        MockHttpServletRequest(method, path).apply {
+            queryString = "commissie=$value"
+            setParameter("commissie", value)
+        }
+
     private fun assertAllowed(request: MockHttpServletRequest) {
         request.addHeader(ProductionReadAccessFilter.HEADER, token)
         val where = "${request.method} ${request.requestURI}"
