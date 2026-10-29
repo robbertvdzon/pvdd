@@ -35,7 +35,7 @@ agenda en stukken horen.
 2. Reeds openbare C-stukken mogen vóór volledige publicatie als **voorlopig** worden getoond met
    bronlinks. Zij maken de agenda niet compleet, maar beschikbare documenten en AI-analyse worden
    direct verwerkt en ondubbelzinnig als voorlopig getoond.
-3. Na volledige publicatie controleert zowel de 05:00-run als **Nu controleren** ook een vergadering
+3. Na volledige publicatie controleert zowel de 00:00-run als **Nu controleren** ook een vergadering
    die eerder succesvol is verwerkt.
 4. Alleen een gelijk vergadering-ID én een gelijke canonieke bronfingerprint betekent
    `UNCHANGED`.

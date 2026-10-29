@@ -15,7 +15,7 @@ class MeetingCheckScheduler(private val workflow: MeetingCheckWorkflow) {
     fun scheduledCheck(): MeetingCheckResult = workflow.check()
 
     companion object {
-        const val CRON = "0 0 5 * * *"
+        const val CRON = "0 0 0 * * *"
         const val ZONE = "Europe/Amsterdam"
     }
 }

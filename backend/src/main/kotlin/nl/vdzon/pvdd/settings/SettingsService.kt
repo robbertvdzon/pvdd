@@ -104,12 +104,12 @@ class SettingsService(
         ScheduledJobSettingDto(
             "meeting-check", "Vergaderingen en agenda controleren", "CRON",
             MeetingCheckScheduler.CRON, MeetingCheckScheduler.ZONE,
-            "Elke dag om 05:00; gewijzigde agendapunten worden opnieuw aangeboden voor analyse.",
+            "Elke dag om 00:00; gewijzigde agendapunten worden opnieuw aangeboden voor analyse.",
         ),
         ScheduledJobSettingDto(
             "policy-sync", "PvdD-standpunten actualiseren", "CRON",
             PolicySyncService.MONTHLY_CRON, PolicySyncService.SCHEDULE_ZONE,
-            "Elke eerste dag van de maand om 03:30; ook handmatig te starten bij Standpunten.",
+            "Elke eerste dag van de maand om 01:30; ook handmatig te starten bij Standpunten.",
         ),
         ScheduledJobSettingDto(
             "analysis-worker", "AI-wachtrij verwerken", "FIXED_DELAY",

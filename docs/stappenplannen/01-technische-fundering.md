@@ -18,7 +18,7 @@ Nog niet bouwen in dit plan:
 
 - vergaderingontdekking of iBabs-parser;
 - documentextractie;
-- de 05:00-functionele workflow;
+- de 00:00-functionele workflow;
 - het PvdD-beoordelingskader;
 - prompts en analyses voor A/B/C-agendapunten;
 - de functionele agenda- en adviesschermen.
