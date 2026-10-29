@@ -62,6 +62,10 @@ bevat geen mock en de backend registreert daar geen scenarioroute (`MeetingSourc
 De mock blijft alleen binnen het cluster bereikbaar, via `http://pvdd-meeting-source-mock:8080`, net als
 de bestaande bronrevisieroute `POST /fixtures/control/<scenario>`, die ongewijzigd blijft.
 
+De mock serveert daarnaast een synthetische Bestuur-reeks (agenda-type `1100617071`, vergadering 30 november 2026)
+met de scenario's `bestuur-niet-gepubliceerd`, `bestuur-gepubliceerd`, `bestuur-gewijzigd-stuk` en `bestuur-bronfout`,
+via dezelfde scenariobediening. Zie [Acceptatiemock: synthetische Bestuur-reeks](acceptatiemock-bestuur-scenarios.md).
+
 #### Bediening via de acceptatie-origin
 
 Op `https://pvdd-acceptance.vdzonsoftware.nl` stuurt de backend (`AcceptanceScenarioController`, alleen
@@ -139,6 +143,7 @@ Reproduceerbare tests:
 
 ```text
 python3 -m unittest discover -s meeting-source-mock          # mock, route, productie-overlay
+python3 tools/acceptance-bestuur-scenarios.py --self-test      # Bestuur-scenario's tegen lokale mock en stub-backend
 cd backend && mvn -B --no-transfer-progress test -Dtest=DatabaseIntegrationTest   # scenario's tegen PostgreSQL
 cd backend && mvn -B --no-transfer-progress test -Dtest=AcceptanceScenarioControllerTest   # doorstuurroute met stub-HTTP-server
 cd frontend && flutter test test/scenario_ui_test.dart       # kader, tegelwissel, resultaat; 1400 en 390 px
