@@ -313,7 +313,7 @@ class MeetingCheckWorkflowTest {
     fun `scheduler and controller call the same workflow bean`() {
         val fx = multiFixture(listOf("a"))
         MeetingCheckScheduler(fx.workflow).scheduledCheck()
-        assertEquals("0 0 5 * * *", MeetingCheckScheduler.CRON)
+        assertEquals("0 0 0 * * *", MeetingCheckScheduler.CRON)
         assertEquals("Europe/Amsterdam", MeetingCheckScheduler.ZONE)
         assertEquals(1, fx.lock.acquires)
     }

@@ -168,7 +168,7 @@ volgt alleen canonieke URL's op de allowlist en nooit willekeurige externe links
 
 ### 4.2 Planning en handmatige controle
 
-De automatische controle draait op de eerste dag van iedere maand om 03:30 uur in
+De automatische controle draait op de eerste dag van iedere maand om 01:30 uur in
 `Europe/Amsterdam`. De klok is injecteerbaar voor tests.
 
 De pagina bevat daarnaast **Standpunten nu actualiseren**. Automatisch en handmatig gebruiken exact
@@ -467,7 +467,7 @@ handmatige refresh, rollback naar vorige actieve snapshot en vastgelopen AI-runs
       daarmee de frontend en beschermde REST-routes verifiëren.
 - [ ] Het plaintext tooling-token staat alleen in het gitignored `secrets.env`, bereikt OpenShift
       via het bestaande sealproces en lekt niet naar Git, frontend, logs, metrics of database.
-- [ ] De maandworkflow draait eenmaal op de eerste dag van de maand om 03:30
+- [ ] De maandworkflow draait eenmaal op de eerste dag van de maand om 01:30
       `Europe/Amsterdam`.
 - [ ] Handmatig actualiseren gebruikt dezelfde idempotente workflow en maakt geen dubbele run.
 - [ ] Alleen officiële geallowliste PvdD-bronnen worden opgehaald.
@@ -494,7 +494,7 @@ handmatige refresh, rollback naar vorige actieve snapshot en vastgelopen AI-runs
 Deze specificatie kan zonder voorafgaande beantwoording worden geïmplementeerd met de volgende
 defaults:
 
-1. de maandcontrole draait op de eerste dag om 03:30 uur;
+1. de maandcontrole draait op de eerste dag om 01:30 uur;
 2. officiële idealen/standpunten, provinciaal politiek werk en nieuws met expliciete beleidsinhoud
    tellen mee naast het verkiezingsprogramma;
 3. de AI-titel staat prominent, maar de officiële titel blijft er direct onder staan;

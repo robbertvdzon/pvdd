@@ -79,9 +79,9 @@ Dit is bewust een combinatie van twee scenario's **zonder reset ertussen**:
 
 ## Dagelijkse controle zonder wachten tot morgen
 
-`MeetingCheckSchedulerTest` controleert cron `0 0 5 * * *` met zone `Europe/Amsterdam`,
+`MeetingCheckSchedulerTest` controleert cron `0 0 0 * * *` met zone `Europe/Amsterdam`,
 in winter, zomer en rond beide zomertijdwissels. Dit is geautomatiseerd bewijs voor het tijdstip,
-geen claim dat tijdens de browsersessie de klok 05:00 bereikte.
+geen claim dat tijdens de browsersessie de klok 00:00 bereikte.
 
 De acceptatieroute `POST /api/scenarios/scheduled-check` roept de echte
 `MeetingCheckScheduler.scheduledCheck()` aan. Gebruik dezelfde sessie, CSRF-header en

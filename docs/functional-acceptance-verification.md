@@ -26,7 +26,7 @@ overgeslagen live-brontest. De GitHub-verificatie bouwde backend, frontend en co
 
 ## End-to-end uitkomst
 
-De acceptance-startuptrigger doorliep dezelfde workflow als de 05:00-trigger en `Nu controleren`:
+De acceptance-startuptrigger doorliep dezelfde workflow als de 00:00-trigger en `Nu controleren`:
 ontdekking, import, PDF-extractie, beleidsimport, analysevoorbereiding, duurzame Runtime-submit,
 resultaatvalidatie en opslag. Het synthetische dossier eindigde als volgt:
 

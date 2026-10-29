@@ -115,13 +115,13 @@ Acceptatie:
 - Pagina-informatie blijft beschikbaar voor citaties.
 - Een gedeeltelijk/onleesbaar dossier kan niet de status “volledig ingelezen” krijgen.
 
-## F4 — Nieuwe-vergaderingworkflow om 05:00 en “Nu controleren”
+## F4 — Nieuwe-vergaderingworkflow om 00:00 en “Nu controleren”
 
 Repository: `pvdd`
 
 Werk:
 
-1. Implementeer cron `0 0 5 * * *` in `Europe/Amsterdam` met injecteerbare klok.
+1. Implementeer cron `0 0 0 * * *` in `Europe/Amsterdam` met injecteerbare klok.
 2. Vergelijk het gevonden bron-ID met de laatst succesvol verwerkte vergadering.
 3. Stop direct zonder document- of AI-call bij geen vergadering of hetzelfde bron-ID.
 4. Importeer een nieuw bron-ID; markeer een ongepubliceerde agenda nog niet als verwerkt.
@@ -269,7 +269,7 @@ Werk:
 
 1. Breid de technische mockserver uit met de in F0 vastgelegde scenario’s.
 2. Registreer deterministische Agent Runtime-mockresultaten voor A/B, C, fout en groot dossier.
-3. Test de hele keten: 05:00/check-now → import → extractie → Runtime → opslag → frontend.
+3. Test de hele keten: 00:00/check-now → import → extractie → Runtime → opslag → frontend.
 4. Test herstart tijdens import en tijdens AI-uitvoering.
 5. Test dat dezelfde vergadering geen tweede AI-run veroorzaakt.
 6. Test environment guards opnieuw.

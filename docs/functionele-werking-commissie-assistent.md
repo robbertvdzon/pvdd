@@ -84,7 +84,7 @@ inhoudelijk en worden niet door AI geanalyseerd.
 
 ### 3.3 Automatisch en handmatig controleren
 
-De agenda wordt iedere dag om **05:00 uur** gecontroleerd. De knop **Nu controleren** voert
+De agenda wordt iedere dag om **00:00 uur** gecontroleerd. De knop **Nu controleren** voert
 dezelfde controle direct uit. Twee gelijktijdige controles worden voorkomen met een lock.
 
 Na **Nu controleren** toont de app per gecontroleerde vergadering datum, plaats, uitkomst en het
@@ -184,7 +184,7 @@ bronnen, vult geen formulieren in en volgt geen willekeurige externe links.
 
 ### 6.3 Hoe actuele standpunten worden gemaakt
 
-De broncontrole draait automatisch op de eerste dag van iedere maand om **03:30 uur** en kan ook
+De broncontrole draait automatisch op de eerste dag van iedere maand om **01:30 uur** en kan ook
 handmatig worden gestart via **Standpunten nu actualiseren**.
 Na de eerste productie-start met de nieuwe archiefconfiguratie wordt daarnaast eenmalig automatisch
 een verversing klaargezet, zodat de applicatie niet op de volgende maandrun hoeft te wachten.
@@ -368,8 +368,8 @@ het openen ervan start nooit een nieuwe analyse.
 
 | Taak | Planning | Direct AI-gebruik |
 | --- | --- | --- |
-| Vergaderingen en agenda controleren | dagelijks 05:00 | nee; kan agenda-analyses klaarzetten |
-| PvdD-standpunten actualiseren | iedere eerste dag van de maand 03:30 | indirect; zet een standpuntenrun klaar |
+| Vergaderingen en agenda controleren | dagelijks 00:00 | nee; kan agenda-analyses klaarzetten |
+| PvdD-standpunten actualiseren | iedere eerste dag van de maand 01:30 | indirect; zet een standpuntenrun klaar |
 | AI-wachtrij verwerken | iedere 5 seconden na de vorige uitvoering | alleen wanneer analysewerk aanwezig is |
 | Standpuntenwachtrij verwerken | iedere 10 seconden na de vorige uitvoering | alleen bij een gewijzigde bronset |
 | Promptversie controleren | iedere minuut na de vorige uitvoering | nee; kan heranalyse klaarzetten |

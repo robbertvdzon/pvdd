@@ -19,7 +19,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Geplande jobs'), findsOneWidget);
-    expect(find.text('0 0 5 * * *'), findsOneWidget);
+    expect(find.text('0 0 0 * * *'), findsOneWidget);
     expect(find.text('Bekeken delen'), findsOneWidget);
     expect(find.textContaining('/moties'), findsOneWidget);
     expect(find.text('Aanvullende analyse-instructie'), findsOneWidget);
@@ -152,9 +152,9 @@ class FakeSettingsGateway implements SettingsGateway {
         key: 'meeting-check',
         name: 'Vergaderingen en agenda controleren',
         kind: 'CRON',
-        schedule: '0 0 5 * * *',
+        schedule: '0 0 0 * * *',
         timeZone: 'Europe/Amsterdam',
-        explanation: 'Elke dag om 05:00.',
+        explanation: 'Elke dag om 00:00.',
       ),
     ],
     policySources: const PolicySourceSettings(

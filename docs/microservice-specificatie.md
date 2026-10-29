@@ -105,13 +105,13 @@ JavaScript origins** van de bestaande Google OAuth-client `Robberts applicaties`
    bronlink, laatst gecontroleerd tijdstip en bronstatus. Is er geen toekomstige vergadering meer,
    dan toont zij de vergadering met het meest recente begintijdstip uit het verleden, met de
    melding dat er nog geen nieuwe agenda is.
-3. Iedere ochtend om 05:00 uur in `Europe/Amsterdam` controleert de backend of de eerstvolgende
+3. Iedere nacht om 00:00 uur in `Europe/Amsterdam` controleert de backend of de eerstvolgende
    vergadering een ander bron-ID heeft dan de laatst succesvol verwerkte vergadering.
 4. Is er geen eerstvolgende vergadering, of is dit bron-ID al succesvol verwerkt, dan stopt de run
    direct zonder documenten te downloaden of een AI-job te maken.
 5. Is er een nieuwe vergadering, dan haalt de backend de actuele agenda, agendapunten,
    rapportitems en bijlagen op. Is de agenda nog niet gepubliceerd, dan wordt de vergadering niet
-   als verwerkt gemarkeerd en probeert de scheduler het de volgende ochtend opnieuw.
+   als verwerkt gemarkeerd en probeert de scheduler het de volgende nacht opnieuw.
 6. De frontend biedt **Nu controleren**. Deze actie voert exact dezelfde controle onmiddellijk uit
    en forceert geen dubbele verwerking van een reeds succesvol verwerkte vergadering.
 7. De backend maakt duurzame lokale analysetaken aan en dient daarvoor idempotente
@@ -122,7 +122,7 @@ JavaScript origins** van de bestaande Google OAuth-client `Robberts applicaties`
    laatst verwerkte vergadering vastgelegd. Na afronding toont de app de adviezen met
    bronverwijzingen.
 
-De planning is een vaste MVP-keuze: cron `0 0 5 * * *` met tijdzone `Europe/Amsterdam`. De klok is
+De planning is een vaste MVP-keuze: cron `0 0 0 * * *` met tijdzone `Europe/Amsterdam`. De klok is
 injecteerbaar voor tests. Een mislukte import of analyse schuift de laatst succesvol verwerkte
 vergadering niet op, zodat de volgende geplande of handmatige controle veilig opnieuw probeert.
 
@@ -342,7 +342,7 @@ promptversie.
 5. **C-detail** — bronstukken en het vrije Markdownadvies met de gevraagde bespreekafweging.
 6. **Bronnen** — klikbare bronlinks, documenthash/ophaaldatum en programmapassages.
 7. **Runstatus** — voortgang en een veilige foutmelding; opnieuw proberen gebeurt via “Nu
-   controleren” of de volgende 05:00-run.
+   controleren” of de volgende 00:00-run.
 8. **Voorbije vergadering (alleen-lezen)** — rechtstreeks te openen op
    `/archief/<vergadering-id>`. Het scherm hergebruikt de agendaweergave van **Agenda**: dezelfde
    A/B/C-indeling, dezelfde filters, dezelfde agendapuntkaarten en dezelfde detailweergave met
@@ -561,7 +561,7 @@ geldige backend-sessiecookie. Het openen van een sessie vereist een geldig Googl
 | `GET /api/meetings/next` | de vergadering van de startweergave — eerstvolgende toekomstige, anders de meest recente voorbije — en import-/analysestatus |
 | `GET /api/meetings?state=past&limit=20&cursor=...` | gepagineerd overzicht van bewaarde vergaderingen die al zijn geweest |
 | `GET /api/meetings/{id}` | één bekende vergadering, met hetzelfde antwoordmodel als `/api/meetings/next` |
-| `POST /api/meetings/check-now` | dezelfde nieuwe-vergaderingcontrole als de 05:00-scheduler uitvoeren |
+| `POST /api/meetings/check-now` | dezelfde nieuwe-vergaderingcontrole als de 00:00-scheduler uitvoeren |
 | `POST /api/meetings/{id}/analyses` | idempotente analyse starten voor een vergadering die nog moet beginnen |
 | `GET /api/meetings/{id}/agenda-items` | agenda en actuele adviesstatus ophalen |
 | `GET /api/agenda-items/{id}` | detail, bronnen en advies ophalen |
@@ -908,7 +908,7 @@ niet gecommit. Scripts lezen env-bestanden als data en voeren ze niet uit met `s
 ### 13.1 Backend
 
 - parserfixtures van minstens één volledige historische vergadering met A/B/C-structuur;
-- schedulerdekking voor 05:00 `Europe/Amsterdam`, geen vergadering, dezelfde vergadering,
+- schedulerdekking voor 00:00 `Europe/Amsterdam`, geen vergadering, dezelfde vergadering,
   ongepubliceerde agenda, mislukte run en pas-na-succes opschuiven van het laatste bron-ID;
 - contracttest tegen opgeslagen HTML voor vergaderingontdekking, agenda, reportitems en documenten;
 - wijzigingsdetectie en idempotentie;
@@ -1029,7 +1029,7 @@ inclusief de later uitgevoerde Software Factory-aansluiting, is gereed wanneer:
 14. `pvdd.vdzonsoftware.nl` via de declaratieve Route werkt;
 15. het project in de werkelijk gebruikte Software Factory-projectconfiguratie selecteerbaar is;
 16. analyses duidelijk als menselijk te controleren concept worden gepresenteerd;
-17. de 05:00-run en “Nu controleren” stoppen zonder AI-call wanneer er geen nieuw bron-ID is;
+17. de 00:00-run en “Nu controleren” stoppen zonder AI-call wanneer er geen nieuw bron-ID is;
 18. acceptatie zowel Agent Runtime als de vergaderbron volledig mockt;
 19. opgeslagen gegevens niet automatisch worden verwijderd.
 
@@ -1042,7 +1042,7 @@ uitgevoerd:
    frontend/backend/database, caching, Agent Runtime-tenant, acceptatiemocks, OpenShift, CI/CD,
    GitOps en infrastructuur.
 2. [Functionele MVP](stappenplannen/02-functionele-mvp.md) — vergaderingontdekking, import,
-   documentextractie, 05:00-workflow, beleidsbron, AI-analyse, A/B/C-interface en functionele
+   documentextractie, 00:00-workflow, beleidsbron, AI-analyse, A/B/C-interface en functionele
    acceptatie.
 3. [Bronrevisies en gerichte heranalyse](stappenplannen/04-bronrevisies-en-heranalyse.md) —
    voorlopige C-stukken, wijzigingsdetectie, revisiehistorie en selectieve heranalyse.
@@ -1083,7 +1083,7 @@ puntfingerprint, promptversie en beleidsbronversie.
 
 Een expliciete publicatiemelding wint altijd bij de kwalificatie van de agenda als voorlopig, maar
 blokkeert de verwerking van reeds beschikbare stukken niet. Na publicatie en bij iedere volgende
-05:00-/handmatige controle wordt hetzelfde vergadering-ID opnieuw vergeleken. Een nieuwe
+00:00-/handmatige controle wordt hetzelfde vergadering-ID opnieuw vergeleken. Een nieuwe
 publicatieversie en inhoudelijk gewijzigde of nieuwe punten krijgen een revisiegebonden idempotente
 analyse; oude resultaten kunnen een nieuwere revisie nooit actueel maken.
 
@@ -1110,3 +1110,13 @@ Voor dit concept zijn de lokale repositories op 31 augustus 2026 onderzocht:
 De openbare iBabs-pagina is eveneens gecontroleerd. Historische vergaderpagina’s leveren
 server-side HTML met agendahiërarchie, `/Agenda/Document/...`-bijlagen en C-items via
 `/Reports/Item/...`; dit onderbouwt de keuze om eerst een gewone HTTP-importer te bouwen.
+
+### Planning van de nachtelijke taken
+
+- De dagelijkse agendacontrole draait om 00:00 (`0 0 0 * * *`) en de maandelijkse
+  standpuntenactualisatie op de 1e om 01:30 (`0 30 1 1 * *`), beide in `Europe/Amsterdam`.
+- Beide tijden liggen vóór 02:00, dus buiten de zomer-/wintertijdwissel: geen dubbele of
+  overgeslagen uitvoering. De standpuntenactualisatie start 90 minuten na de agendacontrole.
+- De echte nachtelijke runs zijn pas na uitrol zichtbaar. Na deployment (geen merge-poort) roept de
+  beheerder op acceptatie de bestaande scheduledCheck-route aan en verwacht een succesvolle
+  controle; de runs van 00:00 en op de 1e van 01:30 worden in de logs gecontroleerd.
