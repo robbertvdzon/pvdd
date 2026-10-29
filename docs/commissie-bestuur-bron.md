@@ -37,3 +37,6 @@ zonder agenda-type blijft de commissie overgeslagen.
 - Acceptatie: `9000000001` (mock), via `deploy/overlays/acceptance/configmap.yaml`. Niet in productie.
 - De oude property `pvdd.meeting-source.agenda-type-id` blijft een alias voor Ruimte; een expliciete
   lijstwaarde `pvdd.meeting-source.commissies[n].agenda-type-id` voor Ruimte wint.
+
+Leespaden: sinds story hkh-383 accepteren de leesroutes de queryparameter `commissie` (standaard `RUIMTE`);
+zie microservice-specificatie §5.2.

@@ -26,3 +26,20 @@ Story hkh-383, branch `ai/hkh-383`.
   `melding` in de bestaande check-now-tests. Bestaande hkh-377-tests lezen Bestuur nu met `Commissie.BESTUUR`.
 - Commando: `cd backend && PVDD_TEST_DATABASE_URL=jdbc:postgresql://127.0.0.1:55432/<verse-db> mvn -B --no-transfer-progress clean verify`
   (261 tests, 0 failures, 7 skipped).
+
+## hkh-387 — documentation (2026-10-29)
+
+### Doel
+Documentatie in lijn brengen met de commissieparameter, het leesmodel en check-now per commissie (hkh-383/hkh-384).
+
+### Bijgewerkt
+- `docs/microservice-specificatie.md` §4.2: `melding` in `CommissieCheckResult`; zin dat een commissiefilter niet bestaat vervangen.
+- `docs/microservice-specificatie.md` §5.2: alinea Commissieparameter (routes, `invalid_commissie`, 404 bij andere commissie,
+  `commissie`/`commissieNaam`, `agendaStatus`, autorisatie en filter ongewijzigd).
+- `docs/commissie-bestuur-bron.md`: verwijzing naar de leesparameter.
+
+### Bewust niet gewijzigd
+- `docs/functionele-werking-commissie-assistent.md`, `docs/factory/*`, `docs/agent-access.md`: geen frontend-, proces-, route- of filterwijziging.
+
+### Verificatie
+- `bash tools/verify-documentation.sh`; alleen `docs/` geraakt.

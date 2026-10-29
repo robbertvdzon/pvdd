@@ -150,11 +150,12 @@ Bestuur-agenda gebruikt hetzelfde PREVIEW-mechanisme als Ruimte (status `AGENDA_
 agendapunten); gepubliceerde agenda's gaan door dezelfde `AgendaParser`. Er zijn geen nieuwe statuswaarden.
 
 `MeetingCheckResult` krijgt additief de lijst `commissies` (`CommissieCheckResult`: commissie, naam,
-success, status, errorCode, meetingSourceId, meetings). De oude velden en `meetings` van
+success, status, errorCode, meetingSourceId, meetings, melding). De oude velden en `meetings` van
 `POST /api/meetings/check-now` blijven die van Ruimte. Een lijst met alleen één `SourceFailure` zonder
 vergadergegevens blijft per commissie een mislukte controle voor die commissie. Oude agenda's worden niet
-verwerkt (filter datum >= vandaag blijft). Een commissiefilter op de leespaden (overzicht, `next`, archief)
-bestaat niet en hoort bij een eigen story.
+verwerkt (filter datum >= vandaag blijft). De leespaden filteren sinds story hkh-383 op commissie (§5.2).
+`melding` is een Nederlandse meldingstekst per commissie (bijvoorbeeld dat de controle van commissie Bestuur
+is mislukt en de bestaande gegevens beschikbaar blijven).
 
 De zoeklaag geeft sinds story hkh-306 een geordende, nooit lege lijst van uitkomsten terug: de
 eerstvolgende vergadering (`startsAt` strikt na het controlemoment) plus de vergaderingen waarvan de
@@ -647,6 +648,23 @@ nieuw foutbodyformaat. De validatie gebeurt vóór elke databasetoegang, zodat e
 nooit gedeeltelijke gegevens oplevert. De cursor heeft exact hetzelfde formaat als die van
 `GET /api/ai-runs` (base64url zonder padding van `<instant>|<uuid>`); beide lijsten delen die
 codering.
+
+Commissieparameter (sinds hkh-383): alle leesroutes `GET /api/meetings/next`, `GET /api/meetings`
+(`state=past`), `GET /api/meetings/{id}`, `GET /api/meetings/{id}/agenda-items`, `GET /api/agenda-items/{id}`
+en `GET /api/agenda-items/{id}/advice-versions` nemen de optionele queryparameter `commissie`. Een
+ontbrekende parameter betekent `RUIMTE`; anders is alleen exact `RUIMTE` of `BESTUUR` geldig. Elke andere
+waarde (ook leeg of kleine letters) geeft `400` met foutcode `invalid_commissie`, vóór elke databasetoegang.
+`DashboardRepository` filtert op `meeting.commissie` (overzicht, serie, detail, punten, versies, archieflijst
+met tellingen, `total` en paginering). Een vergadering- of punt-id van de andere commissie geeft `404`, gelijk
+aan een onbekend id, zodat geen bestaansinformatie lekt; stukken en analyses volgen via vergadering en punt.
+`MeetingDto` en `AgendaItemSummaryDto` bevatten additief `commissie` (`RUIMTE`/`BESTUUR`) en `commissieNaam`
+(`Ruimte`/`Bestuur`). `MeetingOverviewDto` bevat additief `agendaStatus`: `PUBLISHED`, `UNPUBLISHED`
+(vergaderstatus `AGENDA_UNPUBLISHED`; de agendapuntenlijst is dan leeg, er worden geen punten verzonnen) of
+`NONE` zonder vergadering. Het antwoord voor Ruimte zonder parameter is verder ongewijzigd. Er zijn geen
+nieuwe routes, mutaties, migraties of configuratie; autorisatie is ongewijzigd (niet ingelogd `401`, een
+ingelogde geautoriseerde gebruiker leest beide commissies). Omdat de querystring niet in `requestURI`
+zit, is `ProductionReadAccessFilter` ongewijzigd: de leestoken-paden werken ook met `?commissie=BESTUUR`.
+`POST /api/meetings/check-now` geeft per commissie een resultaat in `commissies` (zie §4.2).
 
 De lijst selecteert `starts_at < CURRENT_TIMESTAMP` op databasetijd en sorteert op begintijdstip
 aflopend en bij gelijk tijdstip op ID aflopend; een vergadering die precies nu begint telt dus niet
