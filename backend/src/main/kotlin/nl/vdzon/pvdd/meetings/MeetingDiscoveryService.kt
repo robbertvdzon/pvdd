@@ -10,6 +10,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import nl.vdzon.pvdd.source.Commissie
+import nl.vdzon.pvdd.source.CommissieSource
 import nl.vdzon.pvdd.source.MeetingSourceGateway
 import nl.vdzon.pvdd.source.MeetingSourceProperties
 import nl.vdzon.pvdd.source.SourceTransportCode
@@ -27,14 +28,22 @@ class MeetingDiscoveryService(
 ) : MeetingDiscoveryGateway {
     fun discover(): List<DiscoveryOutcome> = discover(clock.instant())
 
+    override fun commissies(): List<CommissieSource> = properties.resolvedCommissies().filter { it.agendaTypeId.isNotEmpty() }
+
     override fun discover(now: Instant): List<DiscoveryOutcome> {
         properties.resolvedCommissies().filter { it.agendaTypeId.isEmpty() }.forEach {
             log.warn("Commissie {} heeft geen agenda-type en wordt overgeslagen.", it.commissie)
         }
+        return discoverCommissie(Commissie.RUIMTE, now)
+    }
+
+    /** Ontdekt de eerstvolgende vergadering(en) via het agenda-type van één commissie. */
+    override fun discoverCommissie(commissie: Commissie, now: Instant): List<DiscoveryOutcome> {
+        val agendaTypeId = properties.agendaTypeIdOf(commissie)
         return try {
             val today = LocalDate.ofInstant(now, AMSTERDAM)
             val candidates = (today.year..today.year + 1)
-                .flatMap { year -> parseYearPage(source.fetch(yearUri(year)).body) }
+                .flatMap { year -> parseYearPage(source.fetch(yearUri(agendaTypeId, year)).body) }
                 .filter { !it.date.isBefore(today) }
                 .distinctBy { it.url }
                 .sortedBy { it.date }
@@ -101,8 +110,8 @@ class MeetingDiscoveryService(
         return agenda.copy(items = enrichedItems)
     }
 
-    private fun yearUri(year: Int): URI {
-        val agendaType = URLEncoder.encode(properties.agendaTypeIdOf(Commissie.RUIMTE), StandardCharsets.UTF_8)
+    private fun yearUri(agendaTypeId: String, year: Int): URI {
+        val agendaType = URLEncoder.encode(agendaTypeId, StandardCharsets.UTF_8)
         return URI.create("/Agenda/RetrieveAgendasForYear?agendatypeId=$agendaType&year=$year")
     }
 
@@ -149,4 +158,11 @@ class MeetingDiscoveryService(
 interface MeetingDiscoveryGateway {
     fun discover(now: Instant): List<DiscoveryOutcome>
     fun fetchAgenda(sourceUrl: URI, enrichReports: Boolean = true): ParsedMeetingAgenda
+
+    /** Te controleren commissies in configuratievolgorde; standaard alleen Ruimte. */
+    fun commissies(): List<CommissieSource> = listOf(CommissieSource(Commissie.RUIMTE, Commissie.RUIMTE.defaultName, ""))
+
+    /** Ontdekking voor één commissie; Ruimte loopt via [discover]. */
+    fun discoverCommissie(commissie: Commissie, now: Instant): List<DiscoveryOutcome> =
+        if (commissie == Commissie.RUIMTE) discover(now) else listOf(DiscoveryOutcome.NoFutureMeeting)
 }

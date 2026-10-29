@@ -5,6 +5,8 @@ import java.time.Instant
 import java.util.UUID
 import nl.vdzon.pvdd.documents.DocumentIngestor
 import nl.vdzon.pvdd.documents.DocumentReference
+import nl.vdzon.pvdd.source.Commissie
+import nl.vdzon.pvdd.source.CommissieSource
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.PlatformTransactionManager
@@ -29,6 +31,18 @@ data class MeetingCheckResult(
     val errorCode: String? = null,
     val revisionNumber: Int? = null,
     val differences: Set<DifferenceType> = emptySet(),
+    val meetings: List<MeetingCheckMeeting> = emptyList(),
+    /** Additief: uitkomst per commissie in configuratievolgorde; de velden hierboven blijven die van Ruimte. */
+    val commissies: List<CommissieCheckResult> = emptyList(),
+)
+
+data class CommissieCheckResult(
+    val commissie: Commissie,
+    val naam: String,
+    val success: Boolean,
+    val status: MeetingCheckStatus,
+    val errorCode: String? = null,
+    val meetingSourceId: String? = null,
     val meetings: List<MeetingCheckMeeting> = emptyList(),
 )
 
@@ -68,25 +82,39 @@ class MeetingCheckWorkflow(
     private val revisions: SourceRevisionStore = TransientRevisionStore,
     transactionManager: PlatformTransactionManager? = null,
 ) {
-    private val transactions: TransactionTemplate? = transactionManager?.let {
+    // Eén transactie per commissie; een vergadering daarbinnen is een savepoint, zodat een falende
+    // vergadering alleen zichzelf terugdraait en een falende commissie al haar schrijfacties.
+    private val commissieTransactions: TransactionTemplate? = transactionManager?.let {
         TransactionTemplate(it).apply { propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW }
+    }
+    private val transactions: TransactionTemplate? = transactionManager?.let {
+        TransactionTemplate(it).apply { propagationBehavior = TransactionDefinition.PROPAGATION_NESTED }
     }
 
     fun check(): MeetingCheckResult {
         val owner = UUID.randomUUID()
         if (!locks.tryAcquire(WORKFLOW_LOCK, owner)) return MeetingCheckResult(MeetingCheckStatus.ALREADY_RUNNING)
         return (try {
-            val outcomes = discovery.discover(clock.instant())
-            val single = outcomes.singleOrNull()
-            if (single == DiscoveryOutcome.NoFutureMeeting) {
-                MeetingCheckResult(MeetingCheckStatus.NO_FUTURE_MEETING)
-            } else if (single is DiscoveryOutcome.SourceFailure) {
-                MeetingCheckResult(MeetingCheckStatus.SOURCE_FAILURE, errorCode = single.code.name)
-            } else {
-                val processed = outcomes.mapIndexedNotNull { index, outcome -> processIsolated(outcome, index > 0) }
-                val first = processed.first()
-                first.result.copy(meetings = processed.map { it.entry })
+            val now = clock.instant()
+            val configured = discovery.commissies().ifEmpty {
+                listOf(CommissieSource(Commissie.RUIMTE, Commissie.RUIMTE.defaultName, ""))
             }
+            val runs = configured.map { source -> source to checkCommissie(source, now) }
+            val primary = runs.firstOrNull { it.first.commissie == Commissie.RUIMTE } ?: runs.first()
+            primary.second.copy(
+                commissies = runs.map { (source, result) ->
+                    CommissieCheckResult(
+                        commissie = source.commissie,
+                        naam = source.weergavenaam,
+                        success = result.status != MeetingCheckStatus.SOURCE_FAILURE &&
+                            result.status != MeetingCheckStatus.FAILED,
+                        status = result.status,
+                        errorCode = result.errorCode,
+                        meetingSourceId = result.meetingSourceId,
+                        meetings = result.meetings,
+                    )
+                },
+            )
         } catch (failure: Exception) {
             log.warn("Meeting check failed with {}", safeCode(failure), failure)
             MeetingCheckResult(MeetingCheckStatus.FAILED, errorCode = "IMPORT_FAILED")
@@ -95,15 +123,38 @@ class MeetingCheckWorkflow(
         }).also(::logResult)
     }
 
+    /** Verwerkt één commissie in een eigen transactie; een fout blijft beperkt tot deze commissie. */
+    private fun checkCommissie(source: CommissieSource, now: Instant): MeetingCheckResult = try {
+        commissieTransactions?.execute { runCommissie(source.commissie, now) } ?: runCommissie(source.commissie, now)
+    } catch (failure: Exception) {
+        log.warn("Meeting check for commissie {} failed with {}", source.weergavenaam, safeCode(failure), failure)
+        MeetingCheckResult(MeetingCheckStatus.FAILED, errorCode = "IMPORT_FAILED")
+    }
+
+    private fun runCommissie(commissie: Commissie, now: Instant): MeetingCheckResult {
+        val outcomes = if (commissie == Commissie.RUIMTE) discovery.discover(now) else discovery.discoverCommissie(commissie, now)
+        val single = outcomes.singleOrNull()
+        return if (single == DiscoveryOutcome.NoFutureMeeting) {
+            MeetingCheckResult(MeetingCheckStatus.NO_FUTURE_MEETING)
+        } else if (single is DiscoveryOutcome.SourceFailure) {
+            log.warn("Source of commissie {} failed with {}", commissie.defaultName, single.code)
+            MeetingCheckResult(MeetingCheckStatus.SOURCE_FAILURE, errorCode = single.code.name)
+        } else {
+            val processed = outcomes.mapIndexedNotNull { index, outcome -> processIsolated(commissie, outcome, index > 0) }
+            val first = processed.first()
+            first.result.copy(meetings = processed.map { it.entry })
+        }
+    }
+
     private class Processed(val result: MeetingCheckResult, val entry: MeetingCheckMeeting)
 
     /** Handles one meeting in its own transaction; a failure rolls back only this meeting. */
-    private fun processIsolated(outcome: DiscoveryOutcome, extra: Boolean): Processed? {
+    private fun processIsolated(commissie: Commissie, outcome: DiscoveryOutcome, extra: Boolean): Processed? {
         if (outcome == DiscoveryOutcome.NoFutureMeeting) return null
         return try {
-            transactions?.execute { process(outcome, extra) } ?: process(outcome, extra)
+            transactions?.execute { process(commissie, outcome, extra) } ?: process(commissie, outcome, extra)
         } catch (failure: Exception) {
-            log.warn("Meeting import failed with {}", safeCode(failure), failure)
+            log.warn("Meeting import for commissie {} failed with {}", commissie.defaultName, safeCode(failure), failure)
             val known = when (outcome) {
                 is DiscoveryOutcome.Found -> outcome.meeting
                 is DiscoveryOutcome.AgendaUnpublished -> outcome.meeting
@@ -125,7 +176,7 @@ class MeetingCheckWorkflow(
         }
     }
 
-    private fun process(outcome: DiscoveryOutcome, extra: Boolean): Processed {
+    private fun process(commissie: Commissie, outcome: DiscoveryOutcome, extra: Boolean): Processed {
         var meetingId: UUID? = null
         var analyses = 0
         fun entry(agenda: ParsedMeetingAgenda, result: MeetingCheckResult) = MeetingCheckMeeting(
@@ -169,6 +220,7 @@ class MeetingCheckWorkflow(
                         MeetingStatus.AGENDA_UNPUBLISHED,
                         imported = false,
                         publicationStatus = PublicationStatus.PREVIEW,
+                        commissie = commissie,
                     )
                     val comparison = comparator.compare(agenda, PublicationStatus.PREVIEW, emptyList(), baseline)
                     val stored = revisions.record(
@@ -191,6 +243,7 @@ class MeetingCheckWorkflow(
                         MeetingStatus.IMPORTING,
                         imported = true,
                         publicationStatus = PublicationStatus.PREVIEW,
+                        commissie = commissie,
                     )
                     importAgenda(meetingId, agenda, baseline, PublicationStatus.PREVIEW, SourceState.PREVIEW)
                         .also { analyses = it.second }
@@ -206,6 +259,7 @@ class MeetingCheckWorkflow(
                     MeetingStatus.IMPORTING,
                     imported = true,
                     publicationStatus = PublicationStatus.CURRENT,
+                    commissie = commissie,
                 )
                 val (result, count) = importAgenda(meetingId, agenda, baseline)
                 analyses = count
@@ -353,6 +407,7 @@ class MeetingCheckWorkflow(
         status: MeetingStatus,
         imported: Boolean,
         publicationStatus: PublicationStatus,
+        commissie: Commissie,
     ): UUID = meetings.upsert(
         Meeting(
             id = UUID.randomUUID(),
@@ -368,6 +423,7 @@ class MeetingCheckWorkflow(
             checkedAt = clock.instant(),
             importedAt = clock.instant().takeIf { imported },
             publicationStatus = publicationStatus,
+            commissie = commissie,
         ),
     )
 

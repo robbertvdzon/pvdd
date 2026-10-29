@@ -11,6 +11,8 @@ import java.time.ZoneOffset
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import nl.vdzon.pvdd.source.Commissie
+import nl.vdzon.pvdd.source.CommissieSource
 import nl.vdzon.pvdd.source.MeetingSourceGateway
 import nl.vdzon.pvdd.source.MeetingSourceProperties
 import nl.vdzon.pvdd.source.SourcePage
@@ -255,6 +257,60 @@ class MeetingDiscoveryServiceTest {
         assertEquals(listOf("m-1"), outcomes.map { assertIs<DiscoveryOutcome.Found>(it).meeting.sourceId })
     }
 
+    @Test
+    fun `finds the next Bestuur meeting through its own agenda type in winter time`() {
+        val now = amsterdam(2026, 11, 1, 10, 0)
+        val source = SyntheticSource(
+            meeting("ruimte-1", amsterdam(2026, 11, 16, 19, 0)),
+            SyntheticMeeting("bestuur-1", amsterdam(2026, 11, 30, 13, 0), AgendaState.PUBLISHED, null, BESTUUR_TYPE, hours = 4),
+        )
+        val service = source.service(withBestuur)
+
+        val outcome = assertIs<DiscoveryOutcome.Found>(service.discoverCommissie(Commissie.BESTUUR, now).single())
+
+        assertEquals("bestuur-1", outcome.meeting.sourceId)
+        assertEquals(Instant.parse("2026-11-30T12:00:00Z"), outcome.meeting.startsAt)
+        val agenda = service.fetchAgenda(outcome.meeting.sourceUrl, enrichReports = false)
+        assertEquals(Instant.parse("2026-11-30T16:00:00Z"), agenda.endsAt)
+        assertEquals(setOf(BESTUUR_TYPE), source.yearTypes.toSet())
+        // Ruimte blijft zijn eigen agenda-type gebruiken en ziet de Bestuur-vergadering niet.
+        assertEquals("ruimte-1", assertIs<DiscoveryOutcome.Found>(service.discover(now).single()).meeting.sourceId)
+    }
+
+    @Test
+    fun `Bestuur picks the earliest meeting strictly after now`() {
+        val earlier = amsterdam(2026, 11, 30, 13, 0)
+        val source = SyntheticSource(
+            bestuurMeeting("bestuur-vroeg", earlier),
+            bestuurMeeting("bestuur-laat", amsterdam(2026, 12, 7, 13, 0)),
+        )
+        val service = source.service(withBestuur)
+
+        assertEquals("bestuur-vroeg", assertIs<DiscoveryOutcome.Found>(service.discoverCommissie(Commissie.BESTUUR, earlier.minusSeconds(1)).first()).meeting.sourceId)
+        // Gelijkheid valt af: een vergadering die nu begint is niet de eerstvolgende.
+        assertEquals("bestuur-laat", assertIs<DiscoveryOutcome.Found>(service.discoverCommissie(Commissie.BESTUUR, earlier).first()).meeting.sourceId)
+        assertEquals("bestuur-laat", assertIs<DiscoveryOutcome.Found>(service.discoverCommissie(Commissie.BESTUUR, earlier.plusSeconds(60)).first()).meeting.sourceId)
+    }
+
+    @Test
+    fun `Bestuur reports an unpublished agenda and no future meeting per commissie`() {
+        val now = amsterdam(2026, 11, 1, 10, 0)
+        val service = SyntheticSource(bestuurMeeting("bestuur-1", amsterdam(2026, 11, 30, 13, 0), AgendaState.UNPUBLISHED))
+            .service(withBestuur)
+
+        assertIs<DiscoveryOutcome.AgendaUnpublished>(service.discoverCommissie(Commissie.BESTUUR, now).single())
+        assertIs<DiscoveryOutcome.NoFutureMeeting>(service.discover(now).single())
+    }
+
+    @Test
+    fun `lists only commissies that have an agenda type in configuration order`() {
+        assertEquals(listOf(Commissie.RUIMTE), service { error("unused") }.commissies().map { it.commissie })
+        assertEquals(
+            listOf(Commissie.RUIMTE, Commissie.BESTUUR),
+            service(withBestuur) { error("unused") }.commissies().map { it.commissie },
+        )
+    }
+
     // --- Testvoorzieningen: synthetische bron met registratie van ophaalacties ---
 
     private enum class AgendaState { PUBLISHED, UNPUBLISHED, PREVIEW_WITH_ITEMS }
@@ -264,10 +320,20 @@ class MeetingDiscoveryServiceTest {
         val startsAt: Instant,
         val state: AgendaState,
         val failure: SourceTransportCode?,
+        val agendaTypeId: String = RUIMTE_TYPE,
+        val hours: Long = 2,
     )
 
     private fun meeting(id: String, startsAt: Instant, state: AgendaState = AgendaState.PUBLISHED, failure: SourceTransportCode? = null) =
         SyntheticMeeting(id, startsAt, state, failure)
+
+    private fun bestuurMeeting(id: String, startsAt: Instant, state: AgendaState = AgendaState.PUBLISHED) =
+        SyntheticMeeting(id, startsAt, state, null, BESTUUR_TYPE)
+
+    private val withBestuur = MeetingSourceProperties(
+        baseUrl = baseUrl,
+        commissies = listOf(CommissieSource(Commissie.BESTUUR, "Bestuur", BESTUUR_TYPE)),
+    )
 
     /** Zet een Amsterdamse datum/tijd om naar een `Instant`. */
     private fun amsterdam(year: Int, month: Int, day: Int, hour: Int, minute: Int): Instant =
@@ -284,13 +350,17 @@ class MeetingDiscoveryServiceTest {
         private val dayFormat = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.forLanguageTag("nl-NL"))
         private val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
 
-        fun service() = service { uri -> SourcePage(uri, 200, "text/html", serve(uri)) }
+        val yearTypes = mutableListOf<String>()
+
+        fun service(props: MeetingSourceProperties = properties) = service(props) { uri -> SourcePage(uri, 200, "text/html", serve(uri)) }
 
         private fun serve(uri: URI): String {
             if (uri.path.contains("RetrieveAgendasForYear")) {
                 yearPageFailure?.let { throw SourceTransportException(it) }
                 val year = uri.query.substringAfter("year=").toInt()
-                return sourceMeetings.filter { it.startsAt.atZone(zone).year == year }.joinToString("\n") { m ->
+                val type = uri.query.substringAfter("agendatypeId=").substringBefore('&')
+                yearTypes += type
+                return sourceMeetings.filter { it.agendaTypeId == type && it.startsAt.atZone(zone).year == year }.joinToString("\n") { m ->
                     val local = m.startsAt.atZone(zone)
                     """<li><a href="/Agenda/Index/${m.id}"><div>${dayFormat.format(local)} <span class="sr-only">${local.year}</span></div></a></li>"""
                 }
@@ -308,7 +378,7 @@ class MeetingDiscoveryServiceTest {
             return base
                 .replace("maandag 14 september 2026", "${dayFormat.format(local)} ${local.year}")
                 .replace("14 september 2026", "${dayFormat.format(local).substringAfter(' ')} ${local.year}")
-                .replace("18:30 - 22:30", "${timeFormat.format(local)} - ${timeFormat.format(local.plusHours(2))}")
+                .replace("18:30 - 22:30", "${timeFormat.format(local)} - ${timeFormat.format(local.plusHours(meeting.hours))}")
                 .replace("meeting-future", id)
         }
     }
@@ -341,9 +411,11 @@ class MeetingDiscoveryServiceTest {
         }
     }
 
-    private fun service(fetch: (URI) -> SourcePage) = MeetingDiscoveryService(
+    private fun service(fetch: (URI) -> SourcePage) = service(properties, fetch)
+
+    private fun service(props: MeetingSourceProperties, fetch: (URI) -> SourcePage) = MeetingDiscoveryService(
         source = MeetingSourceGateway(fetch),
-        properties = properties,
+        properties = props,
         parser = AgendaParser(),
         clock = Clock.fixed(now, ZoneOffset.UTC),
     )
@@ -351,4 +423,9 @@ class MeetingDiscoveryServiceTest {
     private fun fixture(name: String): String = requireNotNull(
         javaClass.getResource("/fixtures/meetings/$name"),
     ).readText()
+
+    private companion object {
+        const val RUIMTE_TYPE = "1100617069"
+        const val BESTUUR_TYPE = "1100617071"
+    }
 }

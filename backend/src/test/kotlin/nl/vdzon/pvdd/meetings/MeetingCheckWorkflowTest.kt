@@ -11,6 +11,7 @@ import kotlin.test.assertTrue
 import nl.vdzon.pvdd.documents.DocumentIngestionSummary
 import nl.vdzon.pvdd.documents.DocumentIngestor
 import nl.vdzon.pvdd.documents.DocumentReference
+import nl.vdzon.pvdd.source.Commissie
 import org.junit.jupiter.api.Test
 import nl.vdzon.pvdd.meetings.api.MeetingCheckController
 import org.springframework.context.ApplicationEventPublisher
@@ -315,6 +316,111 @@ class MeetingCheckWorkflowTest {
         assertEquals("0 0 5 * * *", MeetingCheckScheduler.CRON)
         assertEquals("Europe/Amsterdam", MeetingCheckScheduler.ZONE)
         assertEquals(1, fx.lock.acquires)
+    }
+
+    private fun commissieAgenda(id: String, offsetSeconds: Long = 3600, published: Boolean = true): ParsedMeetingAgenda {
+        val template = AgendaParser().parse(resource(if (published) "agenda-full.html" else "agenda-unpublished.html"), meetingUrl)
+        return template.copy(
+            sourceId = id,
+            sourceUrl = URI("https://noordholland.bestuurlijkeinformatie.nl/Agenda/Index/$id"),
+            startsAt = now.plusSeconds(offsetSeconds),
+            endsAt = now.plusSeconds(offsetSeconds + 3600),
+        )
+    }
+
+    @Test
+    fun `each configured commissie is discovered and stored with its commissie`() {
+        val source = CommissieFakeSource()
+            .agendas(Commissie.RUIMTE, commissieAgenda("ruimte-1"))
+            .agendas(Commissie.BESTUUR, commissieAgenda("bestuur-1", 7200))
+        val fixture = fixture(discovery = source)
+
+        val result = fixture.workflow.check()
+
+        assertEquals(listOf(Commissie.RUIMTE, Commissie.BESTUUR), source.discoverCalls)
+        assertEquals(
+            mapOf("ruimte-1" to Commissie.RUIMTE, "bestuur-1" to Commissie.BESTUUR),
+            fixture.store.savedMeetings.associate { it.sourceId to it.commissie },
+        )
+        assertEquals(listOf("Ruimte", "Bestuur"), result.commissies.map { it.naam })
+        assertTrue(result.commissies.all { it.success })
+        // Het oude enkelvoudige veld blijft dat van Ruimte.
+        assertEquals("ruimte-1", result.meetingSourceId)
+        assertEquals(listOf("ruimte-1"), result.meetings.map { it.meetingSourceId })
+        assertEquals(listOf("bestuur-1"), result.commissies[1].meetings.map { it.meetingSourceId })
+    }
+
+    @Test
+    fun `an unpublished Bestuur agenda is stored as preview without agenda items`() {
+        val source = CommissieFakeSource()
+            .agendas(Commissie.RUIMTE, commissieAgenda("ruimte-1"))
+            .agendas(Commissie.BESTUUR, commissieAgenda("bestuur-1", 7200, published = false))
+        val fixture = fixture(discovery = source)
+
+        val result = fixture.workflow.check()
+
+        val bestuur = fixture.store.savedMeetings.single { it.commissie == Commissie.BESTUUR }
+        assertEquals(MeetingStatus.AGENDA_UNPUBLISHED, bestuur.status)
+        assertEquals(PublicationStatus.PREVIEW, bestuur.publicationStatus)
+        assertEquals(MeetingCheckStatus.AGENDA_UNPUBLISHED, result.commissies[1].status)
+        assertEquals(0, source.ingestCalls[Commissie.BESTUUR] ?: 0)
+        assertTrue(source.fetchesOf(Commissie.BESTUUR).isNotEmpty())
+    }
+
+    @Test
+    fun `a failing commissie is logged by name and reported while the other is processed`() {
+        val logger = org.slf4j.LoggerFactory.getLogger(MeetingCheckWorkflow::class.java) as ch.qos.logback.classic.Logger
+        val appender = ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>().also { it.start() }
+        logger.addAppender(appender)
+        try {
+            val source = CommissieFakeSource()
+                .agendas(Commissie.RUIMTE, commissieAgenda("ruimte-1"))
+                .failOnDiscovery(Commissie.BESTUUR, IllegalStateException("boom"))
+            val fixture = fixture(discovery = source)
+
+            val result = fixture.workflow.check()
+
+            assertEquals(listOf(true, false), result.commissies.map { it.success })
+            assertEquals("Bestuur", result.commissies[1].naam)
+            assertEquals(MeetingCheckStatus.FAILED, result.commissies[1].status)
+            assertEquals(listOf("ruimte-1"), fixture.store.savedMeetings.map { it.sourceId })
+            assertEquals(MeetingCheckStatus.IMPORTED, result.status)
+            assertTrue(appender.list.any { it.level == ch.qos.logback.classic.Level.WARN && it.formattedMessage.contains("Bestuur") })
+        } finally {
+            logger.detachAppender(appender)
+        }
+    }
+
+    @Test
+    fun `a source failure of one commissie is reported per commissie`() {
+        val source = CommissieFakeSource()
+            .transportFailure(Commissie.RUIMTE, SourceErrorCode.READ_TIMEOUT)
+            .agendas(Commissie.BESTUUR, commissieAgenda("bestuur-1"))
+        val result = fixture(discovery = source).workflow.check()
+
+        assertEquals(MeetingCheckStatus.SOURCE_FAILURE, result.status)
+        assertEquals("READ_TIMEOUT", result.errorCode)
+        assertEquals(listOf(false, true), result.commissies.map { it.success })
+        assertEquals(listOf(Commissie.RUIMTE, Commissie.BESTUUR), source.discoverCalls)
+    }
+
+    @Test
+    fun `a Ruimte-only source keeps the old result and lists one commissie`() {
+        val result = fixture(discovery = StubDiscovery(DiscoveryOutcome.SourceFailure(SourceErrorCode.HTTP_ERROR))).workflow.check()
+
+        assertEquals(MeetingCheckStatus.SOURCE_FAILURE, result.status)
+        assertTrue(result.meetings.isEmpty())
+        assertEquals(listOf(Commissie.RUIMTE), result.commissies.map { it.commissie })
+    }
+
+    @Test
+    fun `a locked workflow reports no commissies and asks the source nothing`() {
+        val source = CommissieFakeSource()
+        val result = fixture(discovery = source, lockAvailable = false).workflow.check()
+
+        assertEquals(MeetingCheckStatus.ALREADY_RUNNING, result.status)
+        assertTrue(result.commissies.isEmpty())
+        assertTrue(source.discoverCalls.isEmpty())
     }
 
     private class MultiFixture(

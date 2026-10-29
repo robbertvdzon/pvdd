@@ -44,6 +44,10 @@ import nl.vdzon.pvdd.dashboard.DashboardRepository
 import nl.vdzon.pvdd.dashboard.ProgressDto
 import nl.vdzon.pvdd.dashboard.api.DashboardController
 import nl.vdzon.pvdd.meetings.AgendaCategory
+import nl.vdzon.pvdd.meetings.CommissieFakeSource
+import nl.vdzon.pvdd.meetings.SourceErrorCode
+import nl.vdzon.pvdd.source.Commissie
+import nl.vdzon.pvdd.source.CommissieSource
 import nl.vdzon.pvdd.meetings.AgendaItem
 import nl.vdzon.pvdd.meetings.DiscoveredMeeting
 import nl.vdzon.pvdd.meetings.DiscoveryOutcome
@@ -2002,6 +2006,262 @@ class DatabaseIntegrationTest(
             }
         } finally {
             ids.forEach(::removeSyntheticMeeting)
+        }
+    }
+
+    // --- Commissiegewijze ontdekking: nep-bron per commissie tegen de echte database ---
+
+    private fun commissieAgenda(
+        sourceId: String,
+        startsAt: Instant = Instant.now().plusSeconds(86400),
+        published: Boolean = true,
+        categories: List<AgendaCategory>? = null,
+        title: String? = null,
+    ): ParsedMeetingAgenda {
+        val template = AgendaParser().parse(
+            requireNotNull(javaClass.getResource("/fixtures/meetings/${if (published) "agenda-full.html" else "agenda-unpublished.html"}")).readText(),
+            URI("https://noordholland.bestuurlijkeinformatie.nl/Agenda/Index/$sourceId"),
+        )
+        val items = categories?.let { cats ->
+            template.items.take(cats.size).mapIndexed { index, item -> item.copy(category = cats[index], substantive = true) }
+        } ?: template.items
+        return template.copy(
+            sourceId = sourceId,
+            title = title ?: template.title,
+            startsAt = startsAt,
+            endsAt = startsAt.plusSeconds(3600),
+            items = items,
+        )
+    }
+
+    private fun commissieWorkflow(
+        discovery: MeetingDiscoveryGateway,
+        ingestor: DocumentIngestor = DocumentIngestor { _, _ -> DocumentIngestionSummary(emptyList(), true) },
+    ) = MeetingCheckWorkflow(
+        discovery,
+        meetingRepository,
+        ingestor,
+        workflowLockRepository,
+        ApplicationEventPublisher { },
+        Clock.systemUTC(),
+        revisionComparator,
+        sourceRevisionRepository,
+        transactionManager,
+    )
+
+    private fun meetingIdOf(sourceId: String): UUID? =
+        jdbc.queryForList("SELECT id FROM meeting WHERE source_id = ?", UUID::class.java, sourceId).singleOrNull()
+
+    private fun storedMeeting(sourceId: String): Meeting? = meetingIdOf(sourceId)?.let { meetingRepository.findMeeting(it) }
+
+    private fun countItems(meetingId: UUID): Int =
+        jdbc.queryForObject("SELECT COUNT(*) FROM agenda_item WHERE meeting_id = ?", Int::class.java, meetingId) ?: 0
+
+    // Zaaihelper voor bestaande gegevens van een commissie (vergadering met één agendapunt).
+    private fun seedExistingMeeting(commissie: Commissie, sourceId: String, title: String): UUID {
+        val base = pastMeeting(Instant.now().plusSeconds(3 * 86400))
+        val id = meetingRepository.upsert(base.copy(sourceId = sourceId, title = title, commissie = commissie))
+        meetingRepository.upsert(pastAgendaItem(id))
+        return id
+    }
+
+    private fun <T> withCommissieCleanup(sourceIds: List<String>, block: () -> T): T {
+        val previousLastSuccessful = meetingRepository.lastSuccessfulSourceId()
+        try {
+            return block()
+        } finally {
+            sourceIds.mapNotNull(::meetingIdOf).forEach(::removeSyntheticMeeting)
+            restoreLastSuccessfulSourceId(previousLastSuccessful)
+        }
+    }
+
+    private fun logCapture(block: () -> Unit): List<String> {
+        val logger = org.slf4j.LoggerFactory.getLogger(MeetingCheckWorkflow::class.java) as ch.qos.logback.classic.Logger
+        val appender = ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>().also { it.start() }
+        logger.addAppender(appender)
+        try {
+            block()
+        } finally {
+            logger.detachAppender(appender)
+        }
+        return appender.list.filter { it.level == ch.qos.logback.classic.Level.WARN }.map { it.formattedMessage }
+    }
+
+    @Test
+    fun `both commissies are discovered and every stored meeting carries its commissie`() {
+        val unique = UUID.randomUUID()
+        val ruimteId = "ruimte-$unique"
+        val bestuurId = "bestuur-$unique"
+        withCommissieCleanup(listOf(ruimteId, bestuurId)) {
+            val source = CommissieFakeSource()
+                .agendas(Commissie.RUIMTE, commissieAgenda(ruimteId))
+                .agendas(Commissie.BESTUUR, commissieAgenda(bestuurId, Instant.now().plusSeconds(2 * 86400)))
+
+            val result = commissieWorkflow(source, source.ingestor).check()
+
+            assertEquals(Commissie.RUIMTE, storedMeeting(ruimteId)?.commissie)
+            assertEquals(Commissie.BESTUUR, storedMeeting(bestuurId)?.commissie)
+            assertEquals(listOf(Commissie.RUIMTE, Commissie.BESTUUR), source.discoverCalls)
+            assertEquals(listOf(Commissie.RUIMTE, Commissie.BESTUUR), result.commissies.map { it.commissie })
+            assertEquals(listOf(true, true), result.commissies.map { it.success })
+        }
+    }
+
+    @Test
+    fun `a published Bestuur agenda keeps the categories A B and C of the source`() {
+        val bestuurId = "bestuur-abc-${UUID.randomUUID()}"
+        withCommissieCleanup(listOf(bestuurId)) {
+            val agenda = commissieAgenda(bestuurId, categories = listOf(AgendaCategory.A, AgendaCategory.B, AgendaCategory.C))
+            val source = CommissieFakeSource().agendas(Commissie.BESTUUR, agenda)
+
+            commissieWorkflow(source, source.ingestor).check()
+
+            val stored = meetingRepository.findAgendaItems(requireNotNull(meetingIdOf(bestuurId)))
+            assertEquals(
+                agenda.items.associate { it.sourceId to it.category },
+                stored.associate { it.sourceId to it.category },
+            )
+            assertEquals(setOf(AgendaCategory.A, AgendaCategory.B, AgendaCategory.C), stored.map { it.category }.toSet())
+            assertEquals(PublicationStatus.CURRENT, requireNotNull(storedMeeting(bestuurId)).publicationStatus)
+        }
+    }
+
+    @Test
+    fun `an unpublished Bestuur agenda is stored as such without agenda items`() {
+        val bestuurId = "bestuur-unpublished-${UUID.randomUUID()}"
+        withCommissieCleanup(listOf(bestuurId)) {
+            val agenda = commissieAgenda(bestuurId, published = false)
+            assertTrue(agenda.items.none { it.substantive }, "de bronfake levert geen agendapunten")
+            val source = CommissieFakeSource().agendas(Commissie.BESTUUR, agenda.copy(items = emptyList()))
+
+            val result = commissieWorkflow(source, source.ingestor).check()
+
+            val stored = requireNotNull(storedMeeting(bestuurId))
+            assertEquals(MeetingStatus.AGENDA_UNPUBLISHED, stored.status)
+            assertEquals(PublicationStatus.PREVIEW, stored.publicationStatus)
+            assertEquals(Commissie.BESTUUR, stored.commissie)
+            assertEquals(0, countItems(stored.id))
+            assertEquals(MeetingCheckStatus.AGENDA_UNPUBLISHED, result.commissies.single { it.commissie == Commissie.BESTUUR }.status)
+        }
+    }
+
+    private fun isolationScenario(failing: Commissie) {
+        val healthy = if (failing == Commissie.BESTUUR) Commissie.RUIMTE else Commissie.BESTUUR
+        val unique = UUID.randomUUID()
+        val failingId = "${failing.name.lowercase()}-fail-$unique"
+        val healthyId = "${healthy.name.lowercase()}-ok-$unique"
+        val healthyOldId = "${healthy.name.lowercase()}-old-$unique"
+        withCommissieCleanup(listOf(failingId, healthyId, healthyOldId)) {
+            val existing = seedExistingMeeting(failing, failingId, "bestaande titel")
+            val existingItems = meetingRepository.findAgendaItems(existing)
+            val existingBefore = requireNotNull(meetingRepository.findMeeting(existing))
+            val source = CommissieFakeSource()
+                .agendas(failing, commissieAgenda(failingId, title = "nieuwe titel"))
+                .agendas(healthy, commissieAgenda(healthyId))
+                .failDuringIngest(failing, IllegalStateException("boom na gedeeltelijke schrijfacties"))
+            lateinit var result: MeetingCheckResult
+
+            val warnings = logCapture { result = commissieWorkflow(source, source.ingestor).check() }
+
+            // De fout ontstond ná schrijfacties (vergadering en agendapunten waren al geschreven).
+            assertTrue((source.ingestCalls[failing] ?: 0) >= 1)
+            // De gezonde commissie en haar rijen blijven staan.
+            assertEquals(healthy, requireNotNull(storedMeeting(healthyId)).commissie)
+            assertTrue(countItems(requireNotNull(meetingIdOf(healthyId))) > 0)
+            // De falende commissie heeft niets nieuws en haar bestaande rijen zijn ongewijzigd.
+            assertEquals(existingBefore, meetingRepository.findMeeting(existing))
+            assertEquals(existingItems, meetingRepository.findAgendaItems(existing))
+            assertEquals(
+                0,
+                jdbc.queryForObject("SELECT COUNT(*) FROM meeting_revision WHERE meeting_id = ?", Int::class.java, existing),
+            )
+            // Gelogd met commissienaam en vastgelegd in het resultaat met commissienaam.
+            val failingName = failing.defaultName
+            assertTrue(warnings.any { it.contains(failingName) && it.contains("IllegalStateException") }, warnings.toString())
+            val entry = result.commissies.single { it.commissie == failing }
+            assertEquals(failingName, entry.naam)
+            assertFalse(entry.success)
+            assertEquals(MeetingCheckStatus.FAILED, entry.status)
+            assertEquals(MeetingCheckOutcome.FAILED, entry.meetings.single().outcome)
+            assertTrue(result.commissies.single { it.commissie == healthy }.success)
+        }
+    }
+
+    @Test
+    fun `a failing Bestuur rolls back alone while Ruimte is stored`() = isolationScenario(Commissie.BESTUUR)
+
+    @Test
+    fun `a failing Ruimte rolls back alone while Bestuur is stored`() = isolationScenario(Commissie.RUIMTE)
+
+    @Test
+    fun `check now reports success or failure per commissie and keeps the Ruimte field`() {
+        val unique = UUID.randomUUID()
+        val ruimteId = "ruimte-cn-$unique"
+        withCommissieCleanup(listOf(ruimteId)) {
+            val source = CommissieFakeSource()
+                .agendas(Commissie.RUIMTE, commissieAgenda(ruimteId))
+                .transportFailure(Commissie.BESTUUR, SourceErrorCode.READ_TIMEOUT)
+            val controller = MeetingCheckController(commissieWorkflow(source, source.ingestor), MutationGuard(Clock.systemUTC()))
+
+            val response = controller.checkNow(adviser, "check-now-commissies-$unique")
+
+            assertEquals(HttpStatus.OK, response.statusCode)
+            val body = requireNotNull(response.body)
+            assertEquals(ruimteId, body.meetingSourceId)
+            assertEquals(MeetingCheckStatus.IMPORTED, body.status)
+            assertEquals(listOf("Ruimte" to true, "Bestuur" to false), body.commissies.map { it.naam to it.success })
+            assertEquals("READ_TIMEOUT", body.commissies[1].errorCode)
+            assertTrue(body.commissies[1].meetings.isEmpty())
+        }
+    }
+
+    @Test
+    fun `check now with only a source failure stays a failed whole check`() {
+        val source = CommissieFakeSource(listOf(CommissieSource(Commissie.RUIMTE, "Ruimte", "1100617069")))
+            .transportFailure(Commissie.RUIMTE)
+        val controller = MeetingCheckController(commissieWorkflow(source), MutationGuard(Clock.systemUTC()))
+
+        val body = requireNotNull(controller.checkNow(adviser, "check-now-failure-${UUID.randomUUID()}").body)
+
+        assertEquals(MeetingCheckStatus.SOURCE_FAILURE, body.status)
+        assertTrue(body.meetings.isEmpty())
+        assertEquals(listOf(false), body.commissies.map { it.success })
+    }
+
+    private data class RuimteSnapshot(
+        val meeting: List<Any?>,
+        val items: List<List<Any?>>,
+    )
+
+    private fun ruimteSnapshot(sourceId: String): RuimteSnapshot {
+        val meeting = requireNotNull(storedMeeting(sourceId))
+        return RuimteSnapshot(
+            listOf(
+                meeting.title, meeting.startsAt, meeting.endsAt, meeting.status, meeting.publicationStatus,
+                meeting.commissie, meeting.committee, meeting.location, meeting.currentRevisionNumber,
+            ),
+            meetingRepository.findAgendaItems(meeting.id).sortedBy { it.sequence }
+                .map { listOf(it.sourceId, it.category, it.title, it.importStatus, it.sourceState, it.substantive) },
+        )
+    }
+
+    @Test
+    fun `Ruimte data is identical to the baseline of a Ruimte-only source`() {
+        val sourceId = "ruimte-baseline-${UUID.randomUUID()}"
+        withCommissieCleanup(listOf(sourceId)) {
+            val agenda = commissieAgenda(sourceId, Instant.now().plusSeconds(86400).truncatedTo(java.time.temporal.ChronoUnit.SECONDS))
+            // Baseline: een bron met alleen Ruimte, zoals de werkwijze vóór de wijziging.
+            val baselineSource = CommissieFakeSource(listOf(CommissieSource(Commissie.RUIMTE, "Ruimte", "1100617069")))
+                .agendas(Commissie.RUIMTE, agenda)
+            commissieWorkflow(baselineSource, baselineSource.ingestor).check()
+            val baseline = ruimteSnapshot(sourceId)
+            removeSyntheticMeeting(requireNotNull(meetingIdOf(sourceId)))
+
+            val both = CommissieFakeSource().agendas(Commissie.RUIMTE, agenda)
+            commissieWorkflow(both, both.ingestor).check()
+
+            assertEquals(baseline, ruimteSnapshot(sourceId))
+            assertEquals(Commissie.RUIMTE, requireNotNull(storedMeeting(sourceId)).commissie)
         }
     }
 
