@@ -995,6 +995,12 @@ smoketest mag gecontroleerd de publieke bronnen lezen.
   geslaagde, de mislukte hele controle met **Opnieuw proberen** en behoud van de agendakaarten, het
   verversen na succes (en niet bij falen), 409 `ALREADY_RUNNING`, de terugval op het oude
   enkelvoudige veld en het AI-label op 1200 en 390 px zonder overflow;
+- de commissiekeuze (`commissie_choice_test.dart`, `commissie_api_test.dart`, op 1280 en 390 px): de
+  schakelaar met Ruimte als start, de commissienaam in kop en tags, het meegeven van `commissie` aan
+  de leesroutes, het negeren van late antwoorden van een eerdere commissie, Bestuur zonder en met
+  gepubliceerde agenda, het Bestuur-agendapunt (A/B-analyse met AI-concepttekst, C-beoordeling, punt
+  zonder stuk) en een mislukte controle per commissie met behoud van gegevens; de fake gateway
+  registreert aanroepen met commissie;
 - bronlinks en conceptwaarschuwing;
 - builddialoog en updatebeschikbaarheid;
 - responsive gedrag, toetsenbordfocus en semantiek;

@@ -23,3 +23,20 @@ met commissie, kan antwoorden vertragen en per commissie laten falen) en `test/c
 ## Niet gedaan / aanname
 - Een preview of acceptatiecontrole is niet uitgevoerd; visuele controle op acceptatie volgt na deployment.
 - De Bestuur-notice voor een niet-gepubliceerde agenda geldt bewust alleen voor Bestuur (Ruimte ongewijzigd).
+
+## hkh-401 — documentation (2026-10-29)
+
+### Doel
+Documentatie in lijn brengen met de commissiekeuze en Bestuur-schermen in de Flutter-app (story hkh-397).
+
+### Bijgewerkt
+- `docs/functionele-werking-commissie-assistent.md` §11: subsectie Commissiekeuze in de webapp.
+- `docs/microservice-specificatie.md` §13.2: de nieuwe frontendtests voor de commissiekeuze.
+
+### Bewust niet gewijzigd
+- `docs/microservice-specificatie.md` §4.2/§5.2: de leesparameter was al gedocumenteerd (hkh-387).
+- `docs/factory/*`, `docs/agent-access.md`: geen route-, filter- of proceswijziging.
+- Overige vermeldingen van 'Commissie Ruimte' in docs gaan over de bron, niet over de app.
+
+### Verificatie
+- `bash tools/verify-documentation.sh`; alleen `docs/` geraakt.
