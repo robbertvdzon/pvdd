@@ -7,26 +7,55 @@ import 'csrf_token.dart';
 /// De vaste paginagrootte van het archiefoverzicht.
 const int pastMeetingPageSize = 20;
 
+/// De waarden van de `commissie`-queryparameter van de leesroutes.
+const String commissieRuimte = 'RUIMTE';
+const String commissieBestuur = 'BESTUUR';
+const List<String> commissies = [commissieRuimte, commissieBestuur];
+
+/// De weergavenaam van een commissiecode: 'Ruimte' of 'Bestuur'.
+String commissieShortName(String commissie) =>
+    commissie == commissieBestuur ? 'Bestuur' : 'Ruimte';
+
+/// De volledige naam: 'Commissie Ruimte' of 'Commissie Bestuur'.
+String commissieFullName(String commissie) =>
+    'Commissie ${commissieShortName(commissie)}';
+
 abstract interface class DashboardGateway {
-  Future<MeetingOverview> overview();
+  /// Alle leesroutes krijgen de gekozen [commissie] mee; zonder keuze is dat Ruimte.
+  Future<MeetingOverview> overview({String commissie = commissieRuimte});
 
   /// Leest één bekende vergadering, met hetzelfde antwoordmodel als [overview].
-  Future<MeetingOverview> meeting(String meetingId);
+  Future<MeetingOverview> meeting(
+    String meetingId, {
+    String commissie = commissieRuimte,
+  });
 
   /// Eén pagina bewaarde vergaderingen die al zijn geweest, de meest recente bovenaan.
   ///
   /// De paginagrootte ligt vast op [pastMeetingPageSize] en is niet instelbaar in de UI; [cursor]
   /// is de ondoorzichtige cursor uit de vorige pagina.
-  Future<PastMeetingPage> pastMeetings({String? cursor});
+  Future<PastMeetingPage> pastMeetings({
+    String? cursor,
+    String commissie = commissieRuimte,
+  });
 
-  Future<List<AgendaItemSummary>> agendaItems(String meetingId);
-  Future<AgendaItemDetail> agendaItem(String itemId);
+  Future<List<AgendaItemSummary>> agendaItems(
+    String meetingId, {
+    String commissie = commissieRuimte,
+  });
+  Future<AgendaItemDetail> agendaItem(
+    String itemId, {
+    String commissie = commissieRuimte,
+  });
 
   /// De bewaarde adviesversies van één agendapunt, nieuwste eerst zoals de server ze ordent.
   ///
   /// Leest alleen; een agendapunt zonder geslaagde adviesrun levert een lege lijst. Bij een eerdere
   /// versie hoort bewust geen bronnenlijst, dus het antwoord bevat die ook niet.
-  Future<List<AdviceVersion>> adviceVersions(String itemId);
+  Future<List<AdviceVersion>> adviceVersions(
+    String itemId, {
+    String commissie = commissieRuimte,
+  });
 
   Future<MeetingCheckOutcome> checkNow();
   Future<void> retryAnalysis(String itemId);
@@ -38,43 +67,64 @@ class HttpDashboardGateway implements DashboardGateway {
   final http.Client _client;
 
   @override
-  Future<MeetingOverview> overview() async => MeetingOverview.fromJson(
-    await _get('/api/meetings/next') as Map<String, dynamic>,
+  Future<MeetingOverview> overview({
+    String commissie = commissieRuimte,
+  }) async => MeetingOverview.fromJson(
+    await _get('/api/meetings/next?commissie=$commissie')
+        as Map<String, dynamic>,
   );
 
   @override
-  Future<MeetingOverview> meeting(String meetingId) async =>
-      MeetingOverview.fromJson(
-        await _get('/api/meetings/$meetingId') as Map<String, dynamic>,
-      );
+  Future<MeetingOverview> meeting(
+    String meetingId, {
+    String commissie = commissieRuimte,
+  }) async => MeetingOverview.fromJson(
+    await _get('/api/meetings/$meetingId?commissie=$commissie')
+        as Map<String, dynamic>,
+  );
 
   @override
   Future<PastMeetingPage> pastMeetings({
     String? cursor,
+    String commissie = commissieRuimte,
   }) async => PastMeetingPage.fromJson(
     await _get(
-          '/api/meetings?state=past&limit=$pastMeetingPageSize'
+          '/api/meetings?state=past&limit=$pastMeetingPageSize&commissie=$commissie'
           '${cursor == null ? '' : '&cursor=${Uri.encodeQueryComponent(cursor)}'}',
         )
         as Map<String, dynamic>,
   );
 
   @override
-  Future<List<AgendaItemSummary>> agendaItems(String meetingId) async {
-    final value = await _get('/api/meetings/$meetingId/agenda-items');
+  Future<List<AgendaItemSummary>> agendaItems(
+    String meetingId, {
+    String commissie = commissieRuimte,
+  }) async {
+    final value = await _get(
+      '/api/meetings/$meetingId/agenda-items?commissie=$commissie',
+    );
     return (value as List<dynamic>)
         .map((item) => AgendaItemSummary.fromJson(item as Map<String, dynamic>))
         .toList(growable: false);
   }
 
   @override
-  Future<AgendaItemDetail> agendaItem(String itemId) async =>
-      AgendaItemDetail.fromJson(await _get('/api/agenda-items/$itemId'));
+  Future<AgendaItemDetail> agendaItem(
+    String itemId, {
+    String commissie = commissieRuimte,
+  }) async => AgendaItemDetail.fromJson(
+    await _get('/api/agenda-items/$itemId?commissie=$commissie'),
+  );
 
   @override
-  Future<List<AdviceVersion>> adviceVersions(String itemId) async {
+  Future<List<AdviceVersion>> adviceVersions(
+    String itemId, {
+    String commissie = commissieRuimte,
+  }) async {
     final value =
-        await _get('/api/agenda-items/$itemId/advice-versions')
+        await _get(
+              '/api/agenda-items/$itemId/advice-versions?commissie=$commissie',
+            )
             as Map<String, dynamic>;
     return (value['versions'] as List<dynamic>)
         .map(
@@ -146,6 +196,7 @@ class MeetingOverview {
     required this.lastCheckedAt,
     required this.progress,
     this.series = const [],
+    this.agendaStatus,
   });
   factory MeetingOverview.fromJson(
     Map<String, dynamic> json,
@@ -160,9 +211,13 @@ class MeetingOverview {
     series: ((json['series'] as List<dynamic>?) ?? const [])
         .map((e) => SeriesMeeting.fromJson(e as Map<String, dynamic>))
         .toList(growable: false),
+    agendaStatus: json['agendaStatus'] as String?,
   );
   final String status;
   final MeetingInfo? meeting;
+
+  /// PUBLISHED, UNPUBLISHED of NONE; `null` bij een oudere backend.
+  final String? agendaStatus;
   final DateTime? lastCheckedAt;
   final Progress progress;
 
@@ -204,6 +259,7 @@ class MeetingInfo {
     required this.canonicalFingerprint,
     required this.revisionStatus,
     this.past = false,
+    this.commissieName = 'Ruimte',
   });
   factory MeetingInfo.fromJson(Map<String, dynamic> json) => MeetingInfo(
     id: json['id'] as String,
@@ -220,6 +276,7 @@ class MeetingInfo {
     // Tolerant: een antwoord zonder `past` (oudere backend, bestaande fixture) telt als
     // 'nog niet geweest'. De waarde komt van de server, nooit van de browserklok.
     past: json['past'] as bool? ?? false,
+    commissieName: json['commissieNaam'] as String? ?? 'Ruimte',
   );
   final String id;
   final String title;
@@ -233,6 +290,9 @@ class MeetingInfo {
   final String? canonicalFingerprint;
   final String? revisionStatus;
   final bool past;
+
+  /// De weergavenaam van de commissie ('Ruimte' of 'Bestuur'); zonder veld in het antwoord Ruimte.
+  final String commissieName;
 }
 
 /// Eén pagina van het archiefoverzicht: de rijen, de cursor voor de volgende pagina en het totaal
@@ -315,6 +375,7 @@ class AgendaItemSummary {
     this.shortConclusion,
     this.lastAnalysisRun,
     this.canRetryAnalysis = false,
+    this.commissieName = 'Ruimte',
   });
   factory AgendaItemSummary.fromJson(Map<String, dynamic> json) =>
       AgendaItemSummary(
@@ -344,6 +405,7 @@ class AgendaItemSummary {
                 json['lastAnalysisRun'] as Map<String, dynamic>,
               ),
         canRetryAnalysis: json['canRetryAnalysis'] as bool,
+        commissieName: json['commissieNaam'] as String? ?? 'Ruimte',
       );
   final String id;
   final int sequence;
@@ -365,6 +427,7 @@ class AgendaItemSummary {
   final String? shortConclusion;
   final AnalysisRunInfo? lastAnalysisRun;
   final bool canRetryAnalysis;
+  final String commissieName;
 }
 
 class AnalysisRunInfo {
@@ -499,6 +562,7 @@ class MeetingCheckOutcome {
     required this.revisionNumber,
     required this.differences,
     this.meetings = const [],
+    this.commissies = const [],
   });
   factory MeetingCheckOutcome.fromJson(Map<String, dynamic> json) =>
       MeetingCheckOutcome(
@@ -508,6 +572,9 @@ class MeetingCheckOutcome {
             .cast<String>(),
         meetings: (json['meetings'] as List<dynamic>? ?? const [])
             .map((m) => MeetingCheckResult.fromJson(m as Map<String, dynamic>))
+            .toList(growable: false),
+        commissies: (json['commissies'] as List<dynamic>? ?? const [])
+            .map((c) => CommissieCheck.fromJson(c as Map<String, dynamic>))
             .toList(growable: false),
       );
   final String status;
@@ -520,11 +587,19 @@ class MeetingCheckOutcome {
   /// De hele controle is mislukt: de bron was onbereikbaar, of de lijst bestaat uit één mislukt
   /// element zonder vergadergegevens (oud foutgedrag).
   bool get wholeCheckFailed {
+    // Met een uitkomst per commissie is de hele controle pas mislukt als álle commissies mislukten.
+    if (commissies.isNotEmpty) return commissies.every((c) => !c.success);
     if (meetings.isEmpty) {
       return status == 'SOURCE_FAILURE' || status == 'FAILED';
     }
     return meetings.length == 1 && meetings.first.isUnidentifiedFailure;
   }
+
+  /// Uitkomst per commissie; leeg bij een oudere backend.
+  final List<CommissieCheck> commissies;
+
+  /// Minstens één commissie is mislukt terwijl er per-commissieresultaten zijn.
+  bool get hasCommissieFailure => commissies.any((c) => !c.success);
 
   /// De rijen die getoond worden: de lijst, of het oude enkelvoudige veld als één element.
   List<MeetingCheckResult> get rows => meetings.isNotEmpty
@@ -575,4 +650,24 @@ class MeetingCheckResult {
 
   bool get isUnidentifiedFailure =>
       outcome == 'FAILED' && startsAt == null && location == null;
+}
+
+/// De uitkomst van de controle voor één commissie.
+class CommissieCheck {
+  const CommissieCheck({
+    required this.commissie,
+    required this.name,
+    required this.success,
+    this.melding = '',
+  });
+  factory CommissieCheck.fromJson(Map<String, dynamic> json) => CommissieCheck(
+    commissie: json['commissie'] as String? ?? commissieRuimte,
+    name: json['naam'] as String? ?? 'Ruimte',
+    success: json['success'] as bool? ?? true,
+    melding: json['melding'] as String? ?? '',
+  );
+  final String commissie;
+  final String name;
+  final bool success;
+  final String melding;
 }

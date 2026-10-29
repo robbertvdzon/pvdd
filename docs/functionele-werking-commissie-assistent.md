@@ -487,6 +487,28 @@ blijven bij elke getoonde versie even zichtbaar. Wisselen tussen versies leest n
 start nooit werk; lukt het ophalen van de versies niet, dan blijft het getoonde advies gewoon staan
 en verschijnt een korte melding met de knop **Versies opnieuw laden**.
 
+### Commissiekeuze in de webapp
+
+Boven de agenda staat een keuzeschakelaar **Commissie Ruimte** / **Commissie Bestuur**; Ruimte is de
+startkeuze en de keuze wordt alleen in de sessie bewaard (na herladen is het weer Ruimte). De naam van
+de gekozen commissie staat in de zijbalk (desktop) of de kop (mobiel), in de agendakop en als tag
+(*Ruimte* of *Bestuur*) op elke agendakaart en elk agendapunt. Wisselen laadt alleen de gegevens van
+die commissie (leesroutes met `?commissie=RUIMTE|BESTUUR`); antwoorden van een eerder gekozen
+commissie worden genegeerd en de verversing elke 15 seconden laadt alleen de gekozen commissie.
+Wisselen of terugkijken start nooit een analyse.
+
+- **Bestuur, agenda niet gepubliceerd**: de vergadering (datum, en de tijd zodra de bron die levert)
+  met de uitleg dat de agenda er nog niet is; geen agendapunten.
+- **Bestuur, agenda gepubliceerd**: kaarten met A-, B- of C-tag, commissietag, status en een melding
+  bij een ontbrekend stuk.
+- **Agendapunt Bestuur**: een A- of B-punt toont de conceptanalyse (samenvatting, aansluiting bij
+  PvdD-bronnen, aandachtspunten, mogelijke inzet, stukken en bronverwijzingen) met de tekst
+  *AI-concept — controleer bronnen en formulering vóór gebruik*; een C-punt toont de beoordeling; een
+  punt zonder stuk meldt dat het stuk ontbreekt en toont geen analyse. Eerdere adviesversies blijven
+  bereikbaar via de bestaande versiekeuze.
+- **Mislukte controle**: de melding noemt de commissie waar het misgaat; de andere commissie wordt
+  als geslaagd getoond en reeds geladen gegevens blijven zichtbaar.
+
 ## 12. Samenvatting voor de Commissie-assistent
 
 Wanneer dit document als context aan de Commissie-assistent wordt gegeven, gelden vooral deze
