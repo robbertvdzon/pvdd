@@ -97,7 +97,7 @@ class AnalysisOrchestrator(
             val guidance = analysisGuidance.current().text
             itemsWithSources.forEach { (item, documentSources) ->
                 val sources = sources(item, documentSources, positionCatalogue)
-                val plan = prompts.plan(item.toAnalysisItem(), sources, guidance)
+                val plan = prompts.plan(item.toAnalysisItem(), meeting.commissieName, sources, guidance)
                 val fingerprint = fingerprint(item, sources, meeting.publicationStatus.name, guidance)
                 val key = "pvdd-${sha256("${meeting.sourceId}|${item.sourceId}|$fingerprint|${PromptBuilder.PROMPT_VERSION}")}" 
                 val now = clock.instant()
@@ -239,6 +239,7 @@ class AnalysisOrchestrator(
                 finalRun.run.id,
                 prompts.synthesisPrompt(
                     finalRun.agendaItemSourceId,
+                    commissieName(finalRun.meetingId),
                     finalRun.category,
                     notes,
                     finalRun.analysisGuidance,
@@ -246,6 +247,9 @@ class AnalysisOrchestrator(
             )
         }
     }
+
+    private fun commissieName(meetingId: UUID): String =
+        requireNotNull(meetings.findMeeting(meetingId)) { "MEETING_NOT_FOUND" }.commissieName
 
     private fun fail(prepared: PreparedAnalysisRun, status: AnalysisStatus, errorCode: String) {
         val retryDelay = automaticRetryDelay(errorCode, prepared.run.runtimeAttemptCount)

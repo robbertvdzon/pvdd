@@ -34,10 +34,10 @@ data class PromptPlan(val phases: List<PromptPhase>)
 
 @Component
 class PromptBuilder(private val mapper: ObjectMapper) {
-    fun plan(item: AnalysisAgendaItem, sources: List<AnalysisSource>, guidance: String = ""): PromptPlan {
+    fun plan(item: AnalysisAgendaItem, commissie: String, sources: List<AnalysisSource>, guidance: String = ""): PromptPlan {
         require(sources.isNotEmpty()) { "Analysis requires sources." }
         require(sources.any { it.sourceType == CitationSourceType.POLICY_PROGRAMME }) { "Primary policy source is required." }
-        val direct = prompt(item, sources, guidance)
+        val direct = prompt(item, commissie, sources, guidance)
         if (direct.length <= MAX_DIRECT_PROMPT_CHARACTERS) {
             return PromptPlan(listOf(PromptPhase(PromptPhaseType.DIRECT_ADVICE, sources.map { it.sourceId }, direct)))
         }
@@ -55,7 +55,7 @@ class PromptBuilder(private val mapper: ObjectMapper) {
         }
         if (current.isNotEmpty()) batches += current
         val phases = batches.map { batch ->
-            PromptPhase(PromptPhaseType.SOURCE_NOTES, batch.map { it.sourceId }, notesPrompt(item, batch, guidance))
+            PromptPhase(PromptPhaseType.SOURCE_NOTES, batch.map { it.sourceId }, notesPrompt(item, commissie, batch, guidance))
         } + PromptPhase(PromptPhaseType.SYNTHESIS, sources.map { it.sourceId }, null)
         check(phases.filter { it.type == PromptPhaseType.SOURCE_NOTES }.flatMap { it.sourceIds } == sources.map { it.sourceId })
         return PromptPlan(phases)
@@ -69,6 +69,7 @@ class PromptBuilder(private val mapper: ObjectMapper) {
 
     fun synthesisPrompt(
         agendaItemSourceId: String,
+        commissie: String,
         category: String,
         sourceNotes: List<JsonNode>,
         guidance: String = "",
@@ -76,7 +77,7 @@ class PromptBuilder(private val mapper: ObjectMapper) {
         require(sourceNotes.isNotEmpty()) { "Synthesis requires validated source notes." }
         append(SYSTEM_PROMPT)
         appendGuidance(guidance)
-        append("\n\nMaak het definitieve advies voor agendapunt $agendaItemSourceId in categorie $category.")
+        append("\n\nMaak het definitieve advies voor agendapunt $agendaItemSourceId van commissie $commissie in categorie $category.")
         append(" Gebruik uitsluitend de meegegeven bronnotities.")
         append("\nBEGIN_UNTRUSTED_SOURCE_NOTES\n")
         append(mapper.writeValueAsString(sourceNotes))
@@ -85,10 +86,10 @@ class PromptBuilder(private val mapper: ObjectMapper) {
 
     fun systemPrompt(): String = SYSTEM_PROMPT
 
-    private fun prompt(item: AnalysisAgendaItem, sources: List<AnalysisSource>, guidance: String): String = buildString {
+    private fun prompt(item: AnalysisAgendaItem, commissie: String, sources: List<AnalysisSource>, guidance: String): String = buildString {
         append(SYSTEM_PROMPT)
         appendGuidance(guidance)
-        append("\n\nAnalyseer agendapunt ${item.sourceId} in categorie ${item.category}.\n")
+        append("\n\nAnalyseer agendapunt ${item.sourceId} van commissie $commissie in categorie ${item.category}.\n")
         if (sources.any { it.sourceType == CitationSourceType.POLICY_POSITIONS }) {
             append("Bekijk alle standpunten in POLICY_POSITIONS en bepaal zelf welke inhoudelijk relevant zijn. ")
             append("Gebruik de geselecteerde oorspronkelijke bronpassages voor feitelijke onderbouwing.\n")
@@ -98,10 +99,10 @@ class PromptBuilder(private val mapper: ObjectMapper) {
         append("\nEND_UNTRUSTED_SOURCE_DATA")
     }
 
-    private fun notesPrompt(item: AnalysisAgendaItem, sources: List<AnalysisSource>, guidance: String): String = buildString {
+    private fun notesPrompt(item: AnalysisAgendaItem, commissie: String, sources: List<AnalysisSource>, guidance: String): String = buildString {
         append(SYSTEM_PROMPT)
         appendGuidance(guidance)
-        append("\n\nMaak uitsluitend feitelijke bronnotities voor een latere synthese; behoud alle bron-ID's en paginanummers.")
+        append("\n\nMaak uitsluitend feitelijke bronnotities voor een latere synthese over een agendapunt van commissie $commissie; behoud alle bron-ID's en paginanummers.")
         append(" Leg voor A/B afzonderlijk mogelijke aansluitende punten, verbeterpunten en commissievragen vast.")
         append(" Leg voor C uitsluitend argumenten voor en tegen bespreking en eventuele verplaatsing naar B vast.")
         if (sources.any { it.sourceType == CitationSourceType.POLICY_POSITIONS }) {
