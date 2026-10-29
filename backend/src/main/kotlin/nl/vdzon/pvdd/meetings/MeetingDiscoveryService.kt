@@ -9,6 +9,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import nl.vdzon.pvdd.source.Commissie
 import nl.vdzon.pvdd.source.MeetingSourceGateway
 import nl.vdzon.pvdd.source.MeetingSourceProperties
 import nl.vdzon.pvdd.source.SourceTransportCode
@@ -27,6 +28,9 @@ class MeetingDiscoveryService(
     fun discover(): List<DiscoveryOutcome> = discover(clock.instant())
 
     override fun discover(now: Instant): List<DiscoveryOutcome> {
+        properties.resolvedCommissies().filter { it.agendaTypeId.isEmpty() }.forEach {
+            log.warn("Commissie {} heeft geen agenda-type en wordt overgeslagen.", it.commissie)
+        }
         return try {
             val today = LocalDate.ofInstant(now, AMSTERDAM)
             val candidates = (today.year..today.year + 1)
@@ -98,7 +102,7 @@ class MeetingDiscoveryService(
     }
 
     private fun yearUri(year: Int): URI {
-        val agendaType = URLEncoder.encode(properties.agendaTypeId, StandardCharsets.UTF_8)
+        val agendaType = URLEncoder.encode(properties.agendaTypeIdOf(Commissie.RUIMTE), StandardCharsets.UTF_8)
         return URI.create("/Agenda/RetrieveAgendasForYear?agendatypeId=$agendaType&year=$year")
     }
 

@@ -2,6 +2,7 @@ package nl.vdzon.pvdd.meetings
 
 import java.sql.Timestamp
 import java.util.UUID
+import nl.vdzon.pvdd.source.Commissie
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
@@ -13,10 +14,11 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
         INSERT INTO meeting(
             id, source_id, committee, starts_at, ends_at, location, title, source_url,
             source_hash, status, checked_at, imported_at, publication_status,
-            current_revision_number, canonical_fingerprint
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            current_revision_number, canonical_fingerprint, commissie
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (source_id) DO UPDATE SET
             committee = EXCLUDED.committee,
+            commissie = EXCLUDED.commissie,
             starts_at = EXCLUDED.starts_at,
             ends_at = EXCLUDED.ends_at,
             location = EXCLUDED.location,
@@ -51,6 +53,7 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
         meeting.publicationStatus.name,
         meeting.currentRevisionNumber,
         meeting.canonicalFingerprint,
+        meeting.commissie.name,
     ).single()
 
     override fun upsert(item: AgendaItem): UUID = jdbc.query(
@@ -112,7 +115,7 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
         """
         SELECT id, source_id, committee, starts_at, ends_at, location, title, source_url,
                source_hash, status, checked_at, imported_at, publication_status,
-               current_revision_number, canonical_fingerprint
+               current_revision_number, canonical_fingerprint, commissie
         FROM meeting WHERE id = ?
         """.trimIndent(),
         { rs, _ ->
@@ -132,6 +135,7 @@ class MeetingRepository(private val jdbc: JdbcTemplate) : MeetingStore {
                 publicationStatus = PublicationStatus.valueOf(rs.getString("publication_status")),
                 currentRevisionNumber = rs.getInt("current_revision_number"),
                 canonicalFingerprint = rs.getString("canonical_fingerprint"),
+                commissie = Commissie.valueOf(rs.getString("commissie")),
             )
         },
         meetingId,
