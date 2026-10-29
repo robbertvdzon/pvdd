@@ -106,8 +106,22 @@ class CommissieDashboardGateway implements DashboardGateway {
     String commissie = commissieRuimte,
   }) async {
     await _enter('pastMeetings:$commissie', commissie);
-    return const PastMeetingPage(items: [], nextCursor: null, total: 0);
+    final items = pastByCommissie[commissie] ?? const <PastMeeting>[];
+    return PastMeetingPage(items: items, nextCursor: null, total: items.length);
   }
+
+  /// Eerdere vergaderingen per commissie; standaard leeg.
+  final Map<String, List<PastMeeting>> pastByCommissie = {};
+
+  static PastMeeting past(String commissie, String title, {int day = 5}) =>
+      PastMeeting(
+        id: '${_prefix(commissie)}-past-$day',
+        title: title,
+        startsAt: DateTime(2026, 9, day, 19, 30),
+        location: 'Provinciehuis Haarlem',
+        substantiveItemCount: 4,
+        completedAdviceCount: 3,
+      );
 
   static AgendaItemSummary item(
     String id,

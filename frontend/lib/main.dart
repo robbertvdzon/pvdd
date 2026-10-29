@@ -397,6 +397,7 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
           key: ValueKey('archive-$_commissie'),
           commissie: _commissie,
           gateway: widget.dashboardGateway,
+          onChooseRuimte: () => setState(() => _commissie = commissieRuimte),
           onBack: _leaveArchiveOverview,
           onOpen: _openArchivedMeeting,
         ),
@@ -512,9 +513,9 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
     },
   );
 
-  // De schakelaar staat boven de agenda zelf, niet boven het archief of andere schermen.
-  bool get _showSwitch =>
-      _selected == 0 && !_archiveOverview && _archivedMeetingId == null;
+  // De schakelaar staat boven de agenda en boven het archiefoverzicht, niet boven het
+  // archiefdetail (een vergadering hoort bij één commissie) of andere schermen.
+  bool get _showSwitch => _selected == 0 && _archivedMeetingId == null;
 
   Widget _commissieSwitch() => Padding(
     padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),

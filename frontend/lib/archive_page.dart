@@ -16,6 +16,7 @@ class ArchivePage extends StatefulWidget {
     required this.onBack,
     required this.onOpen,
     this.commissie = commissieRuimte,
+    this.onChooseRuimte,
     super.key,
   });
 
@@ -23,6 +24,9 @@ class ArchivePage extends StatefulWidget {
 
   /// De gekozen commissie; het overzicht leest alleen de eerdere vergaderingen van die commissie.
   final String commissie;
+
+  /// Zet de gedeelde keuze op Ruimte; de lege toestand van Bestuur verwijst hiernaartoe.
+  final VoidCallback? onChooseRuimte;
 
   /// Terug naar de agendaweergave.
   final VoidCallback onBack;
@@ -116,7 +120,15 @@ class _ArchivePageState extends State<ArchivePage> {
               ),
               Text(
                 'Eerdere vergaderingen',
+                key: const ValueKey('archive-heading'),
                 style: Theme.of(context).textTheme.headlineMedium,
+              ),
+              Text(
+                commissieFullName(widget.commissie),
+                key: const ValueKey('archive-commissie'),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(color: PvddColors.primary),
               ),
               const SizedBox(height: 4),
               const Text(
@@ -257,7 +269,49 @@ class _ArchivePageState extends State<ArchivePage> {
   }
 
   // Lege toestand: geen lege lijst, maar uitleg waarom er nog niets te zien is.
-  Widget _emptyState(BuildContext context) => Card(
+  Widget _emptyState(BuildContext context) =>
+      widget.commissie == commissieBestuur
+      ? _bestuurEmptyState(context)
+      : _ruimteEmptyState(context);
+
+  // Bestuur heeft nog geen eerdere vergaderingen: uitleg met een doorverwijzing naar Ruimte.
+  Widget _bestuurEmptyState(BuildContext context) => Card(
+    key: const ValueKey('archive-empty-bestuur'),
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.inventory_2_outlined,
+            size: 44,
+            color: PvddColors.primary,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Commissie Bestuur heeft nog geen eerdere vergaderingen',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Zodra een vergadering van Commissie Bestuur is geweest, vind je haar hier terug. '
+            'Eerdere vergaderingen van Commissie Ruimte staan wel in het archief.',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          OutlinedButton(
+            key: const ValueKey('archive-to-ruimte'),
+            onPressed: widget.onChooseRuimte,
+            child: const Text('Naar het archief van Commissie Ruimte'),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _ruimteEmptyState(BuildContext context) => Card(
     child: Padding(
       padding: const EdgeInsets.all(32),
       child: Column(
@@ -299,8 +353,7 @@ class _ArchivePageState extends State<ArchivePage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (var index = 0; index < _meetings.length; index++) ...[
-            if (index > 0)
-              const Divider(height: 1, indent: 20, endIndent: 20),
+            if (index > 0) const Divider(height: 1, indent: 20, endIndent: 20),
             _row(context, _meetings[index]),
           ],
         ],
