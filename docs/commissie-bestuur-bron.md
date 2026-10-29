@@ -34,7 +34,7 @@ zonder agenda-type blijft de commissie overgeslagen.
 - Productie: `agendaTypeId` van Bestuur blijft leeg (`PVDD_MEETING_BESTUUR_AGENDA_TYPE_ID` ongezet). Een commissie
   zonder type wordt bij discovery overgeslagen met één WARN-regel; Ruimte is niet beïnvloed. Activeren is een
   latere, aparte beslissing.
-- Acceptatie: `9000000001` (mock), via `deploy/overlays/acceptance/configmap.yaml`. Niet in productie.
+- Acceptatie: `1100617071` (het vastgelegde bron-id; de bronmock `meeting-source-mock` serveert onder dat type een synthetische Bestuur-reeks, zie `docs/acceptatiemock-bestuur-scenarios.md`), via `deploy/overlays/acceptance/configmap.yaml`. Niet in productie. (Het eerder gebruikte synthetische id `9000000001` is alleen bedoeld voor een niet-bereikbare bron en is niet meer in gebruik.)
 - De oude property `pvdd.meeting-source.agenda-type-id` blijft een alias voor Ruimte; een expliciete
   lijstwaarde `pvdd.meeting-source.commissies[n].agenda-type-id` voor Ruimte wint.
 

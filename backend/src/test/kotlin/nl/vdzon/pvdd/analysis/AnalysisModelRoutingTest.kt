@@ -1,5 +1,6 @@
 package nl.vdzon.pvdd.analysis
 
+import java.net.URI
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -10,7 +11,10 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import nl.vdzon.pvdd.runtime.AcceptanceRuntimeFixture
 import nl.vdzon.pvdd.documents.DocumentRepository
+import nl.vdzon.pvdd.meetings.Meeting
 import nl.vdzon.pvdd.meetings.MeetingRepository
+import nl.vdzon.pvdd.meetings.MeetingStatus
+import nl.vdzon.pvdd.source.Commissie
 import nl.vdzon.pvdd.policy.PolicyImportService
 import nl.vdzon.pvdd.policy.PolicySelector
 import nl.vdzon.pvdd.runtime.AgentRuntimeGateway
@@ -37,9 +41,10 @@ class AnalysisModelRoutingTest {
         `when`(it.execution(AnalysisModelTask.SOURCE_NOTES)).thenReturn(notesModel)
         `when`(it.execution(AnalysisModelTask.FINAL_ADVICE)).thenReturn(adviceModel)
     }
+    private val meetingRepository = mock(MeetingRepository::class.java)
     private val orchestrator = AnalysisOrchestrator(
         repository,
-        mock(MeetingRepository::class.java),
+        meetingRepository,
         mock(DocumentRepository::class.java),
         mock(PolicyImportService::class.java),
         mock(PolicySelector::class.java),
@@ -81,8 +86,41 @@ class AnalysisModelRoutingTest {
         assertEquals(runtimeExecutionKey(run), runtimeExecutionKey(run.copy(id=UUID.randomUUID())))
     }
 
-    private fun submittedExecution(type: AnalysisRunType, category: String = "C"): RuntimeExecution? {
-        val prepared = prepared(type).copy(category=category)
+    @Test
+    fun `acceptance gives a Bestuur meeting the synthetic Bestuur fixtures and Ruimte the existing ones`() {
+        runtimeProperties.environment = "acceptance"
+        runtimeProperties.acceptanceFixturesEnabled = true
+        runtimeProperties.mockControlToken = "backend-only-fixture-credential"
+        val mockExecution = RuntimeExecution("mock", "mock", "MOCK")
+        `when`(models.execution(AnalysisModelTask.FINAL_ADVICE)).thenReturn(mockExecution)
+        val bestuur = UUID.randomUUID()
+        val ruimte = UUID.randomUUID()
+        `when`(meetingRepository.findMeeting(bestuur)).thenReturn(meeting(bestuur, Commissie.BESTUUR))
+        `when`(meetingRepository.findMeeting(ruimte)).thenReturn(meeting(ruimte, Commissie.RUIMTE))
+
+        submittedExecution(AnalysisRunType.FINAL_ADVICE, "A", bestuur)
+        submittedExecution(AnalysisRunType.FINAL_ADVICE, "B", bestuur)
+        submittedExecution(AnalysisRunType.FINAL_ADVICE, "C", bestuur)
+        submittedExecution(AnalysisRunType.FINAL_ADVICE, "A", ruimte)
+        submittedExecution(AnalysisRunType.FINAL_ADVICE, "C", ruimte)
+
+        assertEquals(
+            listOf(
+                AcceptanceRuntimeFixture.BESTUUR_ADVICE_AB, AcceptanceRuntimeFixture.BESTUUR_ADVICE_AB,
+                AcceptanceRuntimeFixture.BESTUUR_ADVICE_C, AcceptanceRuntimeFixture.ADVICE_AB, AcceptanceRuntimeFixture.ADVICE_C,
+            ),
+            submittedRequests.map { it.acceptanceFixture },
+        )
+    }
+
+    private fun meeting(id: UUID, commissie: Commissie) = Meeting(
+        id = id, sourceId = "m-$id", committee = commissie.defaultName, startsAt = Instant.EPOCH, endsAt = null, location = null,
+        title = "Synthetisch", sourceUrl = URI("http://localhost/m"), sourceHash = "a".repeat(64), status = MeetingStatus.IMPORTING,
+        checkedAt = Instant.EPOCH, importedAt = null, commissie = commissie,
+    )
+
+    private fun submittedExecution(type: AnalysisRunType, category: String = "C", meetingId: UUID? = null): RuntimeExecution? {
+        val prepared = prepared(type).copy(category = category).let { if (meetingId == null) it else it.copy(meetingId = meetingId) }
         var submitted: RuntimeCreateRequest? = null
         `when`(repository.claimPendingRun()).thenReturn(prepared)
         doAnswer { invocation ->

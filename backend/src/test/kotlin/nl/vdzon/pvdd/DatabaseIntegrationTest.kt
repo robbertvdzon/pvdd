@@ -2782,6 +2782,185 @@ class DatabaseIntegrationTest(
         sections = listOf(ExtractedSection(1, 1, null, "Synthetische documenttekst")),
     )
 
+    // --- Bestuur-acceptatiemock: echte mock (stub-HTTP) + echte discovery, echte database, registrerende AI-fake ---
+    //
+    // De echte `meeting-source-mock/server.py` draait lokaal; scenario's worden gekozen en stukken gewijzigd via
+    // dezelfde routes als de acceptatiebediening. Alles loopt in één teruggedraaide transactie. Zonder python3
+    // worden deze tests overgeslagen. De discovery gebruikt een vaste klok (29-10-2026), zodat 30-11-2026 altijd een toekomstige vergadering is.
+
+    private inner class BestuurMockHarness(val mock: nl.vdzon.pvdd.meetings.BestuurMockServer) {
+        private val discoveryNow = Instant.parse("2026-10-29T10:00:00Z")
+        private val clock = Clock.systemUTC()
+        val runtime = nl.vdzon.pvdd.analysis.RecordingRuntimeGateway(jacksonObjectMapper())
+        val ingestor = nl.vdzon.pvdd.analysis.TextDocumentIngestor(documentRepository, clock)
+        private val events = mutableListOf<MeetingImportedEvent>()
+        private val models = AnalysisModelSettings(jdbc, jacksonObjectMapper(), runtimeProperties, runtime)
+        private val workflow = MeetingCheckWorkflow(
+            mock.discovery(discoveryNow),
+            meetingRepository,
+            ingestor,
+            workflowLockRepository,
+            ApplicationEventPublisher { if (it is MeetingImportedEvent) events += it },
+            clock,
+            revisionComparator,
+            sourceRevisionRepository,
+        )
+        private val orchestrator = nl.vdzon.pvdd.analysis.AnalysisOrchestrator(
+            analysisRepository,
+            meetingRepository,
+            documentRepository,
+            mock(nl.vdzon.pvdd.policy.PolicyImportService::class.java),
+            nl.vdzon.pvdd.policy.PolicySelector(nl.vdzon.pvdd.analysis.SingleChunkPolicyStore()),
+            mock(nl.vdzon.pvdd.analysis.PolicyPositionCatalogue::class.java),
+            analysisGuidanceService,
+            nl.vdzon.pvdd.analysis.PromptBuilder(jacksonObjectMapper()),
+            nl.vdzon.pvdd.analysis.ContentResultValidator(),
+            runtime,
+            runtimeProperties,
+            models,
+            jacksonObjectMapper(),
+            clock,
+        )
+
+        /** "Nu controleren": de workflow met de uitkomst per commissie, daarna loopt de analyse volledig uit. */
+        fun checkNow(): Map<Commissie, nl.vdzon.pvdd.meetings.CommissieCheckResult> {
+            listOf("bestuur-doc-a1", "bestuur-doc-b1", "bestuur-doc-c1").forEach { ingestor.texts[it] = mock.documentText(it) }
+            events.clear()
+            val result = workflow.check()
+            events.toList().forEach(orchestrator::meetingImported)
+            repeat(1000) {
+                orchestrator.reconcile()
+                if (openWork() == 0) return result.commissies.associateBy { it.commissie }
+            }
+            fail("De analyse liep niet uit")
+        }
+
+        private fun openWork(): Int = (jdbc.queryForObject(
+            """
+            SELECT (SELECT COUNT(*) FROM analysis_meeting_queue q JOIN meeting m ON m.id = q.meeting_id
+                    WHERE m.source_id IN (?, ?) AND q.status IN ('PENDING', 'CLAIMED'))
+                 + (SELECT COUNT(*) FROM analysis_run r JOIN meeting m ON m.id = r.meeting_id
+                    WHERE m.source_id IN (?, ?) AND r.status NOT IN ('SUCCEEDED', 'FAILED', 'CANCELLED'))
+            """.trimIndent(),
+            Int::class.java,
+            BESTUUR_MEETING, RUIMTE_MEETING, BESTUUR_MEETING, RUIMTE_MEETING,
+        ) ?: 0)
+
+        fun jobs(sourceId: String): Int = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM analysis_run r JOIN meeting m ON m.id = r.meeting_id WHERE m.source_id = ? AND r.run_type = 'FINAL_ADVICE'",
+            Int::class.java,
+            sourceId,
+        ) ?: 0
+
+        fun jobsOfItem(sourceId: String, item: String): Int = jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM analysis_run r JOIN meeting m ON m.id = r.meeting_id JOIN agenda_item i ON i.id = r.agenda_item_id
+            WHERE m.source_id = ? AND i.source_id = ? AND r.run_type = 'FINAL_ADVICE'
+            """.trimIndent(),
+            Int::class.java,
+            sourceId,
+            item,
+        ) ?: 0
+
+        fun revisions(sourceId: String): Int = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM meeting_revision r JOIN meeting m ON m.id = r.meeting_id WHERE m.source_id = ?",
+            Int::class.java,
+            sourceId,
+        ) ?: 0
+
+        /** AI-aanroepen voor de ene commissie; de prompt noemt de commissie. */
+        fun calls(commissie: String) = runtime.calls.filter { "van commissie $commissie" in it.prompt }
+    }
+
+    private fun bestuurMockTest(block: BestuurMockHarness.() -> Unit) = nl.vdzon.pvdd.meetings.BestuurMockServer().use { mock ->
+        inRolledBackTransaction { removeAllMeetings(); BestuurMockHarness(mock).block() }
+    }
+
+    @Test
+    fun `mock scenario unpublished shows the Bestuur meeting without agenda and makes no AI call`() = bestuurMockTest {
+        mock.select("bestuur-niet-gepubliceerd")
+
+        val result = checkNow()
+
+        assertEquals(MeetingCheckStatus.AGENDA_UNPUBLISHED, result.getValue(Commissie.BESTUUR).status)
+        assertTrue(result.getValue(Commissie.BESTUUR).success)
+        assertEquals(0, jobs(BESTUUR_MEETING))
+        assertEquals(0, calls("Bestuur").size)
+        assertTrue(result.getValue(Commissie.RUIMTE).success)
+    }
+
+    @Test
+    fun `mock scenario published analyses A B and C items with a document and skips the item without one`() = bestuurMockTest {
+        mock.select("bestuur-gepubliceerd")
+
+        val result = checkNow()
+
+        assertEquals(MeetingCheckStatus.IMPORTED, result.getValue(Commissie.BESTUUR).status)
+        assertEquals(3, jobs(BESTUUR_MEETING))
+        assertEquals(0, jobsOfItem(BESTUUR_MEETING, "bestuur-item-a2"), "een punt zonder stuk krijgt geen analyse")
+        assertEquals(1, jobsOfItem(BESTUUR_MEETING, "bestuur-item-a1"))
+        assertEquals(1, jobsOfItem(BESTUUR_MEETING, "bestuur-item-b1"))
+        assertEquals(1, jobsOfItem(BESTUUR_MEETING, "bestuur-report-c1"))
+        assertEquals(1, calls("Bestuur").count { "in categorie C." in it.prompt }, "het C-punt krijgt een beoordeling")
+        assertEquals(2, calls("Bestuur").count { "in categorie A." in it.prompt || "in categorie B." in it.prompt })
+    }
+
+    @Test
+    fun `mock scenario changed document gives exactly one re-analysis and a repeated check none`() = bestuurMockTest {
+        mock.select("bestuur-gewijzigd-stuk")
+        checkNow()
+        val calls = calls("Bestuur").size
+        assertEquals(3, jobs(BESTUUR_MEETING))
+        assertEquals(3, calls)
+        val ruimteCalls = calls("Ruimte").size
+
+        mock.changeDocument("bestuur-doc-a1")
+        val second = checkNow()
+
+        assertTrue(second.getValue(Commissie.BESTUUR).success)
+        assertEquals(4, jobs(BESTUUR_MEETING), "precies één AI-job erbij")
+        assertEquals(calls + 1, calls("Bestuur").size)
+        assertTrue("bestuur-item-a1" in calls("Bestuur").last().prompt && "bestuur-item-b1" !in calls("Bestuur").last().prompt)
+        assertEquals(2, jobsOfItem(BESTUUR_MEETING, "bestuur-item-a1"))
+        assertEquals(1, jobsOfItem(BESTUUR_MEETING, "bestuur-item-b1"))
+        assertEquals(1, jobsOfItem(BESTUUR_MEETING, "bestuur-report-c1"))
+        assertEquals(ruimteCalls, calls("Ruimte").size, "Ruimte wordt niet opnieuw geanalyseerd")
+
+        val third = checkNow()
+
+        assertEquals(MeetingCheckStatus.UNCHANGED, third.getValue(Commissie.BESTUUR).status)
+        assertEquals(4, jobs(BESTUUR_MEETING))
+        assertEquals(calls + 1, calls("Bestuur").size)
+    }
+
+    @Test
+    fun `mock scenario source failure fails Bestuur alone and leaves the Ruimte data unchanged`() = bestuurMockTest {
+        mock.select("bestuur-gepubliceerd")
+        val first = checkNow()
+        assertTrue(first.getValue(Commissie.BESTUUR).success && first.getValue(Commissie.RUIMTE).success)
+        val ruimteJobs = jobs(RUIMTE_MEETING)
+        val ruimteRevisions = revisions(RUIMTE_MEETING)
+        val bestuurJobs = jobs(BESTUUR_MEETING)
+        val bestuurRevisions = revisions(BESTUUR_MEETING)
+        val calls = runtime.calls.size
+
+        mock.select("bestuur-bronfout")
+        val failed = checkNow()
+
+        assertFalse(failed.getValue(Commissie.BESTUUR).success)
+        assertEquals(MeetingCheckStatus.SOURCE_FAILURE, failed.getValue(Commissie.BESTUUR).status)
+        assertTrue(failed.getValue(Commissie.RUIMTE).success)
+        assertEquals(MeetingCheckStatus.UNCHANGED, failed.getValue(Commissie.RUIMTE).status)
+        assertEquals(ruimteJobs, jobs(RUIMTE_MEETING))
+        assertEquals(ruimteRevisions, revisions(RUIMTE_MEETING))
+        assertEquals(bestuurJobs, jobs(BESTUUR_MEETING), "de eerder opgeslagen Bestuur-gegevens blijven staan")
+        assertEquals(bestuurRevisions, revisions(BESTUUR_MEETING))
+        assertEquals(calls, runtime.calls.size)
+    }
+
+    private val BESTUUR_MEETING = "bestuur-meeting-20261130"
+    private val RUIMTE_MEETING = "acceptance-meeting-v1"
+
     private val policyUrl = URI("https://example.invalid/policy.pdf")
 
     companion object {
