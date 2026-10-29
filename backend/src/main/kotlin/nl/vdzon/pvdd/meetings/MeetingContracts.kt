@@ -3,6 +3,7 @@ package nl.vdzon.pvdd.meetings
 import java.net.URI
 import java.time.Instant
 import java.util.UUID
+import nl.vdzon.pvdd.source.Commissie
 
 enum class MeetingStatus {
     DISCOVERED,
@@ -40,6 +41,7 @@ data class Meeting(
     val publicationStatus: PublicationStatus = PublicationStatus.CURRENT,
     val currentRevisionNumber: Int = 0,
     val canonicalFingerprint: String? = null,
+    val commissie: Commissie = Commissie.RUIMTE,
 )
 
 data class AgendaItem(

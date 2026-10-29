@@ -63,4 +63,55 @@ class MeetingSourcePropertiesTest {
             MeetingSourceProperties(URI("http://pvdd-meeting-source-mock:8080"), "production").validateEnvironmentBoundary()
         }
     }
+
+    private val runner = org.springframework.boot.test.context.runner.ApplicationContextRunner()
+        .withUserConfiguration(PropertiesConfig::class.java)
+
+    @org.springframework.boot.context.properties.EnableConfigurationProperties(MeetingSourceProperties::class)
+    class PropertiesConfig
+
+    private fun bound(vararg values: String, check: (List<CommissieSource>) -> Unit) {
+        runner.withPropertyValues("pvdd.meeting-source.environment=local", *values).run { context ->
+            check(context.getBean(MeetingSourceProperties::class.java).resolvedCommissies())
+        }
+    }
+
+    @Test
+    fun `binds Ruimte and Bestuur from the list`() = bound(
+        "pvdd.meeting-source.commissies[0].commissie=RUIMTE",
+        "pvdd.meeting-source.commissies[0].weergavenaam=Ruimte",
+        "pvdd.meeting-source.commissies[0].agenda-type-id=1100617069",
+        "pvdd.meeting-source.commissies[1].commissie=BESTUUR",
+        "pvdd.meeting-source.commissies[1].weergavenaam=Bestuur",
+        "pvdd.meeting-source.commissies[1].agenda-type-id=1100617071",
+    ) {
+        assertEquals(listOf(CommissieSource(Commissie.RUIMTE, "Ruimte", "1100617069"), CommissieSource(Commissie.BESTUUR, "Bestuur", "1100617071")), it)
+    }
+
+    @Test
+    fun `old property alone is the Ruimte alias`() = bound("pvdd.meeting-source.agenda-type-id=1100617069") {
+        assertEquals("1100617069", it.first { c -> c.commissie == Commissie.RUIMTE }.agendaTypeId)
+        assertEquals("", it.first { c -> c.commissie == Commissie.BESTUUR }.agendaTypeId)
+    }
+
+    @Test
+    fun `old alias with another value applies to Ruimte`() = bound("pvdd.meeting-source.agenda-type-id=42") {
+        assertEquals("42", it.first { c -> c.commissie == Commissie.RUIMTE }.agendaTypeId)
+    }
+
+    @Test
+    fun `empty or missing Bestuur id binds as empty`() {
+        bound(
+            "pvdd.meeting-source.commissies[0].commissie=BESTUUR",
+            "pvdd.meeting-source.commissies[0].agenda-type-id=",
+        ) { assertEquals("", it.first { c -> c.commissie == Commissie.BESTUUR }.agendaTypeId) }
+        bound { assertEquals("", it.first { c -> c.commissie == Commissie.BESTUUR }.agendaTypeId) }
+    }
+
+    @Test
+    fun `list value wins over the old property`() = bound(
+        "pvdd.meeting-source.agenda-type-id=111",
+        "pvdd.meeting-source.commissies[0].commissie=RUIMTE",
+        "pvdd.meeting-source.commissies[0].agenda-type-id=222",
+    ) { assertEquals("222", it.first { c -> c.commissie == Commissie.RUIMTE }.agendaTypeId) }
 }

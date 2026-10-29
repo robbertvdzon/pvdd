@@ -133,6 +133,10 @@ commissiepagina en/of het door iBabs aangeboden jaarendpoint voor agendatype `11
 de vergaderdatums en kiest de vroegste vergadering waarvan het begintijdstip in de toekomst ligt.
 De klok en tijdzone zijn injecteerbaar voor tests.
 
+Een commissie zonder agenda-type (bijvoorbeeld Bestuur in productie, waar
+`PVDD_MEETING_BESTUUR_AGENDA_TYPE_ID` leeg is) wordt bij ontdekking overgeslagen met één WARN-regel,
+zonder fout en zonder effect op Ruimte. Discovery voor Bestuur zelf volgt in een vervolgstory.
+
 De zoeklaag geeft sinds story hkh-306 een geordende, nooit lege lijst van uitkomsten terug: de
 eerstvolgende vergadering (`startsAt` strikt na het controlemoment) plus de vergaderingen waarvan de
 Amsterdamse kalenderdatum uiterlijk tien kalenderdagen na die van de eerstvolgende ligt, in totaal
@@ -506,13 +510,21 @@ Minimaal datamodel:
 
 | Tabel | Belangrijkste gegevens |
 | --- | --- |
-| `meeting` | bron-ID, commissie, datum/tijd, URL, status, bronhash, gecontroleerd op |
+| `meeting` | bron-ID, commissie, datum/tijd, URL, status, bronhash, gecontroleerd op, `commissie` (RUIMTE of BESTUUR) |
 | `agenda_item` | bron-ID, meeting-ID, volgorde, categorie A/B/C, titel, toelichting, URL, hash |
 | `source_document` | bron-ID, agenda-item, naam, URL, MIME-type, SHA-256, tekststatus, opgehaald op |
 | `analysis_run` | bronfingerprint, promptversie, status, Runtime-job-ID, idempotentiesleutel, fout, tijden |
 | `agenda_item_advice` | run, item, vrij Markdownresultaat in JSON en modelmetadata |
 | `policy_source` | programma-URL, SHA-256, ophaaldatum, pagina-/sectiechunks |
 | `user_session` | hash van sessiesleutel, toegestane gebruiker, verval- en gebruikstijd |
+
+Sinds story hkh-355 (migratie `V17__meeting_commissie.sql`) heeft `meeting` de kolom
+`commissie text NOT NULL DEFAULT 'RUIMTE'` met een CHECK op `RUIMTE`/`BESTUUR`; bestaande rijen lezen
+als RUIMTE en er is geen backfill. Domeinmodel `Meeting.commissie` en `MeetingRepository` lezen en
+schrijven de kolom. De bronconfiguratie (`MeetingSourceProperties.commissies`: commissie,
+weergavenaam, `agendaTypeId`) kent Ruimte (`1100617069`) en Bestuur; de oude property
+`pvdd.meeting-source.agenda-type-id` blijft een alias voor Ruimte en een expliciete lijstwaarde wint.
+Zie `docs/commissie-bestuur-bron.md`.
 
 Voor de eenvoudige MVP worden vergaderingen, documenten, geëxtraheerde tekst, runs en resultaten
 voor onbepaalde tijd bewaard. Er is geen bewaartermijn, cleanupjob of automatische verwijdering.

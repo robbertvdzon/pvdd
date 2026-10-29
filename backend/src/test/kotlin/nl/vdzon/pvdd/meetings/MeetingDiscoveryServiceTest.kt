@@ -313,6 +313,34 @@ class MeetingDiscoveryServiceTest {
         }
     }
 
+    @Test
+    fun `skips a commissie without agenda type with one warning and leaves Ruimte untouched`() {
+        val requested = mutableListOf<URI>()
+        val logger = org.slf4j.LoggerFactory.getLogger(MeetingDiscoveryService::class.java) as ch.qos.logback.classic.Logger
+        val appender = ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>().also { it.start() }
+        logger.addAppender(appender)
+        try {
+            val service = service { uri ->
+                requested += uri
+                val body = when {
+                    uri.path.contains("RetrieveAgendasForYear") -> fixture("year-2026.html")
+                    uri.path.endsWith("meeting-future") -> fixture("agenda-full.html")
+                    else -> error("Unexpected URI $uri")
+                }
+                SourcePage(uri, 200, "text/html", body)
+            }
+            val outcome = assertIs<DiscoveryOutcome.Found>(service.discover().first())
+            assertEquals("meeting-future", outcome.meeting.sourceId)
+            assertTrue(requested.none { it.toString().contains("agendatypeId=1100617071") || it.toString().contains("agendatypeId=&") })
+            assertTrue(requested.filter { it.path.contains("RetrieveAgendasForYear") }.all { it.query.contains("agendatypeId=1100617069") })
+            val warnings = appender.list.filter { it.level == ch.qos.logback.classic.Level.WARN }
+            assertEquals(1, warnings.size)
+            assertTrue(warnings.single().formattedMessage.contains("BESTUUR"))
+        } finally {
+            logger.detachAppender(appender)
+        }
+    }
+
     private fun service(fetch: (URI) -> SourcePage) = MeetingDiscoveryService(
         source = MeetingSourceGateway(fetch),
         properties = properties,

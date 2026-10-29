@@ -1950,6 +1950,61 @@ class DatabaseIntegrationTest(
     // in het schema staat ON DELETE CASCADE, dus revisies, wachtrij, advies en runs gaan voor de
     // agendapunten en de vergadering zelf. Tabellen die in het groene pad leeg horen te zijn worden
     // toch geruimd, zodat bij een regressie de assertie faalt en niet de opruiming.
+    @Test
+    fun `migration adds commissie with default RUIMTE to existing meetings and rejects unknown values`() {
+        val schema = "commissie_migratie_" + UUID.randomUUID().toString().replace("-", "")
+        fun flyway(target: String) = org.flywaydb.core.Flyway.configure()
+            .dataSource(requireNotNull(jdbc.dataSource))
+            .schemas(schema)
+            .locations("classpath:db/migration")
+            .target(target)
+            .load()
+        try {
+            flyway("16").migrate()
+            jdbc.update(
+                "INSERT INTO $schema.meeting(id, source_id, committee, starts_at, title, source_url, source_hash, status, checked_at) " +
+                    "VALUES (?, 'oud', 'Commissie Ruimte', CURRENT_TIMESTAMP, 'Oud', 'https://example.test/oud', ?, 'IMPORTING', CURRENT_TIMESTAMP)",
+                UUID.randomUUID(), "a".repeat(64),
+            )
+            flyway("latest").migrate()
+            assertEquals(listOf("RUIMTE"), jdbc.queryForList("SELECT commissie FROM $schema.meeting", String::class.java))
+            org.junit.jupiter.api.assertThrows<org.springframework.dao.DataIntegrityViolationException> {
+                jdbc.update("UPDATE $schema.meeting SET commissie = 'ANDERS'")
+            }
+        } finally {
+            jdbc.execute("DROP SCHEMA IF EXISTS $schema CASCADE")
+        }
+    }
+
+    @Test
+    fun `repository writes and reads commissie`() {
+        val now = Instant.now()
+        val ids = mutableListOf<UUID>()
+        try {
+            for (commissie in nl.vdzon.pvdd.source.Commissie.entries) {
+                val meeting = Meeting(
+                    id = UUID.randomUUID(),
+                    sourceId = "commissie-${commissie.name}-${UUID.randomUUID()}",
+                    committee = "Commissie ${commissie.defaultName}",
+                    startsAt = now.plusSeconds(86400),
+                    endsAt = null,
+                    location = null,
+                    title = "Commissietest",
+                    sourceUrl = URI("https://noordholland.bestuurlijkeinformatie.nl/Agenda/Index/${UUID.randomUUID()}"),
+                    sourceHash = "b".repeat(64),
+                    status = MeetingStatus.IMPORTING,
+                    checkedAt = now,
+                    importedAt = null,
+                    commissie = commissie,
+                )
+                ids += meetingRepository.upsert(meeting)
+                assertEquals(commissie, requireNotNull(meetingRepository.findMeeting(meeting.id)).commissie)
+            }
+        } finally {
+            ids.forEach(::removeSyntheticMeeting)
+        }
+    }
+
     private fun removeSyntheticMeeting(meetingId: UUID) {
         jdbc.update(
             """

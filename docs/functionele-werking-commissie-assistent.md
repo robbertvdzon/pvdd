@@ -48,7 +48,8 @@ De verwerking verloopt als volgt:
 Productie leest de openbare iBabs-omgeving van Provincie Noord-Holland:
 
 - basisadres: <https://noordholland.bestuurlijkeinformatie.nl>;
-- agenda-type voor commissie Ruimte: `1100617069`;
+- agenda-type voor commissie Ruimte: `1100617069` (commissie Bestuur is voorbereid maar in productie
+  niet actief; zie `docs/commissie-bestuur-bron.md`);
 - jaaroverzicht: `/Agenda/RetrieveAgendasForYear`;
 - gevonden vergadering: `/Agenda/Index/{vergadering-id}`.
 
