@@ -52,6 +52,28 @@ WEEKDAYS = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"
 MONTHS = ["januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus", "september", "oktober", "november", "december"]
 meeting_state = {"scenario": DEFAULT_MEETING_SCENARIO, "selection": 0, "meetings": [], "versions": {}, "fetches": {}}
 
+# Synthetische Bestuur-reeks (tweede agenda-type). Het type-id is het vastgelegde bron-id uit
+# docs/commissie-bestuur-bron.md. Elke andere (of ontbrekende) agendatypeId behoudt het Ruimte-gedrag.
+# Eén vaste vergadering, los van de Ruimte-scenario's en hun toestand.
+BESTUUR_AGENDA_TYPE_ID = "1100617071"
+BESTUUR_MEETING_ID = "bestuur-meeting-20261130"
+BESTUUR_DATE_TEXT = "maandag 30 november 2026"
+BESTUUR_TIME_TEXT = "13:00 - 17:00"  # Europe/Amsterdam (CET), 12:00-16:00 UTC
+BESTUUR_YEAR = "2026"
+BESTUUR_DEFAULT_SCENARIO = "bestuur-niet-gepubliceerd"
+BESTUUR_SCENARIOS = {
+    BESTUUR_DEFAULT_SCENARIO,
+    "bestuur-gepubliceerd",
+    "bestuur-gewijzigd-stuk",
+    "bestuur-bronfout",
+}
+BESTUUR_DOCUMENT_FILES = {
+    "bestuur-doc-a1": "bestuur-doc-a1.txt",
+    "bestuur-doc-b1": "bestuur-doc-b1.txt",
+    "bestuur-doc-c1": "bestuur-doc-c1.txt",
+}
+bestuur_state = {"scenario": BESTUUR_DEFAULT_SCENARIO, "versions": {}, "fetches": 0}
+
 
 def fixture(name: str) -> bytes:
     return (FIXTURES / name).read_bytes()
@@ -155,6 +177,84 @@ def select_meeting_scenario(name: str, now: datetime | None = None) -> bool:
     return True
 
 
+def select_bestuur_scenario(name: str) -> bool:
+    """Kiest een Bestuur-scenario; raakt de Ruimte-toestand niet."""
+    if name not in BESTUUR_SCENARIOS:
+        return False
+    with state_lock:
+        bestuur_state["scenario"] = name
+        bestuur_state["versions"] = {}
+        bestuur_state["fetches"] = 0
+    return True
+
+
+def bestuur_agenda(published: bool) -> bytes:
+    head = (
+        '<!doctype html>\n<html lang="nl"><head><meta charset="utf-8"><title>Commissie Bestuur — acceptatie</title></head>\n'
+        f'<body><main>\n  <h1>Commissie Bestuur</h1>\n  <h2>{BESTUUR_DATE_TEXT}</h2>\n'
+        f'  <div class="heading3">{BESTUUR_TIME_TEXT}</div>\n  <dl><dt>Locatie</dt><dd>Statenzaal</dd></dl>\n'
+    )
+    if not published:
+        body = (
+            '  <dl><dt>Toelichting</dt><dd>De agenda wordt later gepubliceerd.</dd></dl>\n'
+            '  <div id="agendaitems"><ol></ol></div>\n'
+        )
+        return (head + body + "</main></body></html>").encode("utf-8")
+
+    def section(identifier: str, number: str, title: str) -> str:
+        return (
+            f'<li><div class="agenda-item" id="{identifier}"><div class="panel-heading">'
+            f'<span class="panel-id">{number}</span><span class="panel-title-label">{title}</span></div></div></li>'
+        )
+
+    def item(identifier: str, number: str, title: str, explanation: str, document: str | None) -> str:
+        attachment = (
+            f'<div class="list-attachments"><a href="/Agenda/Document/{BESTUUR_MEETING_ID}?documentId={document}" '
+            f'data-document-id="{document}">Synthetisch stuk {document}</a></div>'
+            if document
+            else ""
+        )
+        return (
+            f'<li><div class="agenda-item" id="{identifier}"><div class="panel-heading"><span class="panel-id">{number}</span>'
+            f'<span class="panel-title-label">{title}</span></div><div class="panel-body">'
+            f"<p>Toelichting: {explanation}</p><p>Behandelvoorstel: bespreken.</p>{attachment}</div></div></li>"
+        )
+
+    items = "".join(
+        [
+            section("bestuur-section-a", "1", "A-agenda Bestuur"),
+            item("bestuur-item-a1", "1.a", "Synthetische begroting met stuk", "verzonnen begrotingsvoorstel.", "bestuur-doc-a1"),
+            item("bestuur-item-a2", "1.b", "Synthetisch hamerstuk zonder stuk", "verzonnen punt zonder bijlage.", None),
+            section("bestuur-section-b", "2", "B-agenda Bestuur"),
+            item("bestuur-item-b1", "2.a", "Synthetische samenwerking met stuk", "verzonnen samenwerkingsvoorstel.", "bestuur-doc-b1"),
+            '<li><div class="agenda-item" id="bestuur-section-c"><div class="panel-heading"><span class="panel-id">3</span>'
+            '<span class="panel-title-label">C-agenda ingekomen stukken</span></div><div class="panel-body"><table><tbody>'
+            '<tr data-url="/Reports/Item/bestuur-report-c1" data-entry-id="bestuur-report-c1">'
+            "<td>Synthetisch subsidieverzoek Bestuur</td></tr></tbody></table></div></div></li>",
+        ]
+    )
+    return (head + f'  <div id="agendaitems"><ol>{items}</ol></div>\n</main></body></html>').encode("utf-8")
+
+
+def bestuur_year_page(year: str) -> bytes:
+    if year != BESTUUR_YEAR:
+        return fixture("no-meeting.html")
+    link = f'<a href="/Agenda/Index/{BESTUUR_MEETING_ID}">{BESTUUR_DATE_TEXT}</a>'
+    return f'<!doctype html>\n<html lang="nl"><body>{link}</body></html>'.encode("utf-8")
+
+
+def bestuur_document(document_id: str) -> tuple[bytes, str] | None:
+    name = BESTUUR_DOCUMENT_FILES.get(document_id)
+    if name is None:
+        return None
+    body = fixture(name)
+    with state_lock:
+        version = bestuur_state["versions"].get(document_id, 1)
+    if version > 1:
+        body += f"\nSynthetische wijziging, versie {version}.\n".encode("utf-8")
+    return body, name
+
+
 def meeting_by_id(meeting_id: str) -> dict | None:
     with state_lock:
         return next((m for m in meeting_state["meetings"] if m["id"] == meeting_id), None)
@@ -222,6 +322,14 @@ def scenario_overview() -> dict:
             else [{"id": LEGACY_MEETING_ID, "date": "2035-12-31", "published": True, "fails": False}],
             "documentVersions": dict(meeting_state["versions"]),
             "agendaFetches": dict(meeting_state["fetches"]),
+            "bestuur": {
+                "scenario": bestuur_state["scenario"],
+                "agendaTypeId": BESTUUR_AGENDA_TYPE_ID,
+                "meetingId": BESTUUR_MEETING_ID,
+                "available": sorted(BESTUUR_SCENARIOS),
+                "documentVersions": dict(bestuur_state["versions"]),
+                "agendaFetches": bestuur_state["fetches"],
+            },
         }
 
 
@@ -235,14 +343,22 @@ class Handler(BaseHTTPRequestHandler):
         parts = path.removeprefix("/api/scenarios").strip("/").split("/")
         if parts == ["reset"]:
             select_meeting_scenario(DEFAULT_MEETING_SCENARIO)
+            select_bestuur_scenario(BESTUUR_DEFAULT_SCENARIO)
             return self.respond_json(200, scenario_overview())
         if len(parts) == 1 and parts[0]:
+            if parts[0] in BESTUUR_SCENARIOS:
+                select_bestuur_scenario(parts[0])
+                return self.respond_json(200, scenario_overview())
             if not select_meeting_scenario(parts[0]):
-                return self.respond_json(400, {"error": "unknown_scenario", "allowed": sorted(MEETING_SCENARIOS)})
+                return self.respond_json(
+                    400,
+                    {"error": "unknown_scenario", "allowed": sorted(MEETING_SCENARIOS), "allowedBestuur": sorted(BESTUUR_SCENARIOS)},
+                )
             return self.respond_json(200, scenario_overview())
         if len(parts) == 2 and parts[0] == "documents":
             document_id = parts[1]
-            if scenario_document(document_id) is None:
+            is_bestuur = document_id in BESTUUR_DOCUMENT_FILES
+            if not is_bestuur and scenario_document(document_id) is None:
                 return self.respond_json(404, {"error": "unknown_document"})
             try:
                 requested = json.loads(raw).get("version") if raw.strip() else None
@@ -251,8 +367,9 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, AttributeError):
                 return self.respond_json(400, {"error": "invalid_version"})
             with state_lock:
-                current = meeting_state["versions"].get(document_id, 1)
-                meeting_state["versions"][document_id] = requested if requested is not None else current + 1
+                versions = bestuur_state["versions"] if is_bestuur else meeting_state["versions"]
+                current = versions.get(document_id, 1)
+                versions[document_id] = requested if requested is not None else current + 1
             return self.respond_json(200, scenario_overview())
         return self.respond(404, b"not found", "text/plain")
 
@@ -285,12 +402,28 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(200, json.dumps({"scenario": active}).encode(), "application/json")
         if path == "/api/scenarios" and scenario_routes_enabled():
             return self.respond_json(200, scenario_overview())
+        if path == "/Agenda/RetrieveAgendasForYear" and BESTUUR_AGENDA_TYPE_ID in parse_qs(urlsplit(self.path).query).get("agendatypeId", []):
+            with state_lock:
+                bestuur_scenario = bestuur_state["scenario"]
+            if bestuur_scenario == "bestuur-bronfout":
+                return self.respond_json(503, {"error": "synthetic_source_failure"})
+            year = (parse_qs(urlsplit(self.path).query).get("year") or [""])[0]
+            return self.respond(200, bestuur_year_page(year), "text/html; charset=utf-8")
         if path == "/Agenda/RetrieveAgendasForYear":
             with state_lock:
                 source_failure = meeting_state["scenario"] == "gehele-broncontrole-mislukt"
             if source_failure:
                 return self.respond_json(503, {"error": "synthetic_source_failure"})
             return self.respond(200, year_page(), "text/html; charset=utf-8")
+        if path == f"/Agenda/Index/{BESTUUR_MEETING_ID}":
+            with state_lock:
+                bestuur_state["fetches"] += 1
+                bestuur_scenario = bestuur_state["scenario"]
+            if bestuur_scenario == "bestuur-bronfout":
+                return self.respond(500, b'{"error":"synthetic_source_failure"}', "application/json")
+            return self.respond(200, bestuur_agenda(bestuur_scenario != BESTUUR_DEFAULT_SCENARIO), "text/html; charset=utf-8")
+        if path == "/Reports/Item/bestuur-report-c1":
+            return self.respond(200, fixture("bestuur-report-c1.html"), "text/html; charset=utf-8")
         if path.startswith("/Agenda/Index/"):
             meeting_id = path.removeprefix("/Agenda/Index/")
             count_agenda_fetch(meeting_id)
@@ -318,6 +451,9 @@ class Handler(BaseHTTPRequestHandler):
             "/Document/View/doc-nature": "doc-nature.txt",
             "/Document/View/doc-extra": "doc-nature.txt",
         }
+        bestuur_doc = bestuur_document(path.removeprefix("/Document/View/")) if path.startswith("/Document/View/") else None
+        if bestuur_doc is not None:
+            return self.respond(200, bestuur_doc[0], "text/plain")
         scenario_doc = document_body(path.removeprefix("/Document/View/")) if path.startswith("/Document/View/") else None
         if scenario_doc is not None:
             return self.respond(200, scenario_doc[0], mimetypes.guess_type(scenario_doc[1])[0] or "text/plain")

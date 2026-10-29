@@ -165,8 +165,7 @@ class AnalysisOrchestrator(
                     ),
                     acceptanceFixture = if (!runtimeProperties.acceptanceFixturesEnabled) null
                         else if (prepared.runType == AnalysisRunType.SOURCE_NOTES) AcceptanceRuntimeFixture.SOURCE_NOTES
-                        else if (prepared.category == "C") AcceptanceRuntimeFixture.ADVICE_C
-                        else AcceptanceRuntimeFixture.ADVICE_AB,
+                        else adviceFixture(prepared.meetingId, prepared.category),
                 ),
             )
             repository.markSubmitted(prepared.run.id, job.id, job.status.toActiveStatus(), job.execution.vendorId, job.execution.model)
@@ -178,6 +177,17 @@ class AnalysisOrchestrator(
                 prepared.parentRunId?.let { repository.failParentFinal(it, "RUNTIME_UNAVAILABLE") }
                 meetings.markPartial(prepared.meetingId, "RUNTIME_UNAVAILABLE")
             }
+        }
+    }
+
+    /** Synthetische Bestuur-uitvoer voor commissie Bestuur; onbekende vergadering valt terug op de Ruimte-fixture. */
+    private fun adviceFixture(meetingId: UUID, category: String): AcceptanceRuntimeFixture {
+        val bestuur = meetings.findMeeting(meetingId)?.commissieName == BESTUUR_NAME
+        return when {
+            bestuur && category == "C" -> AcceptanceRuntimeFixture.BESTUUR_ADVICE_C
+            bestuur -> AcceptanceRuntimeFixture.BESTUUR_ADVICE_AB
+            category == "C" -> AcceptanceRuntimeFixture.ADVICE_C
+            else -> AcceptanceRuntimeFixture.ADVICE_AB
         }
     }
 
@@ -377,6 +387,7 @@ class AnalysisOrchestrator(
 
     companion object {
         const val MAX_RUNTIME_ATTEMPTS = 3
+        private const val BESTUUR_NAME = "Bestuur"
         private val log = LoggerFactory.getLogger(AnalysisOrchestrator::class.java)
 
         private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")

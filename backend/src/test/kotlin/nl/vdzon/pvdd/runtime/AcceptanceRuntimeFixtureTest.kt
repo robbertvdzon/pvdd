@@ -87,7 +87,7 @@ class AcceptanceRuntimeFixtureTest {
             }
         }
         assertTrue(calls.indexOfFirst { it.first == "POST /v2/test-control/mocks" } < calls.indexOfFirst { it.first == "POST /v2/uploads" })
-        assertEquals(4, calls.count { it.first == "POST /v2/jobs" })
+        assertEquals(AcceptanceRuntimeFixture.entries.size, calls.count { it.first == "POST /v2/jobs" })
         assertTrue(calls.filter { it.first.contains("/test-control/") }.all { it.second == "Bearer fixture-control" })
         assertTrue(calls.filterNot { it.first.contains("/test-control/") }.all { it.second == "Bearer consumer" })
     }
