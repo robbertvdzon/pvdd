@@ -11,6 +11,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 import nl.vdzon.pvdd.analysis.AnalysisCommandStatus
 import nl.vdzon.pvdd.analysis.AnalysisExecution
 import nl.vdzon.pvdd.analysis.AnalysisModelCatalogUnavailableException
@@ -131,6 +132,7 @@ class DatabaseIntegrationTest(
     @param:Autowired private val transactionManager: PlatformTransactionManager,
     @param:Autowired private val runtimeProperties: AgentRuntimeProperties,
     @param:Autowired private val taskScheduler: org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler,
+    @param:Autowired private val analysisGuidanceService: nl.vdzon.pvdd.analysis.AnalysisGuidanceService,
 ) {
     @Test
     fun `scheduled tasks run on a pool so the 05 clock check cannot be blocked by the analysis queue`() {
@@ -2263,6 +2265,341 @@ class DatabaseIntegrationTest(
             assertEquals(baseline, ruimteSnapshot(sourceId))
             assertEquals(Commissie.RUIMTE, requireNotNull(storedMeeting(sourceId)).commissie)
         }
+    }
+
+    // --- Conceptanalyse per commissie: echte database, registrerende AI-fake ---
+    //
+    // Elke test draait in één teruggedraaide transactie, inclusief de controle-workflow (zonder
+    // transactionManager, dus direct in die transactie) en de analyse-orchestrator. De scheduler van
+    // de context ziet de gezaaide rijen daardoor niet en er blijft niets achter. Een 'job' is een
+    // FINAL_ADVICE-rij in analysis_run; een 'AI-aanroep' is een create op de RecordingRuntimeGateway.
+
+    private inner class CommissieAnalysisHarness {
+        val unique: String = UUID.randomUUID().toString().take(8)
+        val source = CommissieFakeSource()
+        val runtime = nl.vdzon.pvdd.analysis.RecordingRuntimeGateway(jacksonObjectMapper())
+        val ingestor = nl.vdzon.pvdd.analysis.TextDocumentIngestor(documentRepository, Clock.systemUTC())
+        private val events = mutableListOf<MeetingImportedEvent>()
+        private val models = AnalysisModelSettings(jdbc, jacksonObjectMapper(), runtimeProperties, runtime)
+        private val workflow = MeetingCheckWorkflow(
+            source,
+            meetingRepository,
+            ingestor,
+            workflowLockRepository,
+            ApplicationEventPublisher { if (it is MeetingImportedEvent) events += it },
+            Clock.systemUTC(),
+            revisionComparator,
+            sourceRevisionRepository,
+        )
+        val orchestrator = nl.vdzon.pvdd.analysis.AnalysisOrchestrator(
+            analysisRepository,
+            meetingRepository,
+            documentRepository,
+            mock(nl.vdzon.pvdd.policy.PolicyImportService::class.java),
+            nl.vdzon.pvdd.policy.PolicySelector(nl.vdzon.pvdd.analysis.SingleChunkPolicyStore()),
+            mock(nl.vdzon.pvdd.analysis.PolicyPositionCatalogue::class.java),
+            analysisGuidanceService,
+            nl.vdzon.pvdd.analysis.PromptBuilder(jacksonObjectMapper()),
+            nl.vdzon.pvdd.analysis.ContentResultValidator(),
+            runtime,
+            runtimeProperties,
+            models,
+            jacksonObjectMapper(),
+            Clock.systemUTC(),
+        )
+
+        fun key(name: String) = "$name-$unique"
+        fun sourceId(commissie: Commissie) = "${commissie.name.lowercase()}-$unique"
+        fun item(name: String, category: AgendaCategory, vararg documents: String, explanation: String? = "Toelichting $name") =
+            nl.vdzon.pvdd.analysis.SeedItem(key(name), category, documents.map(::key), explanation)
+
+        fun publish(commissie: Commissie, vararg items: nl.vdzon.pvdd.analysis.SeedItem) {
+            source.agendas(
+                commissie,
+                nl.vdzon.pvdd.analysis.seededAgenda(sourceId(commissie), Instant.now().plusSeconds(2 * 86400), items.toList()),
+            )
+        }
+
+        /** Eén controle: de workflow, en de wachtrijgebeurtenissen die daaruit volgen. */
+        fun check(): Pair<MeetingCheckResult, List<MeetingImportedEvent>> {
+            events.clear()
+            val result = workflow.check()
+            val sent = events.toList()
+            sent.forEach(orchestrator::meetingImported)
+            return result to sent
+        }
+
+        /** Laat de analyse volledig uitlopen, tot er voor deze vergaderingen niets meer openstaat. */
+        fun drain() {
+            repeat(1000) {
+                orchestrator.reconcile()
+                if (openWork() == 0) return
+            }
+            fail("De analyse liep niet uit: ${openWork()} onderdelen staan nog open")
+        }
+
+        private fun openWork(): Int = (jdbc.queryForObject(
+            """
+            SELECT (SELECT COUNT(*) FROM analysis_meeting_queue q JOIN meeting m ON m.id = q.meeting_id
+                    WHERE m.source_id LIKE ? AND q.status IN ('PENDING', 'CLAIMED'))
+                 + (SELECT COUNT(*) FROM analysis_run r JOIN meeting m ON m.id = r.meeting_id
+                    WHERE m.source_id LIKE ? AND r.status NOT IN ('SUCCEEDED', 'FAILED', 'CANCELLED'))
+            """.trimIndent(),
+            Int::class.java,
+            "%-$unique",
+            "%-$unique",
+        ) ?: 0)
+
+        fun meetingId(commissie: Commissie): UUID = requireNotNull(meetingIdOf(sourceId(commissie)))
+        fun itemId(commissie: Commissie, name: String): UUID = jdbc.queryForObject(
+            "SELECT id FROM agenda_item WHERE meeting_id = ? AND source_id = ?",
+            UUID::class.java,
+            meetingId(commissie),
+            key(name),
+        )!!
+
+        fun jobs(commissie: Commissie): Int = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM analysis_run WHERE meeting_id = ? AND run_type = 'FINAL_ADVICE'",
+            Int::class.java,
+            meetingId(commissie),
+        ) ?: 0
+
+        fun jobs(commissie: Commissie, name: String): Int = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM analysis_run WHERE agenda_item_id = ? AND run_type = 'FINAL_ADVICE'",
+            Int::class.java,
+            itemId(commissie, name),
+        ) ?: 0
+
+        val aiCalls get() = runtime.callsWith(unique)
+        fun revisions(): Int = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM meeting_revision r JOIN meeting m ON m.id = r.meeting_id WHERE m.source_id LIKE ?",
+            Int::class.java,
+            "%-$unique",
+        ) ?: 0
+    }
+
+    private fun commissieAnalysisTest(block: CommissieAnalysisHarness.() -> Unit) = inRolledBackTransaction {
+        CommissieAnalysisHarness().block()
+    }
+
+    private fun expectedExecution(): RuntimeExecution =
+        AnalysisModelSettings(jdbc, jacksonObjectMapper(), runtimeProperties, mock(AgentRuntimeGateway::class.java))
+            .execution(AnalysisModelTask.FINAL_ADVICE)
+
+    @Test
+    fun `a Bestuur A and B item with a readable document each get exactly one analysis job with sourced results`() =
+        commissieAnalysisTest {
+            publish(Commissie.BESTUUR, item("a", AgendaCategory.A, "a-doc"), item("b", AgendaCategory.B, "b-doc"))
+
+            val (result, sent) = check()
+            drain()
+
+            assertEquals(MeetingCheckStatus.IMPORTED, result.commissies.single { it.commissie == Commissie.BESTUUR }.status)
+            assertEquals(listOf(Commissie.BESTUUR.name), sent.map { storedMeeting(it.meetingSourceId)!!.commissie.name })
+            assertEquals(2, jobs(Commissie.BESTUUR))
+            listOf("a" to "A", "b" to "B").forEach { (name, category) ->
+                assertEquals(1, jobs(Commissie.BESTUUR, name))
+                val call = aiCalls.single { key(name) in it.prompt }
+                assertTrue("agendapunt ${key(name)} van commissie Bestuur in categorie $category." in call.prompt)
+                assertFalse("commissie Ruimte" in call.prompt)
+                assertEquals(nl.vdzon.pvdd.analysis.PromptBuilder(jacksonObjectMapper()).schema(), call.responseSchema)
+                assertEquals(expectedExecution(), call.execution)
+
+                val advice = dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, name))!!.versions.single()
+                nl.vdzon.pvdd.analysis.ContentResultValidator().validateAdvice(advice.advice)
+                val content = advice.advice.path("content").stringValue()
+                listOf(
+                    "## Feitelijke samenvatting",
+                    "## Wat sluit aan bij de PvdD?",
+                    "## Wat moet beter?",
+                    "## Inzet en vragen voor de commissie",
+                ).forEach { assertTrue(it in content, "onderdeel $it ontbreekt") }
+                val allowed = jdbc.queryForObject(
+                    "SELECT allowed_sources::text FROM analysis_run WHERE id = ?", String::class.java, advice.analysisRunId,
+                )!!
+                val bodyLines = content.lines().filter { it.isNotBlank() && !it.startsWith("##") }
+                assertTrue(bodyLines.isNotEmpty())
+                bodyLines.forEach { line ->
+                    val cited = Regex("\\[bron: ([^]]+)]").findAll(line).map { it.groupValues[1] }.toList()
+                    assertTrue(cited.isNotEmpty(), "bewering zonder bronverwijzing: $line")
+                    cited.forEach { assertTrue("\"$it\"" in allowed, "bronverwijzing $it staat niet in de toegestane bronnen") }
+                }
+            }
+            assertEquals(2, aiCalls.size)
+        }
+
+    @Test
+    fun `a Bestuur C item gets one assessment job about enough substantiated arguments`() = commissieAnalysisTest {
+        publish(Commissie.BESTUUR, item("c", AgendaCategory.C, "c-doc"))
+
+        check()
+        drain()
+
+        assertEquals(1, jobs(Commissie.BESTUUR, "c"))
+        assertEquals("C", jdbc.queryForObject("SELECT category FROM analysis_run WHERE agenda_item_id = ?", String::class.java, itemId(Commissie.BESTUUR, "c")))
+        val call = aiCalls.single()
+        assertTrue("van commissie Bestuur in categorie C." in call.prompt)
+        assertTrue("Voldoende argumenten" in call.prompt && "Onvoldoende argumenten" in call.prompt)
+        val advice = dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "c"))!!.versions.single()
+        val content = advice.advice.path("content").stringValue()
+        assertTrue(content.startsWith("## Beoordeling B-agenda\n**Voldoende argumenten**"))
+        assertFalse("## Wat sluit aan bij de PvdD?" in content)
+        assertEquals("CURRENT", advice.actuality)
+    }
+
+    @Test
+    fun `a Bestuur item without own documents or with only unreadable ones gets no job and shows as missing`() =
+        commissieAnalysisTest {
+            ingestor.unreadable += key("unreadable-doc")
+            publish(
+                Commissie.BESTUUR,
+                item("without", AgendaCategory.A),
+                item("unreadable", AgendaCategory.B, "unreadable-doc"),
+                item("readable", AgendaCategory.A, "readable-doc"),
+            )
+
+            check()
+            drain()
+
+            assertEquals(0, jobs(Commissie.BESTUUR, "without"))
+            assertEquals(0, jobs(Commissie.BESTUUR, "unreadable"))
+            assertEquals(1, jobs(Commissie.BESTUUR))
+            assertEquals(1, aiCalls.size)
+            assertTrue(key("readable") in aiCalls.single().prompt)
+            val status = dashboardRepository.agendaItems(meetingId(Commissie.BESTUUR))!!
+                .associate { it.title to it.documentStatus }
+            assertEquals("NO_DOCUMENTS", status["Titel ${key("without")}"])
+            assertEquals("DOCUMENTS_UNREADABLE", status["Titel ${key("unreadable")}"])
+            assertEquals("DOCUMENTS_READY", status["Titel ${key("readable")}"])
+        }
+
+    @Test
+    fun `a repeated check without change makes no job and no ai call`() = commissieAnalysisTest {
+        publish(Commissie.BESTUUR, item("a", AgendaCategory.A, "a-doc"), item("c", AgendaCategory.C, "c-doc"))
+        check()
+        drain()
+        val jobs = jobs(Commissie.BESTUUR)
+        val calls = aiCalls.size
+        val revisions = revisions()
+        assertEquals(2, jobs)
+        assertEquals(2, calls)
+
+        val (repeated, sent) = check()
+        drain()
+
+        assertTrue(sent.isEmpty(), "een ongewijzigde controle stuurt geen wachtrijgebeurtenis")
+        assertEquals(listOf(MeetingCheckOutcome.UNCHANGED), repeated.commissies.single { it.commissie == Commissie.BESTUUR }.meetings.map { it.outcome })
+        assertEquals(jobs, jobs(Commissie.BESTUUR))
+        assertEquals(calls, aiCalls.size)
+        assertEquals(revisions, revisions())
+
+        // Zelfs wanneer de wachtrij het punt toch opnieuw aanbiedt, beslist alleen de fingerprint.
+        orchestrator.meetingImported(MeetingImportedEvent(meetingId(Commissie.BESTUUR), sourceId(Commissie.BESTUUR), Instant.now()))
+        drain()
+        assertEquals(jobs, jobs(Commissie.BESTUUR))
+        assertEquals(calls, aiCalls.size)
+    }
+
+    @Test
+    fun `a changed document or item makes exactly one job for that item and keeps the previous advice as revision`() =
+        commissieAnalysisTest {
+            publish(Commissie.BESTUUR, item("a", AgendaCategory.A, "a-doc"), item("b", AgendaCategory.B, "b-doc"))
+            check()
+            drain()
+            assertEquals(2, aiCalls.size)
+            val firstAdviceOfB = dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "b"))!!.versions.single()
+
+            ingestor.texts[key("b-doc")] = "Gewijzigde tekst over natuur en wonen."
+            val (_, sent) = check()
+            drain()
+
+            assertEquals(1, sent.size)
+            assertEquals(1, jobs(Commissie.BESTUUR, "a"))
+            assertEquals(2, jobs(Commissie.BESTUUR, "b"))
+            assertEquals(3, aiCalls.size)
+            assertTrue(key("b") in aiCalls.last().prompt && key("a") !in aiCalls.last().prompt)
+            val versions = dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "b"))!!.versions
+            assertEquals(2, versions.size)
+            assertTrue(versions[0].latest)
+            assertEquals("CURRENT", versions[0].actuality)
+            assertEquals(firstAdviceOfB.adviceId, versions[1].adviceId)
+            assertEquals("STALE", versions[1].actuality)
+            assertEquals(1, dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "a"))!!.versions.size)
+
+            // Ook een gewijzigd agendapunt zelf (toelichting) heranalyseert alleen dat punt.
+            publish(
+                Commissie.BESTUUR,
+                item("a", AgendaCategory.A, "a-doc", explanation = "Gewijzigde toelichting"),
+                item("b", AgendaCategory.B, "b-doc"),
+            )
+            check()
+            drain()
+
+            assertEquals(2, jobs(Commissie.BESTUUR, "a"))
+            assertEquals(2, jobs(Commissie.BESTUUR, "b"))
+            assertEquals(4, aiCalls.size)
+            assertEquals(2, dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "a"))!!.versions.size)
+        }
+
+    @Test
+    fun `fifty Bestuur items with documents give fifty jobs without any cut off`() = commissieAnalysisTest {
+        val items = (1..50).map { item("p$it", if (it % 2 == 0) AgendaCategory.A else AgendaCategory.B, "p$it-doc") }
+        publish(Commissie.BESTUUR, *items.toTypedArray())
+
+        check()
+        drain()
+
+        assertEquals(50, jobs(Commissie.BESTUUR))
+        assertEquals(50, aiCalls.size)
+        assertEquals(50, aiCalls.map { it.idempotencyKey }.distinct().size)
+        assertEquals(
+            50,
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM analysis_run WHERE meeting_id = ? AND status = 'SUCCEEDED'",
+                Int::class.java,
+                meetingId(Commissie.BESTUUR),
+            ),
+        )
+        assertEquals(setOf(expectedExecution()), aiCalls.map { it.execution }.toSet())
+    }
+
+    @Test
+    fun `Ruimte keeps the same jobs and prompts as Bestuur apart from the commissie name`() = commissieAnalysisTest {
+        val items = arrayOf(
+            item("a", AgendaCategory.A, "a-doc"),
+            item("b", AgendaCategory.B, "b-doc"),
+            item("c", AgendaCategory.C, "c-doc"),
+            item("zonder", AgendaCategory.A),
+        )
+        publish(Commissie.RUIMTE, *items)
+        publish(Commissie.BESTUUR, *items)
+
+        check()
+        drain()
+
+        fun rows(commissie: Commissie) = jdbc.queryForList(
+            """
+            SELECT agenda_item_source_id, category, source_fingerprint, prompt_version, selection_version,
+                   response_schema::text AS response_schema, allowed_sources::text AS allowed_sources,
+                   prompt_text, status
+            FROM analysis_run WHERE meeting_id = ? ORDER BY agenda_item_source_id
+            """.trimIndent(),
+            meetingId(commissie),
+        )
+        val ruimte = rows(Commissie.RUIMTE)
+        val bestuur = rows(Commissie.BESTUUR)
+        assertEquals(3, ruimte.size)
+        assertEquals(ruimte.size, bestuur.size)
+        ruimte.zip(bestuur).forEach { (r, b) ->
+            listOf("agenda_item_source_id", "category", "source_fingerprint", "prompt_version", "selection_version", "response_schema", "allowed_sources", "status")
+                .forEach { column -> assertEquals(r[column], b[column], column) }
+            val ruimtePrompt = r["prompt_text"] as String
+            val bestuurPrompt = b["prompt_text"] as String
+            assertTrue("van commissie Ruimte in categorie ${r["category"]}." in ruimtePrompt)
+            assertEquals(ruimtePrompt.replace("commissie Ruimte", "commissie Bestuur"), bestuurPrompt)
+        }
+        assertEquals(6, aiCalls.size)
+        assertEquals(setOf(expectedExecution()), aiCalls.map { it.execution }.toSet())
     }
 
     private fun removeSyntheticMeeting(meetingId: UUID) {

@@ -42,7 +42,10 @@ data class Meeting(
     val currentRevisionNumber: Int = 0,
     val canonicalFingerprint: String? = null,
     val commissie: Commissie = Commissie.RUIMTE,
-)
+) {
+    /** Weergavenaam van de commissie, voor consumenten die niet van het bronpakket mogen afhangen. */
+    val commissieName: String get() = commissie.defaultName
+}
 
 data class AgendaItem(
     val id: UUID,
