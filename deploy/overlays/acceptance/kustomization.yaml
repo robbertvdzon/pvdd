@@ -11,13 +11,13 @@ resources:
 - sealed-runtime-test-control.yaml
 - sealed-central-postgres.yaml
 images:
-- digest: sha256:3e060bf5150ce938b5b5c7d1d926170902d9774984bf7c9c4661df332f0d5f86
+- digest: sha256:236047050e3da9f3d6deb5e76e12b87ed9cba668801c70bc940cb5c7803d85d0
   name: ghcr.io/robbertvdzon/pvdd-backend
   newName: ghcr.io/robbertvdzon/pvdd-backend
-- digest: sha256:f1251fae89e7d938117dabd77cafbe83b532337522040dc2820f197e77916ca2
+- digest: sha256:e550e98697fb944fe31e731d9f54c927032a6f57d7189998a38574ccbd9b724d
   name: ghcr.io/robbertvdzon/pvdd-frontend
   newName: ghcr.io/robbertvdzon/pvdd-frontend
-- digest: sha256:fe7c39cdfeb84b598f35d23fe739b5f62d6a67be4b17ce3dbaf41faa86309250
+- digest: sha256:eb67896419a7b6b1da518bc33c7e1418b46b3097b39ef8e4e9628c58788e2d23
   name: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
   newName: ghcr.io/robbertvdzon/pvdd-meeting-source-mock
 patches:
