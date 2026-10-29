@@ -40,3 +40,28 @@ Documentatie in lijn brengen met de commissiekeuze en Bestuur-schermen in de Flu
 
 ### Verificatie
 - `bash tools/verify-documentation.sh`; alleen `docs/` geraakt.
+
+## hkh-405 — Archief per commissie (story hkh-404)
+Alleen frontend. Parameter `commissie=RUIMTE|BESTUUR` was al aanwezig in de gateway (hkh-398) en de backend (`commissieOf`).
+- `archive_page.dart`: commissienaam onder de kop (`archive-commissie`), lege Bestuur-toestand met uitleg en knop `archive-to-ruimte` (zet gedeelde keuze op Ruimte).
+- `main.dart`: schakelaar ook boven het archiefoverzicht (niet in het detail); keuze blijft bewaard bij navigeren.
+- Tests: `test/archive_commissie_test.dart` (1280/390 px, AC1–AC5 plus late antwoorden); `CommissieDashboardGateway` kreeg `pastByCommissie`.
+- Run: `cd frontend && flutter analyze && flutter test` (149 tests groen).
+
+## hkh-408 — documentation (2026-10-29)
+
+### Doel
+Documentatie in lijn brengen met het archief per commissie (story hkh-404, subtaak hkh-405).
+
+### Bijgewerkt
+- `docs/functionele-werking-commissie-assistent.md` §11, Commissiekeuze in de webapp: bullet
+  *Eerdere vergaderingen per commissie* (schakelaar boven het archief, lege Bestuur-toestand met
+  doorstap naar Ruimte, gedeelde keuze, alleen lezen).
+- `docs/microservice-specificatie.md` §13.2: testregel voor `archive_commissie_test.dart`.
+
+### Bewust niet gewijzigd
+- Backend- en API-docs: geen backend-, route- of migratiewijziging.
+- `docs/factory/*` en `docs/stappenplannen/*`: geen geraakt gedrag.
+
+### Verificatie
+- `bash tools/verify-documentation.sh`; alleen `docs/` geraakt.

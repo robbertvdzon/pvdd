@@ -1001,6 +1001,12 @@ smoketest mag gecontroleerd de publieke bronnen lezen.
   gepubliceerde agenda, het Bestuur-agendapunt (A/B-analyse met AI-concepttekst, C-beoordeling, punt
   zonder stuk) en een mislukte controle per commissie met behoud van gegevens; de fake gateway
   registreert aanroepen met commissie;
+- het archief per commissie (`archive_commissie_test.dart`, op 1280 en 390 px): de lijstaanroep met
+  `commissie`, alleen vergaderingen van de gekozen commissie, de lege Bestuur-toestand met de
+  doorstap naar Ruimte (`archive-to-ruimte`), Bestuur met vergadering, adviesversies en
+  commissienaam in het detail, behoud van de keuze tussen agenda en archief, uitsluitend
+  leesaanroepen en het negeren van late antwoorden; de schakelaar staat boven het overzicht maar
+  niet boven het archiefdetail;
 - bronlinks en conceptwaarschuwing;
 - builddialoog en updatebeschikbaarheid;
 - responsive gedrag, toetsenbordfocus en semantiek;

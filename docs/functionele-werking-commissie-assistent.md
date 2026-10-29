@@ -508,6 +508,16 @@ Wisselen of terugkijken start nooit een analyse.
   bereikbaar via de bestaande versiekeuze.
 - **Mislukte controle**: de melding noemt de commissie waar het misgaat; de andere commissie wordt
   als geslaagd getoond en reeds geladen gegevens blijven zichtbaar.
+- **Eerdere vergaderingen per commissie**: dezelfde schakelaar staat boven het overzicht
+  **Eerdere vergaderingen** (niet boven het archiefdetail, want een vergadering hoort bij één
+  commissie). De gekozen commissie staat onder de kop en het overzicht toont alleen de voorbije
+  vergaderingen van die commissie. De keuze wordt gedeeld met de agenda en blijft bewaard bij
+  navigeren tussen agenda, archief en archiefdetail. Het archiefdetail toont de commissienaam;
+  Bestuur-vergaderingen tonen bewaarde adviezen en versiekeuze zoals Ruimte. Heeft Bestuur nog geen
+  eerdere vergaderingen, dan staat er de uitleg *Commissie Bestuur heeft nog geen eerdere
+  vergaderingen* met de knop **Naar het archief van Commissie Ruimte**, die de keuze op Ruimte zet
+  en het Ruimte-archief toont. Wisselen negeert late antwoorden van de vorige commissie en start
+  nooit een analyse of controle.
 
 ## 12. Samenvatting voor de Commissie-assistent
 
