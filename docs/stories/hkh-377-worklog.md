@@ -29,3 +29,22 @@ Zonder Docker: zie `docs/factory/development.md` (lege database via `PVDD_TEST_D
 `cd backend && mvn -B --no-transfer-progress clean verify`. Resultaat: 253 tests, 0 failures, 7 skipped
 (zonder database zijn de databasetests overgeslagen).
 Mutatiecontrole: `"Ruimte"` hardcoden in de orchestrator laat drie nieuwe tests falen.
+
+## hkh-380 — documentation (2026-10-29)
+
+### Doel
+Documentatie laten aansluiten op de commissie-onafhankelijke analyse voor Bestuur (story hkh-376).
+
+### Bijgewerkt
+- `docs/microservice-specificatie.md` §4.4: alinea over commissie-onafhankelijke analyse, de
+  commissienaam in de prompt, idempotentie op fingerprint en het ontbreken van limieten voor Bestuur.
+- `docs/microservice-specificatie.md` §13.1: testdekking voor de Bestuur-scenario's.
+
+### Bewust niet gewijzigd
+- De 00:00/01:30-planningsteksten: die hoorden bij hkh-370 en zijn al bijgewerkt.
+- `docs/functionele-werking-commissie-assistent.md`, `docs/factory/*`: leesmodel, UI en gebruikersgedrag
+  zijn ongewijzigd; commissiekeuze in de UI valt buiten scope.
+- Datumregels bovenaan bestaande docs.
+
+### Verificatie
+- `bash tools/verify-documentation.sh`: zie uitkomst in de jobsamenvatting; alleen `docs/` is geraakt.

@@ -262,6 +262,18 @@ De AI krijgt de vergaderstukken en relevante delen van het verkiezingsprogramma 
 vertrouwt voor de MVP op de inhoudelijke uitvoering en weigert een advies niet vanwege vorm,
 ontbrekende citaten of een andere nuttige indeling.
 
+Sinds story hkh-376 is de analyse commissie-onafhankelijk en draait zij ook voor agendapunten van
+commissie Bestuur, met dezelfde vorm als voor Ruimte. Job-aanmaak, bronnotities, synthese en
+validatie bevatten geen vaste commissie-aanname; de prompt noemt de commissie van het punt
+(`Analyseer agendapunt X van commissie <naam> in categorie <C>.`, ook in de notitie- en
+syntheseprompt, via `Meeting.commissieName`). Promptversie, systeemprompt, schema's, model en
+provider zijn ongewijzigd en broninhoud blijft data, nooit instructie. Een punt zonder leesbaar,
+direct gekoppeld stuk krijgt geen job (leesmodel: `NO_DOCUMENTS` / `DOCUMENTS_UNREADABLE`).
+Heranalyse volgt alleen een gewijzigde bronfingerprint van het punt of zijn stukken; het vorige
+advies blijft als revisie bewaard en een herhaalde controle maakt 0 jobs en doet geen AI-aanroep.
+Voor Bestuur gelden geen limiet, dagplafond, maandbudget of groeigrens en het aantal jobs wordt niet
+afgekapt; het gebruik (inclusief retries) is achteraf te meten uit de bestaande jobregistratie.
+
 ### 4.5 Beoordeling van C-agendapunten
 
 Voor ieder C-agendapunt met minimaal één leesbaar, direct gekoppeld stuk vraagt de opdracht alleen
@@ -912,6 +924,10 @@ niet gecommit. Scripts lezen env-bestanden als data en voeren ze niet uit met `s
   ongepubliceerde agenda, mislukte run en pas-na-succes opschuiven van het laatste bron-ID;
 - contracttest tegen opgeslagen HTML voor vergaderingontdekking, agenda, reportitems en documenten;
 - wijzigingsdetectie en idempotentie;
+- commissie-onafhankelijke analyse (hkh-376): integratietests in `DatabaseIntegrationTest` met een
+  registrerende Runtime-fake voor Bestuur-A/B- en C-punten, punten zonder leesbaar stuk, herhaalde
+  controle (0 jobs, 0 aanroepen), één gewijzigd stuk (1 job, revisie bewaard), 50 punten zonder
+  afkapping en een Ruimte-regressie met alleen de commissienaam als promptverschil;
 - documenttype-, grootte-, host- en time-outgrenzen;
 - prompt-injectionfixture;
 - minimaal JSON-schema en niet-lege Markdownvalidatie;
