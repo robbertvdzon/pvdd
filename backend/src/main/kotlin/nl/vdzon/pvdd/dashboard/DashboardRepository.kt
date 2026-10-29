@@ -4,6 +4,7 @@ import java.net.URI
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
+import nl.vdzon.pvdd.source.Commissie
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 import tools.jackson.databind.JsonNode
@@ -17,7 +18,22 @@ data class MeetingOverviewDto(
     // Additief leesmodel: de eerstvolgende vergadering plus de vergaderingen die er binnen het
     // tiendagenvenster bij horen. Leeg zonder toekomstige vergadering en bij `/meetings/{id}`.
     val series: List<SeriesMeetingDto> = emptyList(),
+    // Additief: PUBLISHED, UNPUBLISHED (de bron toont nog geen agenda; dan zijn er ook geen
+    // agendapunten) of NONE zonder vergadering. Afgeleid van de bestaande vergaderstatus.
+    val agendaStatus: String = AgendaStatus.of(meeting?.status),
 )
+
+object AgendaStatus {
+    const val PUBLISHED = "PUBLISHED"
+    const val UNPUBLISHED = "UNPUBLISHED"
+    const val NONE = "NONE"
+
+    fun of(meetingStatus: String?): String = when (meetingStatus) {
+        null -> NONE
+        "AGENDA_UNPUBLISHED" -> UNPUBLISHED
+        else -> PUBLISHED
+    }
+}
 
 /** Eén vergadering uit [MeetingOverviewDto.series]; [status] is een bestaande statuscode. */
 data class SeriesMeetingDto(val id: UUID, val startsAt: Instant, val place: String?, val status: String)
@@ -40,6 +56,9 @@ data class MeetingDto(
     // (`starts_at < CURRENT_TIMESTAMP`), zodat de markering niet aan de browserklok hangt.
     // Grensgeval: begint de vergadering precies nu, dan is `past` nog false.
     val past: Boolean,
+    // Additief: de commissie van de vergadering en haar weergavenaam ('Ruimte'/'Bestuur').
+    val commissie: Commissie = Commissie.RUIMTE,
+    val commissieNaam: String = commissie.defaultName,
 )
 
 data class ProgressDto(val total: Int, val complete: Int, val failed: Int)
@@ -86,6 +105,9 @@ data class AgendaItemSummaryDto(
     val shortConclusion: String?,
     val lastAnalysisRun: AnalysisRunDto?,
     val canRetryAnalysis: Boolean,
+    // Additief: de commissie van de vergadering waar het agendapunt bij hoort.
+    val commissie: Commissie = Commissie.RUIMTE,
+    val commissieNaam: String = commissie.defaultName,
 )
 
 data class SourceLinkDto(val name: String, val url: URI, val status: String)
@@ -154,18 +176,20 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
      * het verleden de laatste. `starts_at == CURRENT_TIMESTAMP` valt in de toekomsttak, gelijk aan
      * de `past`-berekening in [MEETING_SELECT].
      */
-    fun overview(): MeetingOverviewDto {
+    fun overview(commissie: Commissie = Commissie.RUIMTE): MeetingOverviewDto {
         val meeting = jdbc.query(
             """
             $MEETING_SELECT
+            WHERE m.commissie = ?
             ORDER BY CASE WHEN m.starts_at >= CURRENT_TIMESTAMP THEN 0 ELSE 1 END,
                      CASE WHEN m.starts_at >= CURRENT_TIMESTAMP THEN m.starts_at END ASC,
                      m.starts_at DESC
             LIMIT 1
             """.trimIndent(),
             { rs, _ -> meetingRow(rs) },
-        ).singleOrNull() ?: return MeetingOverviewDto("NO_MEETING", null, null, ProgressDto(0, 0, 0), series(Instant.now()))
-        return overviewOf(meeting).copy(series = series(Instant.now()))
+            commissie.name,
+        ).singleOrNull() ?: return MeetingOverviewDto("NO_MEETING", null, null, ProgressDto(0, 0, 0), series(Instant.now(), commissie))
+        return overviewOf(meeting).copy(series = series(Instant.now(), commissie))
     }
 
     /**
@@ -174,11 +198,11 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
      * [SERIES_WINDOW_DAYS] dagen na die van de eerste, maximaal [SERIES_MAX_MEETINGS]. Omdat de lijst
      * op `startsAt` is geordend, zijn de eerste drie toekomstige rijen genoeg om uit te filteren.
      */
-    fun series(now: Instant): List<SeriesMeetingDto> {
+    fun series(now: Instant, commissie: Commissie = Commissie.RUIMTE): List<SeriesMeetingDto> {
         val upcoming = jdbc.query(
             """
             SELECT id, starts_at, location, status, publication_status
-            FROM meeting WHERE starts_at > ?
+            FROM meeting WHERE starts_at > ? AND commissie = ?
             ORDER BY starts_at ASC, id ASC
             LIMIT $SERIES_MAX_MEETINGS
             """.trimIndent(),
@@ -190,20 +214,22 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                 )
             },
             java.sql.Timestamp.from(now),
+            commissie.name,
         )
         return withinSeriesWindow(upcoming)
     }
 
     // Dezelfde SELECT en hetzelfde antwoordmodel als `overview()`, maar voor één bekende
     // vergadering. Een onbekende id levert null, zodat de route er 404 van maakt.
-    fun meeting(id: UUID): MeetingOverviewDto? {
+    fun meeting(id: UUID, commissie: Commissie = Commissie.RUIMTE): MeetingOverviewDto? {
         val meeting = jdbc.query(
             """
             $MEETING_SELECT
-            WHERE m.id = ?
+            WHERE m.id = ? AND m.commissie = ?
             """.trimIndent(),
             { rs, _ -> meetingRow(rs) },
             id,
+            commissie.name,
         ).singleOrNull() ?: return null
         return overviewOf(meeting)
     }
@@ -228,6 +254,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
         rs.getString("publication_status"), rs.getInt("current_revision_number"),
         rs.getString("canonical_fingerprint"), rs.getString("revision_status"),
         rs.getBoolean("past"),
+        Commissie.valueOf(rs.getString("commissie")), Commissie.valueOf(rs.getString("commissie")).defaultName,
     ) to rs.getTimestamp("checked_at").toInstant()
 
     /**
@@ -238,7 +265,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
      * numeriek, en een onleesbare [cursor] leveren [IllegalArgumentException]. De controller
      * vertaalt die naar HTTP 400 met foutcode `invalid_meeting_query`, net zoals bij de AI-runlijst.
      */
-    fun pastMeetings(state: String?, limit: String?, cursor: String?): PastMeetingPageDto {
+    fun pastMeetings(state: String?, limit: String?, cursor: String?, commissie: Commissie = Commissie.RUIMTE): PastMeetingPageDto {
         require(state == "past")
         val size = if (limit == null) DEFAULT_PAST_MEETING_LIMIT else limit.toIntOrNull()
         require(size != null && size in 1..50)
@@ -252,7 +279,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             WITH page AS (
                 SELECT m.id, m.title, m.starts_at, m.location
                 FROM meeting m
-                WHERE m.starts_at < CURRENT_TIMESTAMP
+                WHERE m.starts_at < CURRENT_TIMESTAMP AND m.commissie = ?
                   ${if (after == null) "" else "AND (m.starts_at, m.id) < (?::timestamptz, ?::uuid)"}
                 ORDER BY m.starts_at DESC, m.id DESC
                 LIMIT ?
@@ -286,22 +313,23 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             // De cursorwaarde gaat als expliciete timestamptz mee (zie de cast hierboven), zodat de
             // keysetvergelijking niet van de sessietijdzone afhangt.
             *listOfNotNull(
-                after?.let { it.first.atOffset(ZoneOffset.UTC) }, after?.second, size + 1,
+                commissie.name, after?.let { it.first.atOffset(ZoneOffset.UTC) }, after?.second, size + 1,
             ).toTypedArray(),
         )
         val items = rows.take(size)
         // De telling is een aggregaat en levert altijd precies één rij; de LIMIT legt die grens
         // ook letterlijk vast, zodat geen enkele nieuwe query onbegrensd is.
         val total = jdbc.queryForObject(
-            "SELECT COUNT(*) FROM meeting m WHERE m.starts_at < CURRENT_TIMESTAMP LIMIT 1",
+            "SELECT COUNT(*) FROM meeting m WHERE m.starts_at < CURRENT_TIMESTAMP AND m.commissie = ? LIMIT 1",
             Int::class.java,
+            commissie.name,
         ) ?: 0
         val next = if (rows.size > size) items.lastOrNull()?.let { KeysetCursor.encode(it.startsAt, it.id) } else null
         return PastMeetingPageDto(items, next, total)
     }
 
-    fun agendaItems(meetingId: UUID): List<AgendaItemSummaryDto>? {
-        if (!exists("meeting", meetingId)) return null
+    fun agendaItems(meetingId: UUID, commissie: Commissie = Commissie.RUIMTE): List<AgendaItemSummaryDto>? {
+        if (!meetingExists(meetingId, commissie)) return null
         return jdbc.query(
             """
             SELECT ai.id, ai.sequence_number, ai.display_number, ai.category, ai.title, ai.substantive,
@@ -319,7 +347,8 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                     AND ai.source_state <> 'WITHDRAWN' AND ai.substantive AND ai.category IN ('A', 'B', 'C')
                     AND documents.readable_document_count > 0
                     AND NOT EXISTS (SELECT 1 FROM analysis_run retry WHERE retry.retry_of_run_id = latest.id))
-                       can_retry_analysis
+                       can_retry_analysis,
+                   m.commissie
             FROM agenda_item ai
             LEFT JOIN LATERAL (
                 SELECT id, status, error_code, created_at, updated_at, completed_at
@@ -340,14 +369,15 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             LEFT JOIN meeting_revision mr ON mr.meeting_id = m.id AND mr.revision_number = m.current_revision_number
             LEFT JOIN agenda_item_revision revision ON revision.meeting_revision_id = mr.id AND revision.source_id = ai.source_id
             JOIN agenda_item_document_status documents ON documents.agenda_item_id = ai.id
-            WHERE ai.meeting_id = ? ORDER BY ai.sequence_number
+            WHERE ai.meeting_id = ? AND m.commissie = ? ORDER BY ai.sequence_number
             """.trimIndent(),
             { rs, _ -> summary(rs) },
             meetingId,
+            commissie.name,
         )
     }
 
-    fun item(itemId: UUID): AgendaItemDetailDto? {
+    fun item(itemId: UUID, commissie: Commissie = Commissie.RUIMTE): AgendaItemDetailDto? {
         val row = jdbc.query(
             """
             SELECT ai.*, latest.status AS analysis_status, advice.advice::text AS advice_json,
@@ -363,7 +393,8 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                     AND ai.source_state <> 'WITHDRAWN' AND ai.substantive AND ai.category IN ('A', 'B', 'C')
                     AND documents.readable_document_count > 0
                     AND NOT EXISTS (SELECT 1 FROM analysis_run retry WHERE retry.retry_of_run_id = latest.id))
-                       can_retry_analysis
+                       can_retry_analysis,
+                   m.commissie
             FROM agenda_item ai
             LEFT JOIN LATERAL (
                 SELECT id, status, error_code, created_at, updated_at, completed_at
@@ -384,7 +415,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             LEFT JOIN meeting_revision mr ON mr.meeting_id = m.id AND mr.revision_number = m.current_revision_number
             LEFT JOIN agenda_item_revision revision ON revision.meeting_revision_id = mr.id AND revision.source_id = ai.source_id
             JOIN agenda_item_document_status documents ON documents.agenda_item_id = ai.id
-            WHERE ai.id = ?
+            WHERE ai.id = ? AND m.commissie = ?
             """.trimIndent(),
             { rs, _ ->
                 AgendaItemDetailDto(
@@ -398,6 +429,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
                 )
             },
             itemId,
+            commissie.name,
         )
         return row.singleOrNull()
     }
@@ -414,8 +446,8 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
      * Uitsluitend leesverkeer: alleen `agenda_item_advice` en `analysis_run` worden gelezen,
      * `citations` blijft buiten de SELECT en de revisietabellen worden niet geraakt.
      */
-    fun adviceVersions(itemId: UUID): AdviceVersionsDto? {
-        if (!exists("agenda_item", itemId)) return null
+    fun adviceVersions(itemId: UUID, commissie: Commissie = Commissie.RUIMTE): AdviceVersionsDto? {
+        if (!itemExists(itemId, commissie)) return null
         val rows = jdbc.query(
             """
             SELECT aia.id advice_id, ar.id analysis_run_id, ar.created_at, aia.actuality,
@@ -524,10 +556,22 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
         itemId,
     )
 
-    private fun exists(table: String, id: UUID): Boolean = jdbc.queryForObject(
-        "SELECT COUNT(*) > 0 FROM $table WHERE id = ?",
+    // Een vergadering of agendapunt van een andere commissie bestaat voor de aanvrager niet.
+    private fun meetingExists(id: UUID, commissie: Commissie): Boolean = jdbc.queryForObject(
+        "SELECT COUNT(*) > 0 FROM meeting WHERE id = ? AND commissie = ?",
         Boolean::class.java,
         id,
+        commissie.name,
+    ) == true
+
+    private fun itemExists(id: UUID, commissie: Commissie): Boolean = jdbc.queryForObject(
+        """
+        SELECT COUNT(*) > 0 FROM agenda_item ai JOIN meeting m ON m.id = ai.meeting_id
+        WHERE ai.id = ? AND m.commissie = ?
+        """.trimIndent(),
+        Boolean::class.java,
+        id,
+        commissie.name,
     ) == true
 
     private fun summary(rs: java.sql.ResultSet) = AgendaItemSummaryDto(
@@ -561,6 +605,8 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             )
         },
         canRetryAnalysis = rs.getBoolean("can_retry_analysis"),
+        commissie = Commissie.valueOf(rs.getString("commissie")),
+        commissieNaam = Commissie.valueOf(rs.getString("commissie")).defaultName,
     )
 
     private fun documentStatus(documentCount: Int, readableDocumentCount: Int): String = when {
@@ -584,7 +630,7 @@ class DashboardRepository(private val jdbc: JdbcTemplate, private val mapper: Ob
             SELECT m.id, m.source_id, m.title, m.committee, m.starts_at, m.ends_at, m.location,
                    m.source_url, m.status, m.checked_at, m.publication_status,
                    m.current_revision_number, m.canonical_fingerprint, latest.revision_status,
-                   m.starts_at < CURRENT_TIMESTAMP AS past
+                   m.starts_at < CURRENT_TIMESTAMP AS past, m.commissie
             FROM meeting m
             LEFT JOIN LATERAL (
                 SELECT revision_status FROM meeting_revision mr

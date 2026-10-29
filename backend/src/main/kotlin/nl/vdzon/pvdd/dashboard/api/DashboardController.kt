@@ -15,6 +15,7 @@ import nl.vdzon.pvdd.dashboard.DashboardRepository
 import nl.vdzon.pvdd.dashboard.MeetingOverviewDto
 import nl.vdzon.pvdd.dashboard.PastMeetingPageDto
 import nl.vdzon.pvdd.meetings.MutationGuard
+import nl.vdzon.pvdd.source.Commissie
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -36,7 +37,8 @@ class DashboardController(
     private val aiRuns: AiRunQueryRepository,
 ) {
     @GetMapping("/meetings/next")
-    fun next(): MeetingOverviewDto = dashboard.overview()
+    fun next(@RequestParam(required = false) commissie: String? = null): MeetingOverviewDto =
+        dashboard.overview(commissieOf(commissie))
 
     /**
      * Het alleen-lezen overzicht van bewaarde vergaderingen die al zijn geweest.
@@ -53,24 +55,28 @@ class DashboardController(
         @RequestParam(required = false) state: String?,
         @RequestParam(required = false) limit: String?,
         @RequestParam(required = false) cursor: String?,
-    ): PastMeetingPageDto = try {
-        dashboard.pastMeetings(state, limit, cursor)
+        @RequestParam(required = false) commissie: String? = null,
+    ): PastMeetingPageDto = commissieOf(commissie).let { requested -> try {
+        dashboard.pastMeetings(state, limit, cursor, requested)
     } catch (_: IllegalArgumentException) {
         throw ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_meeting_query")
-    }
+    } }
 
     // Leesroute voor één vergadering, met hetzelfde antwoordmodel als `/api/meetings/next`. De
     // bestaansvraag wordt vóór elke andere controle beantwoord, dus een geldige maar onbekende id
     // levert 404 zonder verdere informatie. Een id dat geen geldige UUID is valt op het bestaande
     // conversiegedrag van het framework (400).
     @GetMapping("/meetings/{id}")
-    fun meeting(@PathVariable id: UUID): MeetingOverviewDto = dashboard.meeting(id) ?: notFound()
+    fun meeting(@PathVariable id: UUID, @RequestParam(required = false) commissie: String? = null): MeetingOverviewDto =
+        dashboard.meeting(id, commissieOf(commissie)) ?: notFound()
 
     @GetMapping("/meetings/{id}/agenda-items")
-    fun items(@PathVariable id: UUID): List<AgendaItemSummaryDto> = dashboard.agendaItems(id) ?: notFound()
+    fun items(@PathVariable id: UUID, @RequestParam(required = false) commissie: String? = null): List<AgendaItemSummaryDto> =
+        dashboard.agendaItems(id, commissieOf(commissie)) ?: notFound()
 
     @GetMapping("/agenda-items/{id}")
-    fun item(@PathVariable id: UUID): AgendaItemDetailDto = dashboard.item(id) ?: notFound()
+    fun item(@PathVariable id: UUID, @RequestParam(required = false) commissie: String? = null): AgendaItemDetailDto =
+        dashboard.item(id, commissieOf(commissie)) ?: notFound()
 
     /**
      * De bewaarde adviesversies van één agendapunt, nieuwste eerst, zodat de detailweergave naast
@@ -82,7 +88,8 @@ class DashboardController(
      * automatisch onder `ApiAuthenticationFilter`, dus er is geen filterwijziging nodig.
      */
     @GetMapping("/agenda-items/{id}/advice-versions")
-    fun adviceVersions(@PathVariable id: UUID): AdviceVersionsDto = dashboard.adviceVersions(id) ?: notFound()
+    fun adviceVersions(@PathVariable id: UUID, @RequestParam(required = false) commissie: String? = null): AdviceVersionsDto =
+        dashboard.adviceVersions(id, commissieOf(commissie)) ?: notFound()
 
     @GetMapping("/analysis-runs/{id}")
     fun run(@PathVariable id: UUID): AnalysisRunDto = dashboard.run(id) ?: notFound()
@@ -146,6 +153,16 @@ class DashboardController(
             }
         }
     }
+
+    /**
+     * De gevraagde commissie van een leesroute: ontbrekend is Ruimte, anders exact `RUIMTE` of
+     * `BESTUUR` (ook een lege waarde of andere schrijfwijze is ongeldig). De controle gebeurt vóór
+     * elke databasetoegang; de reason is de foutcode, zoals bij de andere queryfouten.
+     */
+    private fun commissieOf(raw: String?): Commissie =
+        if (raw == null) Commissie.RUIMTE
+        else Commissie.entries.firstOrNull { it.name == raw }
+            ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_commissie")
 
     private fun <T> notFound(): T = throw ResponseStatusException(HttpStatus.NOT_FOUND)
 }

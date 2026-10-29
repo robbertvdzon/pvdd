@@ -2214,6 +2214,8 @@ class DatabaseIntegrationTest(
             assertEquals(listOf("Ruimte" to true, "Bestuur" to false), body.commissies.map { it.naam to it.success })
             assertEquals("READ_TIMEOUT", body.commissies[1].errorCode)
             assertTrue(body.commissies[1].meetings.isEmpty())
+            assertTrue(body.commissies[0].melding.contains("Ruimte"))
+            assertTrue(body.commissies[1].melding.contains("Bestuur") && body.commissies[1].melding.contains("mislukt"))
         }
     }
 
@@ -2228,6 +2230,107 @@ class DatabaseIntegrationTest(
         assertEquals(MeetingCheckStatus.SOURCE_FAILURE, body.status)
         assertTrue(body.meetings.isEmpty())
         assertEquals(listOf(false), body.commissies.map { it.success })
+    }
+
+    // --- Leesmodel per commissie: gezaaide rijen van beide commissies ---
+
+    private data class CommissieSeed(val meetingId: UUID, val itemId: UUID)
+
+    private fun seedCommissieMeeting(
+        commissie: Commissie,
+        startsAt: Instant,
+        status: MeetingStatus = MeetingStatus.COMPLETE,
+        withAdvice: Boolean = true,
+    ): CommissieSeed {
+        val unique = UUID.randomUUID()
+        val meetingId = meetingRepository.upsert(
+            pastMeeting(startsAt).copy(
+                sourceId = "meeting-${commissie.name}-$unique", commissie = commissie,
+                committee = "Commissie ${commissie.defaultName}", status = status,
+            ),
+        )
+        if (status == MeetingStatus.AGENDA_UNPUBLISHED) return CommissieSeed(meetingId, meetingId)
+        val itemId = meetingRepository.upsert(pastAgendaItem(meetingId).copy(sourceId = "item-$unique"))
+        assertTrue(documentRepository.insertVersion(document(itemId, unique.toString().replace("-", "").repeat(2), startsAt)))
+        if (withAdvice) succeededAdvice(meetingId, itemId, startsAt)
+        return CommissieSeed(meetingId, itemId)
+    }
+
+    @Test
+    fun `read model never mixes Ruimte and Bestuur`() = inRolledBackTransaction {
+        removeAllMeetings()
+        val now = Instant.now()
+        val ruimteNext = seedCommissieMeeting(Commissie.RUIMTE, now.plusSeconds(5 * 86400))
+        val bestuurNext = seedCommissieMeeting(Commissie.BESTUUR, now.plusSeconds(2 * 86400))
+        val ruimtePast = (1..2).map { seedCommissieMeeting(Commissie.RUIMTE, now.minusSeconds(it * 86400L)) }
+        val bestuurPast = (1..3).map { seedCommissieMeeting(Commissie.BESTUUR, now.minusSeconds(it * 86400L + 3600)) }
+
+        // Standaard Ruimte, ook al is Bestuur dichterbij.
+        val default = dashboardController.next()
+        assertEquals(ruimteNext.meetingId, default.meeting?.id)
+        assertEquals(Commissie.RUIMTE, default.meeting?.commissie)
+        assertEquals("Ruimte", default.meeting?.commissieNaam)
+        assertEquals(default, dashboardController.next("RUIMTE"))
+        val bestuur = dashboardController.next("BESTUUR")
+        assertEquals(bestuurNext.meetingId, bestuur.meeting?.id)
+        assertEquals("Bestuur", bestuur.meeting?.commissieNaam)
+        assertEquals(listOf(bestuurNext.meetingId), bestuur.series.map { it.id })
+        assertEquals(listOf(ruimteNext.meetingId), default.series.map { it.id })
+
+        // Id's van de andere commissie bestaan niet: 404, zoals een onbekend id.
+        fun assertNotFound(block: () -> Unit) =
+            assertEquals(HttpStatus.NOT_FOUND, assertFailsWith<ResponseStatusException> { block() }.statusCode)
+        assertNotFound { dashboardController.meeting(bestuurNext.meetingId) }
+        assertNotFound { dashboardController.meeting(ruimteNext.meetingId, "BESTUUR") }
+        assertNotFound { dashboardController.items(bestuurNext.meetingId) }
+        assertNotFound { dashboardController.items(ruimteNext.meetingId, "BESTUUR") }
+        assertNotFound { dashboardController.item(bestuurNext.itemId) }
+        assertNotFound { dashboardController.item(ruimteNext.itemId, "BESTUUR") }
+        assertNotFound { dashboardController.adviceVersions(bestuurNext.itemId) }
+        assertNotFound { dashboardController.adviceVersions(ruimteNext.itemId, "BESTUUR") }
+
+        // Eigen commissie: wel leesbaar, met commissie op vergadering en punt.
+        assertEquals(bestuurNext.meetingId, dashboardController.meeting(bestuurNext.meetingId, "BESTUUR").meeting?.id)
+        val items = dashboardController.items(bestuurNext.meetingId, "BESTUUR")
+        assertEquals(listOf(bestuurNext.itemId), items.map { it.id })
+        assertEquals(listOf(Commissie.BESTUUR to "Bestuur"), items.map { it.commissie to it.commissieNaam })
+        val detail = dashboardController.item(bestuurNext.itemId, "BESTUUR")
+        assertEquals("Bestuur", detail.item.commissieNaam)
+        assertEquals(1, dashboardController.adviceVersions(bestuurNext.itemId, "BESTUUR").versions.size)
+        assertEquals(Commissie.RUIMTE, dashboardController.items(ruimteNext.meetingId).single().commissie)
+
+        // Archief: tellingen, total en paginering per commissie.
+        val ruimteArchive = dashboardController.meetings("past", null, null)
+        assertEquals(2, ruimteArchive.total)
+        assertEquals(ruimtePast.map { it.meetingId }, ruimteArchive.items.map { it.id })
+        val bestuurFirst = dashboardController.meetings("past", "2", null, "BESTUUR")
+        assertEquals(3, bestuurFirst.total)
+        assertEquals(bestuurPast.take(2).map { it.meetingId }, bestuurFirst.items.map { it.id })
+        assertEquals(1, bestuurFirst.items.first().completedAdviceCount)
+        val bestuurSecond = dashboardController.meetings("past", "2", bestuurFirst.nextCursor, "BESTUUR")
+        assertEquals(bestuurPast.drop(2).map { it.meetingId }, bestuurSecond.items.map { it.id })
+        assertEquals(null, bestuurSecond.nextCursor)
+        assertEquals(3, bestuurSecond.total)
+    }
+
+    @Test
+    fun `an unpublished agenda has an explicit status and no agenda items`() = inRolledBackTransaction {
+        removeAllMeetings()
+        val unpublished = seedCommissieMeeting(
+            Commissie.BESTUUR, Instant.now().plusSeconds(86400), MeetingStatus.AGENDA_UNPUBLISHED,
+        )
+        val overview = dashboardController.next("BESTUUR")
+        assertEquals("UNPUBLISHED", overview.agendaStatus)
+        assertEquals(unpublished.meetingId, overview.meeting?.id)
+        assertEquals(emptyList(), dashboardController.items(unpublished.meetingId, "BESTUUR"))
+        // De andere commissie ziet niets, ook geen status van deze vergadering.
+        val other = dashboardController.next()
+        assertEquals("NONE", other.agendaStatus)
+        assertEquals(null, other.meeting)
+
+        val published = seedCommissieMeeting(Commissie.RUIMTE, Instant.now().plusSeconds(86400))
+        assertEquals("PUBLISHED", dashboardController.next().agendaStatus)
+        assertEquals(1, dashboardController.items(published.meetingId).size)
     }
 
     private data class RuimteSnapshot(
@@ -2405,7 +2508,7 @@ class DatabaseIntegrationTest(
                 assertEquals(nl.vdzon.pvdd.analysis.PromptBuilder(jacksonObjectMapper()).schema(), call.responseSchema)
                 assertEquals(expectedExecution(), call.execution)
 
-                val advice = dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, name))!!.versions.single()
+                val advice = dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, name), Commissie.BESTUUR)!!.versions.single()
                 nl.vdzon.pvdd.analysis.ContentResultValidator().validateAdvice(advice.advice)
                 val content = advice.advice.path("content").stringValue()
                 listOf(
@@ -2440,7 +2543,7 @@ class DatabaseIntegrationTest(
         val call = aiCalls.single()
         assertTrue("van commissie Bestuur in categorie C." in call.prompt)
         assertTrue("Voldoende argumenten" in call.prompt && "Onvoldoende argumenten" in call.prompt)
-        val advice = dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "c"))!!.versions.single()
+        val advice = dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "c"), Commissie.BESTUUR)!!.versions.single()
         val content = advice.advice.path("content").stringValue()
         assertTrue(content.startsWith("## Beoordeling B-agenda\n**Voldoende argumenten**"))
         assertFalse("## Wat sluit aan bij de PvdD?" in content)
@@ -2466,7 +2569,7 @@ class DatabaseIntegrationTest(
             assertEquals(1, jobs(Commissie.BESTUUR))
             assertEquals(1, aiCalls.size)
             assertTrue(key("readable") in aiCalls.single().prompt)
-            val status = dashboardRepository.agendaItems(meetingId(Commissie.BESTUUR))!!
+            val status = dashboardRepository.agendaItems(meetingId(Commissie.BESTUUR), Commissie.BESTUUR)!!
                 .associate { it.title to it.documentStatus }
             assertEquals("NO_DOCUMENTS", status["Titel ${key("without")}"])
             assertEquals("DOCUMENTS_UNREADABLE", status["Titel ${key("unreadable")}"])
@@ -2507,7 +2610,7 @@ class DatabaseIntegrationTest(
             check()
             drain()
             assertEquals(2, aiCalls.size)
-            val firstAdviceOfB = dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "b"))!!.versions.single()
+            val firstAdviceOfB = dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "b"), Commissie.BESTUUR)!!.versions.single()
 
             ingestor.texts[key("b-doc")] = "Gewijzigde tekst over natuur en wonen."
             val (_, sent) = check()
@@ -2518,13 +2621,13 @@ class DatabaseIntegrationTest(
             assertEquals(2, jobs(Commissie.BESTUUR, "b"))
             assertEquals(3, aiCalls.size)
             assertTrue(key("b") in aiCalls.last().prompt && key("a") !in aiCalls.last().prompt)
-            val versions = dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "b"))!!.versions
+            val versions = dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "b"), Commissie.BESTUUR)!!.versions
             assertEquals(2, versions.size)
             assertTrue(versions[0].latest)
             assertEquals("CURRENT", versions[0].actuality)
             assertEquals(firstAdviceOfB.adviceId, versions[1].adviceId)
             assertEquals("STALE", versions[1].actuality)
-            assertEquals(1, dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "a"))!!.versions.size)
+            assertEquals(1, dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "a"), Commissie.BESTUUR)!!.versions.size)
 
             // Ook een gewijzigd agendapunt zelf (toelichting) heranalyseert alleen dat punt.
             publish(
@@ -2538,7 +2641,7 @@ class DatabaseIntegrationTest(
             assertEquals(2, jobs(Commissie.BESTUUR, "a"))
             assertEquals(2, jobs(Commissie.BESTUUR, "b"))
             assertEquals(4, aiCalls.size)
-            assertEquals(2, dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "a"))!!.versions.size)
+            assertEquals(2, dashboardRepository.adviceVersions(itemId(Commissie.BESTUUR, "a"), Commissie.BESTUUR)!!.versions.size)
         }
 
     @Test

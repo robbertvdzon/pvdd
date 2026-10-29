@@ -117,7 +117,7 @@ class DashboardPastMeetingsTest {
         assertEquals(PastMeetingPageDto(emptyList(), null, 0), page)
         assertEquals(2, jdbc.statements.size)
         assertTrue(jdbc.statements.all { it.first.contains("LIMIT") }, jdbc.statements.joinToString())
-        assertEquals(listOf<Any?>(21), jdbc.statements.first().second)
+        assertEquals(listOf<Any?>("RUIMTE", 21), jdbc.statements.first().second)
     }
 
     @Test
@@ -127,7 +127,7 @@ class DashboardPastMeetingsTest {
 
             DashboardRepository(jdbc, jacksonObjectMapper()).pastMeetings("past", limit, null)
 
-            assertEquals(listOf<Any?>(expected), jdbc.statements.first().second, limit)
+            assertEquals(listOf<Any?>("RUIMTE", expected), jdbc.statements.first().second, limit)
         }
     }
 
@@ -170,8 +170,8 @@ class DashboardPastMeetingsTest {
             return emptyList()
         }
 
-        override fun <T : Any> queryForObject(sql: String, requiredType: Class<T>): T? {
-            statements += sql to emptyList<Any?>()
+        override fun <T : Any> queryForObject(sql: String, requiredType: Class<T>, vararg args: Any?): T? {
+            statements += sql to args.toList()
             return null
         }
     }
