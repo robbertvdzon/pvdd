@@ -15,3 +15,21 @@
 
 ### Leespadlijst
 Nagegaan, niet gewijzigd: `DashboardRepository`/`DashboardController` kennen geen commissie-parameter; overzicht, `next` en archieflijst tonen vergaderingen van alle commissies. Een commissiefilter hoort bij een eigen story.
+
+## hkh-366 — documentation (2026-10-29)
+
+### Doel
+Documentatie in lijn brengen met commissiegewijze ontdekking en foutisolatie (hkh-363).
+
+### Bijgewerkt
+- `docs/microservice-specificatie.md` §4.2: ontdekking per commissie, transactie per commissie, savepoint per
+  vergadering, foutisolatie, PREVIEW voor Bestuur, additief resultaatveld `commissies`; zin dat Bestuur-discovery
+  later volgt verwijderd.
+- `docs/commissie-bestuur-bron.md`: Bestuur-discovery is nu geïmplementeerd.
+
+### Bewust niet gewijzigd
+- `docs/functionele-werking-commissie-assistent.md`, `docs/factory/*`: geen gebruikers- of procesverandering;
+  geen frontend-, route-, schedule- of omgevingswijziging.
+
+### Verificatie
+- `bash tools/verify-documentation.sh`; alleen `docs/` geraakt.

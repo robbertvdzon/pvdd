@@ -26,7 +26,8 @@ Ruimte: 9 punten met 9 documenten.
 
 Geen afwijkende opbouw. Er is geen aparte parser nodig. Verschillen zijn alleen kwantitatief (Bestuur heeft
 meer punten, en C-punten hebben stukken); de C-verrijking via rapportpagina's is niet apart onderzocht.
-De discovery voor Bestuur is in deze story niet geïmplementeerd; dat volgt in een vervolgstory.
+De discovery voor Bestuur is sinds story hkh-362 geïmplementeerd (zie microservice-specificatie §4.2);
+zonder agenda-type blijft de commissie overgeslagen.
 
 ## Configuratie
 

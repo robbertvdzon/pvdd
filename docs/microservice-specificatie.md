@@ -135,7 +135,26 @@ De klok en tijdzone zijn injecteerbaar voor tests.
 
 Een commissie zonder agenda-type (bijvoorbeeld Bestuur in productie, waar
 `PVDD_MEETING_BESTUUR_AGENDA_TYPE_ID` leeg is) wordt bij ontdekking overgeslagen met één WARN-regel,
-zonder fout en zonder effect op Ruimte. Discovery voor Bestuur zelf volgt in een vervolgstory.
+zonder fout en zonder effect op Ruimte.
+
+Sinds story hkh-362 ontdekt en verwerkt `MeetingCheckWorkflow.check()` elke geconfigureerde commissie
+(`MeetingDiscoveryGateway.commissies()` in configuratievolgorde, `discoverCommissie(commissie, now)`
+via het agenda-type van die commissie). Elke opgeslagen vergadering draagt haar `commissie`. 'Eerstvolgende'
+blijft per commissie de vroegste met `startsAt > nu`. Onder de ene workflow-lock krijgt elke commissie een
+eigen transactie (`PROPAGATION_REQUIRES_NEW`); de vergaderingen daarbinnen zijn savepoints
+(`PROPAGATION_NESTED`), zodat één falende vergadering alleen zichzelf terugdraait. Een uitzondering of
+`SourceFailure` bij de bron van één commissie wordt gelogd met de commissienaam en vastgelegd in het
+controleresultaat; die commissie draait al haar schrijfacties terug en de andere commissie wordt gewoon
+verwerkt. De foutuitkomst staat alleen in resultaat en logs, niet in de database. Een niet-gepubliceerde
+Bestuur-agenda gebruikt hetzelfde PREVIEW-mechanisme als Ruimte (status `AGENDA_UNPUBLISHED`, geen
+agendapunten); gepubliceerde agenda's gaan door dezelfde `AgendaParser`. Er zijn geen nieuwe statuswaarden.
+
+`MeetingCheckResult` krijgt additief de lijst `commissies` (`CommissieCheckResult`: commissie, naam,
+success, status, errorCode, meetingSourceId, meetings). De oude velden en `meetings` van
+`POST /api/meetings/check-now` blijven die van Ruimte. Een lijst met alleen één `SourceFailure` zonder
+vergadergegevens blijft per commissie een mislukte controle voor die commissie. Oude agenda's worden niet
+verwerkt (filter datum >= vandaag blijft). Een commissiefilter op de leespaden (overzicht, `next`, archief)
+bestaat niet en hoort bij een eigen story.
 
 De zoeklaag geeft sinds story hkh-306 een geordende, nooit lege lijst van uitkomsten terug: de
 eerstvolgende vergadering (`startsAt` strikt na het controlemoment) plus de vergaderingen waarvan de
