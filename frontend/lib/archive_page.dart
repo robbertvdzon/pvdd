@@ -15,10 +15,14 @@ class ArchivePage extends StatefulWidget {
     required this.gateway,
     required this.onBack,
     required this.onOpen,
+    this.commissie = commissieRuimte,
     super.key,
   });
 
   final DashboardGateway gateway;
+
+  /// De gekozen commissie; het overzicht leest alleen de eerdere vergaderingen van die commissie.
+  final String commissie;
 
   /// Terug naar de agendaweergave.
   final VoidCallback onBack;
@@ -62,7 +66,10 @@ class _ArchivePageState extends State<ArchivePage> {
       });
     }
     try {
-      final page = await widget.gateway.pastMeetings(cursor: cursor);
+      final page = await widget.gateway.pastMeetings(
+        cursor: cursor,
+        commissie: widget.commissie,
+      );
       if (!mounted) return;
       setState(() {
         _meetings = [

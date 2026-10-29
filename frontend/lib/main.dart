@@ -342,6 +342,9 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
   // bestaande terugactie naar de agendaweergave ongewijzigd.
   bool _cameFromArchive = false;
   bool _updateAvailable = false;
+
+  // De gekozen commissie; alleen in de sessie bewaard, dus Ruimte bij elke start.
+  String _commissie = commissieRuimte;
   Timer? _timer;
   final _current = BuildIdentity.frontend();
   final _tracker = VersionUpdateTracker();
@@ -391,12 +394,17 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
       final desktop = constraints.maxWidth >= 800;
       final content = switch (_selected) {
         0 when _archiveOverview => ArchivePage(
+          key: ValueKey('archive-$_commissie'),
+          commissie: _commissie,
           gateway: widget.dashboardGateway,
           onBack: _leaveArchiveOverview,
           onOpen: _openArchivedMeeting,
         ),
         0 => MeetingOverviewPage(
-          key: ValueKey(_archivedMeetingId),
+          // Een andere commissie of vergadering geeft een nieuwe pagina: antwoorden van de vorige
+          // commissie kunnen daardoor nooit meer in beeld komen.
+          key: ValueKey('$_archivedMeetingId-$_commissie'),
+          commissie: _commissie,
           gateway: widget.dashboardGateway,
           archivedMeetingId: _archivedMeetingId,
           readOnly: _archivedMeetingId != null,
@@ -442,6 +450,15 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              // Op mobiel staat de zijbalk achter het menu; de commissie staat dan in de kop.
+              if (!desktop)
+                Flexible(
+                  child: Text(
+                    ' · ${commissieShortName(_commissie)}',
+                    key: const ValueKey('appbar-commissie'),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
             ],
           ),
           actions: [
@@ -484,6 +501,7 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
                         ),
                       ],
                     ),
+                  if (_showSwitch) _commissieSwitch(),
                   Expanded(child: content),
                 ],
               ),
@@ -492,6 +510,34 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
         ),
       );
     },
+  );
+
+  // De schakelaar staat boven de agenda zelf, niet boven het archief of andere schermen.
+  bool get _showSwitch =>
+      _selected == 0 && !_archiveOverview && _archivedMeetingId == null;
+
+  Widget _commissieSwitch() => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: SegmentedButton<String>(
+        key: const ValueKey('commissie-switch'),
+        showSelectedIcon: false,
+        segments: [
+          for (final c in commissies)
+            ButtonSegment<String>(
+              value: c,
+              label: Text(
+                commissieFullName(c),
+                key: ValueKey('commissie-option-$c'),
+              ),
+            ),
+        ],
+        selected: {_commissie},
+        onSelectionChanged: (selection) =>
+            setState(() => _commissie = selection.first),
+      ),
+    ),
   );
 
   // Vanaf de agendaweergave naar het overzicht van eerdere vergaderingen.
@@ -546,11 +592,12 @@ class _TechnicalApplicationShellState extends State<TechnicalApplicationShell> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 8, 20, 20),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
             child: Text(
-              'COMMISSIE RUIMTE',
-              style: TextStyle(
+              commissieFullName(_commissie).toUpperCase(),
+              key: const ValueKey('sidebar-commissie'),
+              style: const TextStyle(
                 color: Colors.white70,
                 fontWeight: FontWeight.w700,
               ),

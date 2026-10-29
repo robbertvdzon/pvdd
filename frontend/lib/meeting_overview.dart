@@ -16,9 +16,14 @@ class MeetingOverviewPage extends StatefulWidget {
     this.onBack,
     this.backLabel = 'Terug naar agenda',
     this.onOpenArchive,
+    this.commissie = commissieRuimte,
     super.key,
   });
   final DashboardGateway gateway;
+
+  /// De gekozen commissie (RUIMTE of BESTUUR). Alle leesaanroepen dragen deze mee. De shell geeft
+  /// bij een andere keuze een andere key, zodat antwoorden van de vorige commissie nooit blijven staan.
+  final String commissie;
 
   /// Is deze gezet, dan toont de pagina die ene vergadering via `gateway.meeting(id)` in plaats van
   /// de eerstvolgende vergadering, en blijft de ververstimer uit.
@@ -90,8 +95,13 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
     var headerLoaded = false;
     try {
       final overview = archivedId == null
-          ? await widget.gateway.overview()
-          : await widget.gateway.meeting(archivedId);
+          ? await widget.gateway.overview(commissie: widget.commissie)
+          : await widget.gateway.meeting(
+              archivedId,
+              commissie: widget.commissie,
+            );
+      // Een antwoord van een eerdere commissie of een verdwenen pagina wordt genegeerd.
+      if (!mounted) return;
       var shown = overview;
       final series = archivedId == null
           ? overview.series
@@ -104,9 +114,13 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
         }
         if (_selectedId != overview.meeting?.id) {
           shown = _withCheckedAt(
-            await widget.gateway.meeting(_selectedId!),
+            await widget.gateway.meeting(
+              _selectedId!,
+              commissie: widget.commissie,
+            ),
             overview,
           );
+          if (!mounted) return;
         }
       } else {
         _selectedId = null;
@@ -123,7 +137,10 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
       }
       final items = shown.meeting == null
           ? <AgendaItemSummary>[]
-          : await widget.gateway.agendaItems(shown.meeting!.id);
+          : await widget.gateway.agendaItems(
+              shown.meeting!.id,
+              commissie: widget.commissie,
+            );
       if (mounted) {
         setState(() {
           _items = items;
@@ -156,6 +173,7 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
     meeting: shown.meeting,
     lastCheckedAt: overview.lastCheckedAt,
     progress: shown.progress,
+    agendaStatus: shown.agendaStatus,
   );
 
   // Een klik op een tegel: alleen de agenda en adviezen van die vergadering worden gelezen, via
@@ -164,8 +182,14 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
     if (id == _selectedId) return;
     setState(() => _selectedId = id);
     try {
-      final meeting = await widget.gateway.meeting(id);
-      final items = await widget.gateway.agendaItems(id);
+      final meeting = await widget.gateway.meeting(
+        id,
+        commissie: widget.commissie,
+      );
+      final items = await widget.gateway.agendaItems(
+        id,
+        commissie: widget.commissie,
+      );
       if (!mounted || _selectedId != id) return;
       setState(() {
         _overview = _withCheckedAt(meeting, _overview!);
@@ -198,12 +222,22 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
             context,
           ).showSnackBar(SnackBar(content: Text(_checkOutcomeLabel(outcome))));
         }
+      } else if (outcome.hasCommissieFailure && !outcome.wholeCheckFailed) {
+        // Eén commissie mislukte: de melding noemt haar, de andere staat als geslaagd, en alle
+        // eerder geladen gegevens blijven zichtbaar.
+        await _load(silent: true);
+        if (mounted) {
+          setState(() {
+            _checkResult = outcome;
+            _checkFailed = false;
+          });
+        }
       } else if (outcome.wholeCheckFailed) {
         // Eerder geladen gegevens blijven staan; alleen de melding met de herhaalknop komt erbij.
         if (mounted) {
           setState(() {
-            _checkResult = null;
-            _checkFailed = true;
+            _checkResult = outcome.commissies.isEmpty ? null : outcome;
+            _checkFailed = outcome.commissies.isEmpty;
           });
         }
       } else {
@@ -286,7 +320,74 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
     return const SizedBox.shrink();
   }
 
+  // De uitkomst per commissie: de mislukte commissie bij naam, de andere als geslaagd.
+  Widget _commissieCheckList(
+    BuildContext context,
+    MeetingCheckOutcome outcome,
+  ) {
+    final error = Theme.of(context).colorScheme.error;
+    return Card(
+      key: const ValueKey('check-commissies'),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Resultaat van de controle',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            for (final c in outcome.commissies)
+              Padding(
+                key: ValueKey('check-commissie-${c.commissie}'),
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      c.success
+                          ? Icons.check_circle_outline
+                          : Icons.error_outline,
+                      color: c.success ? PvddColors.primary : error,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        c.success
+                            ? '${commissieFullName(c.commissie)}: controle geslaagd'
+                            : '${commissieFullName(c.commissie)}: controle mislukt. '
+                                  'De eerder geladen gegevens blijven zichtbaar.',
+                        style: TextStyle(
+                          color: c.success ? null : error,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (outcome.hasCommissieFailure) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: _checking ? null : _checkNow,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Opnieuw proberen'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _checkResultList(BuildContext context, MeetingCheckOutcome outcome) {
+    if (outcome.commissies.isNotEmpty && outcome.hasCommissieFailure) {
+      return _commissieCheckList(context, outcome);
+    }
     final rows = outcome.rows;
     final error = Theme.of(context).colorScheme.error;
     return LayoutBuilder(
@@ -493,25 +594,52 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
                       const SizedBox(height: 16),
                     ],
                     _meetingCard(context, _overview!.meeting!),
-                    // Bij een mislukt agendapunt-laden heeft filteren geen betekenis; de
-                    // huidige agendaweergave houdt haar filters onveranderd.
-                    if (!widget.readOnly || _items.isNotEmpty) ...[
+                    if (_unpublishedBestuur) ...[
                       const SizedBox(height: 16),
-                      _filters(),
-                    ],
-                    const SizedBox(height: 8),
-                    ..._filteredItems.map(
-                      (item) => _AgendaItemCard(
-                        key: ValueKey(item.id),
-                        item: item,
-                        gateway: widget.gateway,
-                        // Voor een vergadering die al is geweest heeft nieuw werk starten geen
-                        // betekenis meer; dezelfde alleen-lezen vlag als het archiefscherm laat de
-                        // herstartactie weg zonder het scherm te kopiëren.
-                        readOnly: widget.readOnly || _overview!.meeting!.past,
-                        onChanged: () => _load(silent: true),
+                      Card(
+                        key: const ValueKey('agenda-unpublished-notice'),
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.event_busy_outlined,
+                                color: PvddColors.primary,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'De agenda van ${commissieFullName(widget.commissie)} is er nog niet. '
+                                  'Zodra de agenda is gepubliceerd, verschijnen hier de agendapunten.',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                    ] else ...[
+                      // Bij een mislukt agendapunt-laden heeft filteren geen betekenis; de
+                      // huidige agendaweergave houdt haar filters onveranderd.
+                      if (!widget.readOnly || _items.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        _filters(),
+                      ],
+                      const SizedBox(height: 8),
+                      ..._filteredItems.map(
+                        (item) => _AgendaItemCard(
+                          key: ValueKey(item.id),
+                          item: item,
+                          gateway: widget.gateway,
+                          commissie: widget.commissie,
+                          // Voor een vergadering die al is geweest heeft nieuw werk starten geen
+                          // betekenis meer; dezelfde alleen-lezen vlag als het archiefscherm laat de
+                          // herstartactie weg zonder het scherm te kopiëren.
+                          readOnly: widget.readOnly || _overview!.meeting!.past,
+                          onChanged: () => _load(silent: true),
+                        ),
+                      ),
+                    ],
                   ],
                   // Alleen-lezen: de melding staat onder de vergaderkop, zodat zichtbaar blijft
                   // welke gegevens gewoon zijn blijven staan.
@@ -831,7 +959,8 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Commissie Ruimte',
+            'Agenda — ${commissieFullName(widget.commissie)}',
+            key: const ValueKey('agenda-heading'),
             style: Theme.of(context).textTheme.headlineMedium,
           ),
           Text(
@@ -899,6 +1028,21 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
     },
   );
 
+  // Bestuur zonder gepubliceerde agenda: alleen de datum, tenzij de bron ook een eindtijd levert.
+  // Datum en tijd komen uit het antwoord; er is niets hardgecodeerd.
+  String _meetingWhen(MeetingInfo meeting) {
+    if (_unpublishedBestuur && meeting.endsAt == null) {
+      return meetingLongDate(meeting.startsAt);
+    }
+    return _dateTime(meeting.startsAt);
+  }
+
+  bool get _unpublishedBestuur =>
+      widget.commissie == commissieBestuur &&
+      _overview?.meeting != null &&
+      (_overview!.agendaStatus == 'UNPUBLISHED' ||
+          _overview!.meeting!.status == 'AGENDA_UNPUBLISHED');
+
   Widget _meetingCard(BuildContext context, MeetingInfo meeting) => Card(
     child: Padding(
       padding: const EdgeInsets.all(20),
@@ -917,6 +1061,10 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
               ),
               // Markering naast de bestaande statusbadges; komt uit `past` van de server.
               if (meeting.past) _statusChip('MEETING_PAST'),
+              KeyedSubtree(
+                key: const ValueKey('meeting-commissie-tag'),
+                child: _agendaBadge(meeting.commissieName),
+              ),
               Text(
                 '${_overview!.progress.complete}/${_overview!.progress.total} analyses gereed',
               ),
@@ -931,7 +1079,7 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
           ),
           const SizedBox(height: 6),
           Text(
-            '${_dateTime(meeting.startsAt)}${meeting.location == null ? '' : ' · ${meeting.location}'}',
+            '${_meetingWhen(meeting)}${meeting.location == null ? '' : ' · ${meeting.location}'}',
           ),
           Text(
             'Bronrevisie ${meeting.revisionNumber}${meeting.canonicalFingerprint == null ? '' : ' · ${meeting.canonicalFingerprint!.substring(0, 12)}'}',
@@ -982,16 +1130,24 @@ class _MeetingOverviewPageState extends State<MeetingOverviewPage> {
   );
 }
 
+/// De vaste waarschuwing bij elke conceptanalyse van commissie Bestuur.
+const String aiConceptNotice =
+    'AI-concept — controleer bronnen en formulering vóór gebruik';
+
 class _AgendaItemCard extends StatefulWidget {
   const _AgendaItemCard({
     required this.item,
     required this.gateway,
     required this.onChanged,
     this.readOnly = false,
+    this.commissie = commissieRuimte,
     super.key,
   });
   final AgendaItemSummary item;
   final DashboardGateway gateway;
+
+  /// De gekozen commissie; meegegeven aan alle leesaanroepen van deze kaart.
+  final String commissie;
   final Future<void> Function() onChanged;
 
   /// Alleen lezen: de herstartactie voor dit agendapunt wordt niet gerenderd. De rest van de kaart
@@ -1015,6 +1171,8 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
 
   /// De getoonde versie; 0 is het laatste advies, hoger is een eerdere versie.
   int _selectedVersion = 0;
+
+  bool get _bestuur => widget.commissie == commissieBestuur;
 
   /// Heeft dit agendapunt een bewaard advies? Alleen dan valt er iets te kiezen.
   bool get _hasAdvice => widget.item.adviceActuality != null;
@@ -1040,7 +1198,10 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
       _versionsFailed = false;
     });
     try {
-      final versions = await widget.gateway.adviceVersions(widget.item.id);
+      final versions = await widget.gateway.adviceVersions(
+        widget.item.id,
+        commissie: widget.commissie,
+      );
       if (mounted) {
         setState(() {
           _versions = versions;
@@ -1111,7 +1272,10 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
             oldWidget.item.adviceActuality != widget.item.adviceActuality ||
             oldWidget.item.currentFingerprint !=
                 widget.item.currentFingerprint)) {
-      _detail = widget.gateway.agendaItem(widget.item.id);
+      _detail = widget.gateway.agendaItem(
+        widget.item.id,
+        commissie: widget.commissie,
+      );
     }
   }
 
@@ -1185,7 +1349,10 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
         childrenPadding: EdgeInsets.zero,
         onExpansionChanged: (open) {
           if (open && _detail == null) {
-            final detail = widget.gateway.agendaItem(widget.item.id);
+            final detail = widget.gateway.agendaItem(
+              widget.item.id,
+              commissie: widget.commissie,
+            );
             setState(() {
               _detail = detail;
             });
@@ -1218,6 +1385,10 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
                       highlighted: true,
                     ),
                     _agendaBadge('${item.category}-stuk'),
+                    KeyedSubtree(
+                      key: ValueKey('commissie-tag-${item.id}'),
+                      child: _agendaBadge(item.commissieName),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -1265,6 +1436,17 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
               // De tabel hoort bij het laatste advies (AI-titel, korte conclusie, laatste
               // AI-analyse) en zou bij een eerdere versie misleidend zijn.
               if (!_viewingEarlierVersion) _AgendaFactsTable(facts: facts),
+              if (_bestuur && item.documentStatus == 'NO_DOCUMENTS') ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Stuk ontbreekt — er komt geen analyse.',
+                  key: ValueKey('missing-document-${item.id}'),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
               if (item.canRetryAnalysis && !widget.readOnly) ...[
                 const SizedBox(height: 12),
                 Align(
@@ -1349,6 +1531,8 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: Text(switch (detail.item.documentStatus) {
+                'NO_DOCUMENTS' when _bestuur =>
+                  'Het stuk ontbreekt: er komt geen analyse voor dit agendapunt.',
                 'NO_DOCUMENTS' =>
                   'Geen AI-analyse: aan dit agendapunt zijn geen stukken direct gekoppeld.',
                 'DOCUMENTS_UNREADABLE' =>
@@ -1357,6 +1541,15 @@ class _AgendaItemCardState extends State<_AgendaItemCard> {
               }),
             )
           else ...[
+            if (_bestuur)
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: Text(
+                  aiConceptNotice,
+                  key: const ValueKey('ai-concept-notice'),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.only(top: 16),
               child: Align(

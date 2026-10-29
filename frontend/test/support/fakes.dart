@@ -90,6 +90,10 @@ class FakeDashboardGateway implements DashboardGateway {
   /// Alle aanroepen in volgorde, bijvoorbeeld `meeting:meeting-id` of `agendaItem:item-a`.
   final List<String> calls = <String>[];
 
+  /// Dezelfde leesaanroepen met de meegegeven commissie, bijvoorbeeld `overview:BESTUUR`. Staat
+  /// los van [calls], zodat bestaande exacte-lijstassertions ongewijzigd blijven.
+  final List<String> commissieCalls = <String>[];
+
   String? retriedItemId;
 
   /// De aanroepen die nieuw werk zouden starten.
@@ -123,7 +127,8 @@ class FakeDashboardGateway implements DashboardGateway {
       );
 
   @override
-  Future<MeetingOverview> overview() async {
+  Future<MeetingOverview> overview({String commissie = commissieRuimte}) async {
+    commissieCalls.add('overview:$commissie');
     calls.add('overview');
     return MeetingOverview(
       status: withMeeting ? 'ANALYSING' : 'NO_MEETING',
@@ -135,7 +140,11 @@ class FakeDashboardGateway implements DashboardGateway {
   }
 
   @override
-  Future<MeetingOverview> meeting(String meetingId) async {
+  Future<MeetingOverview> meeting(
+    String meetingId, {
+    String commissie = commissieRuimte,
+  }) async {
+    commissieCalls.add('meeting:$meetingId:$commissie');
     calls.add('meeting:$meetingId');
     if (failMeeting) throw const DashboardUnavailable();
     return MeetingOverview(
@@ -158,7 +167,11 @@ class FakeDashboardGateway implements DashboardGateway {
   Set<String?> failingPastMeetingCursors = <String?>{};
 
   @override
-  Future<PastMeetingPage> pastMeetings({String? cursor}) async {
+  Future<PastMeetingPage> pastMeetings({
+    String? cursor,
+    String commissie = commissieRuimte,
+  }) async {
+    commissieCalls.add('pastMeetings:$commissie');
     calls.add('pastMeetings:${cursor ?? 'first'}');
     if (failingPastMeetingCursors.contains(cursor)) {
       throw const DashboardUnavailable();
@@ -168,7 +181,11 @@ class FakeDashboardGateway implements DashboardGateway {
   }
 
   @override
-  Future<List<AgendaItemSummary>> agendaItems(String meetingId) async {
+  Future<List<AgendaItemSummary>> agendaItems(
+    String meetingId, {
+    String commissie = commissieRuimte,
+  }) async {
+    commissieCalls.add('agendaItems:$meetingId:$commissie');
     calls.add('agendaItems:$meetingId');
     if (failAgendaItems) throw const DashboardUnavailable();
     return itemsByMeeting[meetingId] ?? items;
@@ -262,7 +279,11 @@ class FakeDashboardGateway implements DashboardGateway {
   ];
 
   @override
-  Future<AgendaItemDetail> agendaItem(String itemId) async {
+  Future<AgendaItemDetail> agendaItem(
+    String itemId, {
+    String commissie = commissieRuimte,
+  }) async {
+    commissieCalls.add('agendaItem:$itemId:$commissie');
     calls.add('agendaItem:$itemId');
     final item = items.firstWhere((value) => value.id == itemId);
     return AgendaItemDetail(
@@ -304,7 +325,11 @@ class FakeDashboardGateway implements DashboardGateway {
   Set<String> failingAdviceVersionItems = <String>{};
 
   @override
-  Future<List<AdviceVersion>> adviceVersions(String itemId) async {
+  Future<List<AdviceVersion>> adviceVersions(
+    String itemId, {
+    String commissie = commissieRuimte,
+  }) async {
+    commissieCalls.add('adviceVersions:$itemId:$commissie');
     calls.add('adviceVersions:$itemId');
     if (failingAdviceVersionItems.contains(itemId)) {
       throw const DashboardUnavailable();
@@ -361,13 +386,21 @@ class RefreshingDashboardGateway extends FakeDashboardGateway {
   );
 
   @override
-  Future<List<AgendaItemSummary>> agendaItems(String meetingId) async {
+  Future<List<AgendaItemSummary>> agendaItems(
+    String meetingId, {
+    String commissie = commissieRuimte,
+  }) async {
+    commissieCalls.add('agendaItems:$meetingId:$commissie');
     calls.add('agendaItems:$meetingId');
     return [item];
   }
 
   @override
-  Future<AgendaItemDetail> agendaItem(String itemId) async {
+  Future<AgendaItemDetail> agendaItem(
+    String itemId, {
+    String commissie = commissieRuimte,
+  }) async {
+    commissieCalls.add('agendaItem:$itemId:$commissie');
     calls.add('agendaItem:$itemId');
     return AgendaItemDetail(
       item: item,
@@ -424,8 +457,8 @@ class DocumentStatusDashboardGateway extends FakeDashboardGateway {
   );
 
   @override
-  Future<MeetingOverview> overview() async {
-    final base = await super.overview();
+  Future<MeetingOverview> overview({String commissie = commissieRuimte}) async {
+    final base = await super.overview(commissie: commissie);
     return MeetingOverview(
       status: base.status,
       meeting: base.meeting,
@@ -435,13 +468,21 @@ class DocumentStatusDashboardGateway extends FakeDashboardGateway {
   }
 
   @override
-  Future<List<AgendaItemSummary>> agendaItems(String meetingId) async {
+  Future<List<AgendaItemSummary>> agendaItems(
+    String meetingId, {
+    String commissie = commissieRuimte,
+  }) async {
+    commissieCalls.add('agendaItems:$meetingId:$commissie');
     calls.add('agendaItems:$meetingId');
     return [noDocuments, unreadable];
   }
 
   @override
-  Future<AgendaItemDetail> agendaItem(String itemId) async {
+  Future<AgendaItemDetail> agendaItem(
+    String itemId, {
+    String commissie = commissieRuimte,
+  }) async {
+    commissieCalls.add('agendaItem:$itemId:$commissie');
     calls.add('agendaItem:$itemId');
     final selected = itemId == unreadable.id ? unreadable : noDocuments;
     return AgendaItemDetail(
