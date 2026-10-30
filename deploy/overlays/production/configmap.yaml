@@ -13,5 +13,6 @@ data:
   PVDD_AGENT_RUNTIME_MODEL: claude-opus-5
   PVDD_AGENT_RUNTIME_MODE: SUBSCRIPTION
   PVDD_MEETING_SOURCE_BASE_URL: https://noordholland.bestuurlijkeinformatie.nl
+  PVDD_MEETING_BESTUUR_AGENDA_TYPE_ID: "1100617071"
   PVDD_POLICY_SOURCE_URL: https://assets.partijvoordedieren.nl/assets/site/noordHolland/PvdDNH-programma-PS23.pdf
   PVDD_POLICY_SYNC_START_URLS: https://noordholland.partijvoordedieren.nl/onze-idealen,https://noordholland.partijvoordedieren.nl/nieuws,https://noordholland.partijvoordedieren.nl/archief,https://noordholland.partijvoordedieren.nl/verkiezingsprogramma-partij-voor-de-dieren-provinciale-staten-2023-2027,https://assets.partijvoordedieren.nl/assets/site/noordHolland/PvdDNH-programma-PS23.pdf

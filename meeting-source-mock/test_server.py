@@ -394,14 +394,12 @@ class ProductionConfigurationTest(unittest.TestCase):
         self.assertIn("mock.yaml", acceptance)
         self.assertNotIn("mock", production)
 
-    def test_bestuur_agenda_type_is_configured_in_acceptance_only(self):
-        acceptance = (self.root / "deploy" / "overlays" / "acceptance" / "configmap.yaml").read_text(encoding="utf-8")
-        self.assertIn('PVDD_MEETING_BESTUUR_AGENDA_TYPE_ID: "1100617071"', acceptance)
+    def test_bestuur_agenda_type_is_configured_in_acceptance_and_production(self):
+        for overlay in ("acceptance", "production"):
+            text = (self.root / "deploy" / "overlays" / overlay / "configmap.yaml").read_text(encoding="utf-8")
+            self.assertIn('PVDD_MEETING_BESTUUR_AGENDA_TYPE_ID: "1100617071"', text, overlay)
         for path in (self.root / "deploy" / "overlays" / "production").glob("*.yaml"):
-            text = path.read_text(encoding="utf-8")
-            self.assertNotIn("BESTUUR_AGENDA_TYPE_ID", text, path.name)
-            self.assertNotIn("1100617071", text, path.name)
-            self.assertNotIn("bestuur-", text, path.name)
+            self.assertNotIn("bestuur-", path.read_text(encoding="utf-8"), path.name)
 
     def test_bestuur_scenarios_use_the_existing_scenario_route_only(self):
         for path in (self.root / "backend" / "src" / "main").rglob("*.kt"):
