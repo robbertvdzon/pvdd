@@ -20,6 +20,18 @@ class AgendaParserTest {
         assertFalse(agenda.published)
         assertTrue(agenda.items.any { it.category == AgendaCategory.C && it.substantive })
     }
+
+    @Test
+    fun `Bestuur ingekomen stukken without C-agenda heading are parsed as C items`() {
+        val agenda = parser.parse(
+            fixture("agenda-prepublished-bestuur.html"),
+            URI("https://noordholland.bestuurlijkeinformatie.nl/Agenda/Index/bestuur"),
+        )
+        assertFalse(agenda.published)
+        val items = agenda.items.filter { it.category == AgendaCategory.C && it.substantive }
+        assertEquals(listOf("bestuur-1", "bestuur-2"), items.map { it.sourceId })
+    }
+
     private val meetingUrl = URI("http://localhost:18091/Agenda/Index/meeting-future")
 
     @Test

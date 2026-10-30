@@ -204,9 +204,10 @@ class AgendaParser {
         )
     }
 
-    private fun categoryFromSection(title: String): AgendaCategory? = SECTION_PATTERN.find(title)?.groupValues?.get(1)?.uppercase()?.let {
-        AgendaCategory.valueOf(it)
-    }
+    // Commissie Bestuur kent geen 'C-agenda'-kop: de ingekomen stukken staan onder 'Ingekomen stukken Commissie Bestuur <datum>:'.
+    private fun categoryFromSection(title: String): AgendaCategory? =
+        SECTION_PATTERN.find(title)?.groupValues?.get(1)?.uppercase()?.let { AgendaCategory.valueOf(it) }
+            ?: AgendaCategory.C.takeIf { BESTUUR_C_SECTION.containsMatchIn(title) }
 
     private fun labeledText(paragraphs: List<String>, label: String): String? = paragraphs
         .firstOrNull { it.startsWith(label, ignoreCase = true) }
@@ -238,6 +239,7 @@ class AgendaParser {
         private val DATE_FORMAT = DateTimeFormatter.ofPattern("EEEE d MMMM uuuu", DUTCH)
         private val TIME_PATTERN = Regex("(\\d{2}:\\d{2})\\s*-\\s*(\\d{2}:\\d{2})")
         private val SECTION_PATTERN = Regex("(?:^|\\b)([ABC])-agenda\\b", RegexOption.IGNORE_CASE)
+        private val BESTUUR_C_SECTION = Regex("^ingekomen stukken\\b", RegexOption.IGNORE_CASE)
         private val EMPTY_TITLES = listOf(
             Regex("^opening\\b", RegexOption.IGNORE_CASE),
             Regex("^pauze\\b", RegexOption.IGNORE_CASE),
