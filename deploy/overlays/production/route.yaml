@@ -2,6 +2,9 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: pvdd
+  annotations:
+    # Standaard 30 s; 'Nu controleren' kan bij een eerste Bestuur-import langer duren (Cloudflare kapt op 100 s af).
+    haproxy.router.openshift.io/timeout: 95s
 spec:
   host: pvdd.vdzonsoftware.nl
   to: {kind: Service, name: frontend}
