@@ -133,8 +133,8 @@ commissiepagina en/of het door iBabs aangeboden jaarendpoint voor agendatype `11
 de vergaderdatums en kiest de vroegste vergadering waarvan het begintijdstip in de toekomst ligt.
 De klok en tijdzone zijn injecteerbaar voor tests.
 
-Een commissie zonder agenda-type (bijvoorbeeld Bestuur in productie, waar
-`PVDD_MEETING_BESTUUR_AGENDA_TYPE_ID` leeg is) wordt bij ontdekking overgeslagen met één WARN-regel,
+Een commissie zonder agenda-type (bijvoorbeeld wanneer
+`PVDD_MEETING_BESTUUR_AGENDA_TYPE_ID` leeg is gelaten) wordt bij ontdekking overgeslagen met één WARN-regel,
 zonder fout en zonder effect op Ruimte.
 
 Sinds story hkh-362 ontdekt en verwerkt `MeetingCheckWorkflow.check()` elke geconfigureerde commissie
